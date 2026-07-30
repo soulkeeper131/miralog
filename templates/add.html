@@ -2,21 +2,21 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Добави човек — Миралог</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; }
-        .container { max-width: 500px; margin: 0 auto; padding: 20px; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        .container { max-width: 500px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
         h1 { color: #c9b1ff; font-size: 1.5rem; margin-bottom: 24px; text-align: center; }
-        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 16px; }
+        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
         .back-link:hover { color: #a78bfa; }
         form { background: #1a1a2e; border-radius: 12px; padding: 24px; }
         .form-group { margin-bottom: 16px; }
         label { display: block; margin-bottom: 4px; color: #a78bfa; font-size: 0.9rem; }
         input, select {
             width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #2a2a4a;
-            background: #16162a; color: #e0e0e0; font-size: 16px;
+            background: #16162a; color: #e0e0e0; font-size: 16px; min-height: 44px; min-width: 44px;
         }
         input:focus, select:focus { outline: none; border-color: #7c3aed; }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -24,10 +24,10 @@
         .btn {
             width: 100%; padding: 12px; border-radius: 8px; border: none;
             background: #7c3aed; color: white; font-size: 1rem; font-weight: 600;
-            cursor: pointer; margin-top: 8px;
+            cursor: pointer; margin-top: 8px; min-height: 44px; min-width: 44px;
         }
         .btn:hover { background: #6d28d9; }
-        .hint { font-size: 0.75rem; color: #666; margin-top: 2px; }
+        .hint { font-size: 0.75rem; color: #999; margin-top: 2px; }
     </style>
 </head>
 <body>

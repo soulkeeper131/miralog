@@ -2,12 +2,12 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Миралог</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; }
-        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
         h1 { color: #c9b1ff; font-size: 2rem; margin-bottom: 10px; text-align: center; }
         h2 { color: #a78bfa; margin: 20px 0 10px; }
         .subtitle { text-align: center; color: #888; margin-bottom: 30px; }
@@ -23,17 +23,17 @@
         .person-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
         .btn {
-            display: inline-block; padding: 8px 16px; border-radius: 8px; text-decoration: none;
+            display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 8px; text-decoration: none;
             font-size: 0.9rem; font-weight: 500; cursor: pointer; border: none;
-            transition: all .2s;
+            transition: all .2s; min-height: 44px; min-width: 44px;
         }
-        .btn-primary { background: #7c3aed; color: white; }
+        .btn-primary { background: #7c3aed; color: white; min-height: 44px; min-width: 44px; }
         .btn-primary:hover { background: #6d28d9; }
-        .btn-outline { background: transparent; border: 1px solid #7c3aed; color: #a78bfa; }
+        .btn-outline { background: transparent; border: 1px solid #7c3aed; color: #a78bfa; min-height: 44px; min-width: 44px; }
         .btn-outline:hover { background: #7c3aed20; }
-        .btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
+        .btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; min-height: 44px; min-width: 44px; }
         .btn-danger:hover { background: #ef444420; }
-        .btn-large { padding: 12px 28px; font-size: 1rem; }
+        .btn-large { padding: 12px 28px; font-size: 1rem; min-height: 44px; min-width: 44px; }
 
         .add-bar { text-align: center; margin: 30px 0; }
         .empty { text-align: center; color: #666; padding: 60px 20px; }
@@ -43,7 +43,7 @@
         label { display: block; margin-bottom: 4px; color: #a78bfa; font-size: 0.9rem; }
         input, select {
             width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #2a2a4a;
-            background: #16162a; color: #e0e0e0; font-size: 16px;
+            background: #16162a; color: #e0e0e0; font-size: 16px; min-height: 44px; min-width: 44px;
         }
         input:focus, select:focus { outline: none; border-color: #7c3aed; }
 
@@ -68,7 +68,7 @@
 
         .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
         .tab {
-            padding: 8px 16px; border-radius: 8px; cursor: pointer;
+            padding: 8px 16px; border-radius: 8px; cursor: pointer; min-height: 44px; min-width: 44px;
             background: #1a1a2e; border: 1px solid #2a2a4a; color: #888;
             font-size: 0.9rem; transition: all .2s;
         }
@@ -80,7 +80,7 @@
             color: #ccc;
         }
 
-        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 16px; }
+        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
         .back-link:hover { color: #a78bfa; }
 
         .loading { text-align: center; padding: 40px; color: #888; }

@@ -2,13 +2,13 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ person.name }} — Натална карта | Миралог</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; }
-        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 16px; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
         .back-link:hover { color: #a78bfa; }
 
         .chart-header { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
@@ -17,7 +17,7 @@
 
         .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
         .tab {
-            padding: 8px 16px; border-radius: 8px; cursor: pointer;
+            padding: 8px 16px; border-radius: 8px; cursor: pointer; min-height: 44px; min-width: 44px;
             background: #1a1a2e; border: 1px solid #2a2a4a; color: #888;
             font-size: 0.9rem; transition: all .2s; user-select: none;
         }
@@ -68,10 +68,36 @@
         .stat-value { color: #c9b1ff; font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
 
         @media (max-width: 600px) {
-            .planet-row { grid-template-columns: 100px 1fr; }
-            .planet-house, .planet-move { display: none; }
+            .planet-row {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: baseline;
+                gap: 0;
+                padding: 8px 0;
+                border-bottom: 1px solid #1e1e36;
+                font-size: 0.85rem;
+            }
+            .planet-row:last-child { border-bottom: none; }
+            .planet-name {
+                min-width: 80px;
+                flex-shrink: 0;
+            }
+            .planet-sign {
+                flex: 1;
+            }
+            .planet-house {
+                display: inline;
+                color: #888;
+                font-size: 0.8rem;
+            }
+            .planet-house::before { content: " | "; }
+            .planet-move {
+                display: inline;
+                font-size: 0.8rem;
+            }
+            .planet-move::before { content: " | "; }
             .tabs { gap: 2px; }
-            .tab { padding: 6px 10px; font-size: 0.8rem; }
+            .tab { padding: 8px 12px; font-size: 0.85rem; min-height: 44px; min-width: 44px; }
         }
     </style>
 </head>
