@@ -582,13 +582,40 @@ def api_interpretation(person_id: int, user: Tuple[int, str] = Depends(get_curre
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    persons = get_all_persons(1) if False else []  # Web UI shows no persons without login
-    return HTMLResponse(templates.get_template("index.html").render({"request": request, "persons": persons}))
+    """Root: redirect to /dashboard if token cookie exists, else /login"""
+    # Check for a simple cookie hint or just serve login — JS handles token check
+    return HTMLResponse(templates.get_template("login.html").render({"request": request}))
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return HTMLResponse(templates.get_template("login.html").render({"request": request}))
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return HTMLResponse(templates.get_template("register.html").render({"request": request}))
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request):
+    """Dashboard — client-side JS handles auth check via localStorage token."""
+    return HTMLResponse(templates.get_template("dashboard.html").render({"request": request}))
 
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
-    # Web chart view uses first user as default for simplicity
-    p = get_person(person_id, 1)
+    """Chart view — uses token from localStorage on client side."""
+    # Try to get user from Bearer token in request
+    user_id = None
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            user_id = int(payload["sub"])
+        except JWTError:
+            pass
+    if not user_id:
+        # Fallback: redirect to login (chart page needs auth)
+        return RedirectResponse("/login", status_code=302)
+
+    p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
     chart_data = compute_natal(p)
@@ -597,32 +624,6 @@ async def view_chart(request: Request, person_id: int):
         "person": p,
         "chart": chart_data,
     }))
-
-@app.get("/add", response_class=HTMLResponse)
-async def add_person_form(request: Request):
-    return HTMLResponse(templates.get_template("add.html").render({"request": request}))
-
-@app.post("/add")
-async def add_person_submit(
-    request: Request,
-    name: str = Form(...),
-    year: int = Form(...),
-    month: int = Form(...),
-    day: int = Form(...),
-    hour: int = Form(0),
-    minute: int = Form(0),
-    lat: float = Form(...),
-    lon: float = Form(...),
-    timezone: str = Form("Europe/Sofia"),
-):
-    # Web form uses user_id=1 as default
-    with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute(
-            "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (1, name, year, month, day, hour, minute, lat, lon, timezone)
-        )
-        conn.commit()
-        return RedirectResponse(f"/chart/{cur.lastrowid}", status_code=303)
 
 @app.get("/healthz")
 def health():

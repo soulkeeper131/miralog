@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Табло — Миралог</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: #0a0a1a;
+            color: #e0e0e0;
+            min-height: 100dvh;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+
+        /* Top bar */
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .topbar h1 {
+            color: #c9b1ff;
+            font-size: 1.6rem;
+        }
+        .topbar .greeting {
+            color: #888;
+            font-size: 0.9rem;
+            margin-top: 2px;
+        }
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 18px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            min-height: 44px;
+            min-width: 44px;
+            white-space: nowrap;
+        }
+        .btn-primary { background: #7c3aed; color: white; }
+        .btn-primary:hover { background: #6d28d9; }
+        .btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
+        .btn-danger:hover { background: #ef444420; }
+        .btn-large { padding: 14px 28px; font-size: 1.05rem; min-height: 48px; min-width: 48px; }
+        .btn-icon { padding: 10px; min-width: 44px; min-height: 44px; }
+
+        /* Section headers */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            margin-top: 8px;
+        }
+        .section-header h2 {
+            color: #a78bfa;
+            font-size: 1.2rem;
+        }
+
+        /* Person cards */
+        .person-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: border-color 0.2s;
+            gap: 12px;
+        }
+        .person-card:hover { border-color: #a78bfa; }
+        .person-info { flex: 1; min-width: 0; }
+        .person-info h3 {
+            color: #c9b1ff;
+            font-size: 1.05rem;
+            margin-bottom: 3px;
+        }
+        .person-info .meta {
+            color: #888;
+            font-size: 0.82rem;
+        }
+        .person-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Empty state */
+        .empty {
+            text-align: center;
+            color: #666;
+            padding: 50px 20px;
+            background: #1a1a2e;
+            border: 1px dashed #2a2a4a;
+            border-radius: 12px;
+        }
+        .empty p { margin-bottom: 6px; }
+
+        /* Add bar */
+        .add-bar {
+            text-align: center;
+            margin: 28px 0;
+        }
+
+        /* Loading / error */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .error-banner {
+            background: #2d1b1b;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: #fca5a5;
+            font-size: 0.9rem;
+            margin-bottom: 16px;
+        }
+
+        /* Modal overlay for add person */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 16px;
+            padding: 28px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h2 {
+            color: #c9b1ff;
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 14px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            color: #a78bfa;
+            font-size: 0.85rem;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #2a2a4a;
+            background: #16162a;
+            color: #e0e0e0;
+            font-size: 16px;
+            min-height: 44px;
+            min-width: 44px;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #7c3aed;
+        }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        .hint { font-size: 0.72rem; color: #999; margin-top: 2px; }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+        .btn-cancel { background: transparent; border: 1px solid #555; color: #888; }
+        .btn-cancel:hover { background: #55555520; color: #ccc; }
+
+        @media (max-width: 600px) {
+            .container { padding: 12px; }
+            .person-card { flex-direction: column; align-items: flex-start; }
+            .person-actions { width: 100%; justify-content: flex-end; }
+            .topbar { flex-direction: column; align-items: flex-start; }
+            .topbar-right { width: 100%; justify-content: space-between; }
+            .modal { padding: 20px; border-radius: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Top bar -->
+        <div class="topbar">
+            <div>
+                <h1>🔮 Миралог</h1>
+                <div class="greeting">Здравей, <span id="userEmail">...</span>!</div>
+            </div>
+            <div class="topbar-right">
+                <button class="btn btn-danger" onclick="logout()">Изход</button>
+            </div>
+        </div>
+
+        <!-- Error banner -->
+        <div id="errorBanner" class="error-banner" style="display:none;"></div>
+
+        <!-- Persons list -->
+        <div class="section-header">
+            <h2>Твоите хора</h2>
+        </div>
+
+        <div id="personsList">
+            <div class="loading">Зареждане...</div>
+        </div>
+
+        <!-- Add button -->
+        <div class="add-bar">
+            <button class="btn btn-primary btn-large" onclick="openAddModal()">＋ Добави човек</button>
+        </div>
+    </div>
+
+    <!-- Add Person Modal -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal">
+            <h2>Добави човек</h2>
+            <div id="modalError" class="error-banner" style="display:none;"></div>
+            <form id="addPersonForm">
+                <div class="form-group">
+                    <label>Име</label>
+                    <input type="text" id="addName" required placeholder="Име на човека">
+                </div>
+                <div class="row-3">
+                    <div class="form-group">
+                        <label>Година</label>
+                        <input type="number" id="addYear" required placeholder="1988" min="1800" max="2100">
+                    </div>
+                    <div class="form-group">
+                        <label>Месец</label>
+                        <input type="number" id="addMonth" required placeholder="1" min="1" max="12">
+                    </div>
+                    <div class="form-group">
+                        <label>Ден</label>
+                        <input type="number" id="addDay" required placeholder="8" min="1" max="31">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Час <span class="hint">(по Гринуич)</span></label>
+                        <input type="number" id="addHour" value="12" min="0" max="23">
+                    </div>
+                    <div class="form-group">
+                        <label>Минути</label>
+                        <input type="number" id="addMinute" value="0" min="0" max="59">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Геогр. ширина</label>
+                        <input type="number" id="addLat" step="any" required placeholder="42.6977">
+                    </div>
+                    <div class="form-group">
+                        <label>Геогр. дължина</label>
+                        <input type="number" id="addLon" step="any" required placeholder="23.3219">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Часова зона</label>
+                    <input type="text" id="addTimezone" value="Europe/Sofia" placeholder="Europe/Sofia">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="closeAddModal()">Отказ</button>
+                    <button type="submit" class="btn btn-primary" id="addSubmitBtn">Добави</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- Auth helpers ---
+        function getToken() {
+            return localStorage.getItem('miralog_token');
+        }
+
+        function authHeaders() {
+            const token = getToken();
+            if (!token) return {};
+            return { 'Authorization': 'Bearer ' + token };
+        }
+
+        function logout() {
+            localStorage.removeItem('miralog_token');
+            localStorage.removeItem('miralog_email');
+            window.location.replace('/login');
+        }
+
+        // Redirect if no token
+        if (!getToken()) {
+            window.location.replace('/login');
+        }
+
+        // Show email
+        const email = localStorage.getItem('miralog_email') || '...';
+        document.getElementById('userEmail').textContent = email;
+
+        // --- API helpers ---
+        function showError(msg) {
+            const el = document.getElementById('errorBanner');
+            el.textContent = msg;
+            el.style.display = 'block';
+            setTimeout(() => { el.style.display = 'none'; }, 5000);
+        }
+
+        async function apiGet(url) {
+            const resp = await fetch(url, { headers: authHeaders() });
+            if (resp.status === 401) {
+                logout();
+                return null;
+            }
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                throw new Error(data.detail || 'API грешка');
+            }
+            return resp.json();
+        }
+
+        async function fetchPersons() {
+            const listEl = document.getElementById('personsList');
+            try {
+                const data = await apiGet('/api/persons');
+                if (!data) return;
+
+                const persons = data.persons || [];
+                if (persons.length === 0) {
+                    listEl.innerHTML = `
+                        <div class="empty">
+                            <p>Все още няма добавени хора.</p>
+                            <p>Добавете първия човек, за да видите наталната му карта.</p>
+                        </div>`;
+                    return;
+                }
+
+                let html = '';
+                persons.forEach(p => {
+                    const hour = String(p.hour).padStart(2, '0');
+                    const minute = String(p.minute).padStart(2, '0');
+                    html += `
+                        <div class="person-card">
+                            <div class="person-info">
+                                <h3>${escapeHtml(p.name)}</h3>
+                                <div class="meta">
+                                    ${p.day}.${p.month}.${p.year}, ${hour}:${minute} ч.
+                                    • ${p.lat}, ${p.lon}
+                                </div>
+                            </div>
+                            <div class="person-actions">
+                                <a href="/chart/${p.id}" class="btn btn-primary">Карта</a>
+                                <button class="btn btn-danger btn-icon" onclick="deletePerson(${p.id})" title="Изтрий">✕</button>
+                            </div>
+                        </div>`;
+                });
+                listEl.innerHTML = html;
+            } catch (err) {
+                listEl.innerHTML = `<div class="error-banner">Грешка при зареждане: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function deletePerson(id) {
+            if (!confirm('Сигурни ли сте, че искате да изтриете този човек?')) return;
+            try {
+                const resp = await fetch('/api/persons/' + id, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+                if (resp.status === 401) { logout(); return; }
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.detail || 'Грешка при изтриване');
+                }
+                fetchPersons();
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        // --- Add person modal ---
+        function openAddModal() {
+            document.getElementById('addModal').classList.add('open');
+            document.getElementById('modalError').style.display = 'none';
+            document.getElementById('addPersonForm').reset();
+            document.getElementById('addTimezone').value = 'Europe/Sofia';
+            document.getElementById('addHour').value = '12';
+            document.getElementById('addMinute').value = '0';
+            document.getElementById('addName').focus();
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('open');
+        }
+
+        document.getElementById('addPersonForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const modalError = document.getElementById('modalError');
+            const submitBtn = document.getElementById('addSubmitBtn');
+            modalError.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Добавяне...';
+
+            const formData = new FormData();
+            formData.append('name', document.getElementById('addName').value.trim());
+            formData.append('year', document.getElementById('addYear').value);
+            formData.append('month', document.getElementById('addMonth').value);
+            formData.append('day', document.getElementById('addDay').value);
+            formData.append('hour', document.getElementById('addHour').value);
+            formData.append('minute', document.getElementById('addMinute').value);
+            formData.append('lat', document.getElementById('addLat').value);
+            formData.append('lon', document.getElementById('addLon').value);
+            formData.append('timezone', document.getElementById('addTimezone').value.trim() || 'Europe/Sofia');
+
+            try {
+                const resp = await fetch('/api/persons', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: formData
+                });
+                if (resp.status === 401) { logout(); return; }
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.detail || 'Грешка при добавяне');
+                }
+                closeAddModal();
+                fetchPersons();
+            } catch (err) {
+                modalError.textContent = err.message;
+                modalError.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Добави';
+            }
+        });
+
+        // Close modal on overlay click
+        document.getElementById('addModal').addEventListener('click', function(e) {
+            if (e.target === this) closeAddModal();
+        });
+
+        // Close modal on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeAddModal();
+        });
+
+        // --- Init ---
+        fetchPersons();
+    </script>
+</body>
+</html>

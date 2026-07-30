@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Регистрация — Миралог</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: #0a0a1a;
+            color: #c9b1ff;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+        .container {
+            width: 100%;
+            max-width: 420px;
+            padding: 24px;
+            padding-top: max(24px, env(safe-area-inset-top));
+            padding-bottom: max(24px, env(safe-area-inset-bottom));
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 8px;
+            font-size: 2.5rem;
+        }
+        h1 {
+            color: #c9b1ff;
+            font-size: 1.8rem;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 28px;
+            font-size: 0.9rem;
+        }
+        .card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 16px;
+            padding: 28px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #a78bfa;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid #2a2a4a;
+            background: #16162a;
+            color: #e0e0e0;
+            font-size: 16px;
+            min-height: 44px;
+            min-width: 44px;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #7c3aed;
+        }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: none;
+            background: #7c3aed;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            min-height: 44px;
+            min-width: 44px;
+            transition: background 0.2s;
+            margin-top: 4px;
+        }
+        .btn:hover { background: #6d28d9; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .error-msg {
+            background: #2d1b1b;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fca5a5;
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .error-msg.visible { display: block; }
+
+        .success-msg {
+            background: #1b2d1b;
+            border: 1px solid #22c55e;
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #86efac;
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .success-msg.visible { display: block; }
+
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            color: #888;
+        }
+        .footer a {
+            color: #a78bfa;
+            text-decoration: none;
+            min-height: 44px;
+            min-width: 44px;
+            display: inline-flex;
+            align-items: center;
+        }
+        .footer a:hover { text-decoration: underline; }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🔮</div>
+        <h1>Миралог</h1>
+        <p class="subtitle">Създайте своя астрологичен профил</p>
+
+        <div class="card">
+            <div id="error" class="error-msg"></div>
+            <div id="success" class="success-msg"></div>
+
+            <form id="registerForm" autocomplete="on">
+                <div class="form-group">
+                    <label for="email">Имейл</label>
+                    <input type="email" id="email" name="email" required
+                           placeholder="вашият@имейл.com" autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="password">Парола</label>
+                    <input type="password" id="password" name="password" required
+                           placeholder="минимум 6 символа" autocomplete="new-password" minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="password_confirm">Потвърдете паролата</label>
+                    <input type="password" id="password_confirm" name="password_confirm" required
+                           placeholder="••••••••" autocomplete="new-password" minlength="6">
+                </div>
+                <button type="submit" class="btn" id="submitBtn">Регистрация</button>
+            </form>
+        </div>
+
+        <div class="footer">
+            Вече имате профил? <a href="/login">Вход</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('registerForm');
+        const errorEl = document.getElementById('error');
+        const successEl = document.getElementById('success');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // If already logged in, redirect to dashboard
+        const existingToken = localStorage.getItem('miralog_token');
+        if (existingToken) {
+            window.location.replace('/dashboard');
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.classList.remove('visible');
+            successEl.classList.remove('visible');
+
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('password_confirm').value;
+
+            // Client-side validation
+            if (password !== passwordConfirm) {
+                errorEl.textContent = 'Паролите не съвпадат';
+                errorEl.classList.add('visible');
+                return;
+            }
+
+            if (password.length < 6) {
+                errorEl.textContent = 'Паролата трябва да е поне 6 символа';
+                errorEl.classList.add('visible');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading-spinner"></span> Регистрация...';
+
+            try {
+                const resp = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.detail || 'Грешка при регистрация');
+                }
+
+                // Registration successful — store token and go to dashboard
+                localStorage.setItem('miralog_token', data.token);
+                localStorage.setItem('miralog_email', data.user.email);
+
+                successEl.textContent = 'Регистрацията е успешна! Пренасочване...';
+                successEl.classList.add('visible');
+
+                setTimeout(() => {
+                    window.location.replace('/dashboard');
+                }, 800);
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.add('visible');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Регистрация';
+            }
+        });
+    </script>
+</body>
+</html>
