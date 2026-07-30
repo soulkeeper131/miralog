@@ -14,7 +14,7 @@ if os.path.isdir(_ephe_path):
     os.environ["SE_EPHE_PATH"] = _ephe_path
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import OAuth2PasswordBearer
@@ -471,6 +471,19 @@ def api_natal_chart_text(person_id: int, user: Tuple[int, str] = Depends(get_cur
     chart_data = compute_natal(p)
     text = natal_to_text(p, chart_data)
     return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
+
+@app.get("/api/persons/{person_id}/chart.svg")
+def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    """Return natal chart as SVG."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    chart_data = compute_natal(p)
+    from chart_svg import generate_chart_svg
+    svg = generate_chart_svg(chart_data)
+    return Response(content=svg, media_type="image/svg+xml")
+
 
 @app.post("/api/synastry")
 def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_current_user)):
