@@ -5,3 +5,5 @@ pyswisseph
 jinja2
 python-multipart
 python-dotenv
+bcrypt
+python-jose

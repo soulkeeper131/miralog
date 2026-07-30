@@ -1,7 +1,7 @@
 import os, json, sqlite3, datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -14,22 +14,40 @@ if os.path.isdir(_ephe_path):
     os.environ["SE_EPHE_PATH"] = _ephe_path
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.security import OAuth2PasswordBearer
 from immanuel import charts
 from immanuel.const import chart, names
 from pydantic import BaseModel
+from jose import jwt, JWTError
+import bcrypt
 
 # --- App Setup ---
 DB_PATH = Path(__file__).parent / "persons.db"
-API_SECRET = os.environ.get("API_SECRET", "astrology-secret-key-change-me")
+SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production-secret-key")
+ALGORITHM = "HS256"
+TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
+        # Users table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Persons table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS persons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
                 name TEXT NOT NULL,
                 year INTEGER NOT NULL,
                 month INTEGER NOT NULL,
@@ -42,6 +60,29 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migration: add user_id column if missing, delete orphan persons
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(persons)").fetchall()]
+        if "user_id" not in cols:
+            # Recreate persons table with user_id
+            conn.execute("DELETE FROM persons")
+            conn.execute("""
+                CREATE TABLE persons_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    name TEXT NOT NULL,
+                    year INTEGER NOT NULL,
+                    month INTEGER NOT NULL,
+                    day INTEGER NOT NULL,
+                    hour INTEGER DEFAULT 0,
+                    minute INTEGER DEFAULT 0,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    timezone TEXT DEFAULT 'Europe/Sofia',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("DROP TABLE persons")
+            conn.execute("ALTER TABLE persons_new RENAME TO persons")
         conn.commit()
 
 @asynccontextmanager
@@ -75,35 +116,79 @@ class TransitsRequest(BaseModel):
     person_id: int
     target_date: str  # ISO format: "2026-08-15T12:00:00"
 
-# --- Auth ---
-def verify_token(request: Request):
-    """Verify API key for POST/PUT/DELETE requests. GET is allowed without token."""
-    token = request.headers.get("X-API-Key") or request.cookies.get("api_token")
-    if token != API_SECRET:
-        if request.method == "GET":
-            return True
-        raise HTTPException(403, "Invalid API key")
-    return True
+class AuthRequest(BaseModel):
+    email: str
+    password: str
 
-# --- Helpers ---
-def get_person(person_id: int) -> dict | None:
+# --- Auth Helpers ---
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+def create_token(user_id: int, email: str) -> str:
+    expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "exp": expire
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> Tuple[int, str]:
+    """Dependency that returns (user_id, email) from valid JWT token."""
+    if not token:
+        raise HTTPException(401, "Not authenticated. Use Bearer token in Authorization header.")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+        email = payload["email"]
+        return user_id, email
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired token")
+
+# --- DB Helpers ---
+def get_user_by_email(email: str) -> Optional[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM persons WHERE id = ?", (person_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         return dict(row) if row else None
 
-def get_all_persons() -> list[dict]:
+def create_user(email: str, password_hash: str) -> dict:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        return [dict(r) for r in conn.execute("SELECT * FROM persons ORDER BY name").fetchall()]
+        cur = conn.execute(
+            "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+            (email, password_hash)
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row) if row else {}
 
-def update_person(person_id: int, data: BirthDataUpdate) -> bool:
+def get_person(person_id: int, user_id: int) -> Optional[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM persons WHERE id = ? AND user_id = ?",
+            (person_id, user_id)
+        ).fetchone()
+        return dict(row) if row else None
+
+def get_all_persons(user_id: int) -> list[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM persons WHERE user_id = ? ORDER BY name", (user_id,)
+        ).fetchall()]
+
+def update_person(person_id: int, user_id: int, data: BirthDataUpdate) -> bool:
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             """UPDATE persons SET year=?, month=?, day=?, hour=?, minute=?,
-               lat=?, lon=?, timezone=? WHERE id=?""",
+               lat=?, lon=?, timezone=? WHERE id=? AND user_id=?""",
             (data.year, data.month, data.day, data.hour, data.minute,
-             data.lat, data.lon, data.timezone, person_id)
+             data.lat, data.lon, data.timezone, person_id, user_id)
         )
         conn.commit()
         return cur.rowcount > 0
@@ -268,14 +353,51 @@ def natal_to_text(person: dict, chart_data: dict) -> str:
     lines.append("=" * 60)
     return "\n".join(lines)
 
-# --- API Routes ---
+# --- Auth API Routes ---
+@app.post("/api/auth/register")
+def api_register(data: AuthRequest):
+    """Register a new user. Returns JWT token + user info."""
+    if len(data.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    existing = get_user_by_email(data.email)
+    if existing:
+        raise HTTPException(400, "Email already registered")
+    pw_hash = hash_password(data.password)
+    user = create_user(data.email, pw_hash)
+    token = create_token(user["id"], user["email"])
+    return {
+        "token": token,
+        "user": {"id": user["id"], "email": user["email"]}
+    }
+
+@app.post("/api/auth/login")
+def api_login(data: AuthRequest):
+    """Login with email/password. Returns JWT token + user info."""
+    user = get_user_by_email(data.email)
+    if not user or not verify_password(data.password, user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password")
+    token = create_token(user["id"], user["email"])
+    return {
+        "token": token,
+        "user": {"id": user["id"], "email": user["email"]}
+    }
+
+@app.get("/api/auth/me")
+def api_me(user: Tuple[int, str] = Depends(get_current_user)):
+    """Get current authenticated user from token."""
+    user_id, email = user
+    return {"id": user_id, "email": email}
+
+# --- API Routes (AUTH REQUIRED) ---
 @app.get("/api/persons")
-def api_list_persons():
-    return {"persons": get_all_persons()}
+def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
+    user_id, email = user
+    return {"persons": get_all_persons(user_id)}
 
 @app.get("/api/persons/{person_id}")
-def api_get_person(person_id: int):
-    p = get_person(person_id)
+def api_get_person(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    user_id, email = user
+    p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
     return p
@@ -291,68 +413,82 @@ def api_create_person(
     lat: float = Form(...),
     lon: float = Form(...),
     timezone: str = Form("Europe/Sofia"),
-    _auth: bool = Depends(verify_token),
+    user: Tuple[int, str] = Depends(get_current_user),
 ):
+    user_id, email = user
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
-            "INSERT INTO persons (name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?)",
-            (name, year, month, day, hour, minute, lat, lon, timezone)
+            "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (user_id, name, year, month, day, hour, minute, lat, lon, timezone)
         )
         conn.commit()
-        return {"id": cur.lastrowid, "name": name}
+        return {"id": cur.lastrowid, "name": name, "user_id": user_id}
 
 @app.delete("/api/persons/{person_id}")
-def api_delete_person(person_id: int, _auth: bool = Depends(verify_token)):
+def api_delete_person(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    user_id, email = user
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+        cur = conn.execute(
+            "DELETE FROM persons WHERE id = ? AND user_id = ?",
+            (person_id, user_id)
+        )
         conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Person not found")
     return {"deleted": person_id}
 
 @app.get("/api/persons/{person_id}/natal")
-def api_natal_chart(person_id: int):
-    p = get_person(person_id)
+def api_natal_chart(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    user_id, email = user
+    p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
     return compute_natal(p)
 
 @app.post("/api/persons/{person_id}/natal")
-def api_natal_chart_update(person_id: int, data: BirthDataUpdate, _auth: bool = Depends(verify_token)):
+def api_natal_chart_update(
+    person_id: int,
+    data: BirthDataUpdate,
+    user: Tuple[int, str] = Depends(get_current_user),
+):
     """Update birth data and return recalculated natal chart."""
-    p = get_person(person_id)
+    user_id, email = user
+    p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
-    if not update_person(person_id, data):
+    if not update_person(person_id, user_id, data):
         raise HTTPException(500, "Failed to update person")
-    # Fetch updated person
-    p = get_person(person_id)
+    p = get_person(person_id, user_id)
     return compute_natal(p)
 
 @app.get("/api/persons/{person_id}/natal.txt")
-def api_natal_chart_text(person_id: int):
+def api_natal_chart_text(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
     """Return natal chart as plain text."""
-    p = get_person(person_id)
+    user_id, email = user
+    p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
     chart_data = compute_natal(p)
     text = natal_to_text(p, chart_data)
-    from fastapi.responses import PlainTextResponse
     return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
 
 @app.post("/api/synastry")
-def api_synastry(data: SynastryRequest, _auth: bool = Depends(verify_token)):
+def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_current_user)):
     """Compute synastry (composite) chart between two persons."""
-    p1 = get_person(data.person1_id)
+    user_id, email = user
+    p1 = get_person(data.person1_id, user_id)
     if not p1:
         raise HTTPException(404, f"Person 1 (id={data.person1_id}) not found")
-    p2 = get_person(data.person2_id)
+    p2 = get_person(data.person2_id, user_id)
     if not p2:
         raise HTTPException(404, f"Person 2 (id={data.person2_id}) not found")
     return compute_composite(p1, p2)
 
 @app.post("/api/transits")
-def api_transits(data: TransitsRequest, _auth: bool = Depends(verify_token)):
+def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_current_user)):
     """Compute transits for a person at a given target date."""
-    p = get_person(data.person_id)
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
     if not p:
         raise HTTPException(404, f"Person (id={data.person_id}) not found")
     try:
@@ -362,9 +498,10 @@ def api_transits(data: TransitsRequest, _auth: bool = Depends(verify_token)):
     return compute_transits(p, target_date)
 
 @app.get("/api/persons/{person_id}/interpretation")
-def api_interpretation(person_id: int):
+def api_interpretation(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
     """Generate AI interpretation of a natal chart."""
-    p = get_person(person_id)
+    user_id, email = user
+    p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
 
@@ -445,12 +582,13 @@ def api_interpretation(person_id: int):
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    persons = get_all_persons()
+    persons = get_all_persons(1) if False else []  # Web UI shows no persons without login
     return HTMLResponse(templates.get_template("index.html").render({"request": request, "persons": persons}))
 
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
-    p = get_person(person_id)
+    # Web chart view uses first user as default for simplicity
+    p = get_person(person_id, 1)
     if not p:
         raise HTTPException(404, "Person not found")
     chart_data = compute_natal(p)
@@ -477,10 +615,11 @@ async def add_person_submit(
     lon: float = Form(...),
     timezone: str = Form("Europe/Sofia"),
 ):
+    # Web form uses user_id=1 as default
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
-            "INSERT INTO persons (name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?)",
-            (name, year, month, day, hour, minute, lat, lon, timezone)
+            "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (1, name, year, month, day, hour, minute, lat, lon, timezone)
         )
         conn.commit()
         return RedirectResponse(f"/chart/{cur.lastrowid}", status_code=303)
