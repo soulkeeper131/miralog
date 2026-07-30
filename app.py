@@ -50,6 +50,8 @@ async def lifespan(app: FastAPI):
     yield
 
 templates = Jinja2Templates(directory="templates")
+# Fix for Jinja2 3.1.6 + Starlette 1.0.1: request object is not hashable
+templates.env.cache_size = 0
 
 app = FastAPI(title="Миралог", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -444,7 +446,7 @@ def api_interpretation(person_id: int):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     persons = get_all_persons()
-    return templates.TemplateResponse("index.html", {"request": request, "persons": persons})
+    return HTMLResponse(templates.get_template("index.html").render({"request": request, "persons": persons}))
 
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
@@ -452,15 +454,15 @@ async def view_chart(request: Request, person_id: int):
     if not p:
         raise HTTPException(404, "Person not found")
     chart_data = compute_natal(p)
-    return templates.TemplateResponse("chart.html", {
+    return HTMLResponse(templates.get_template("chart.html").render({
         "request": request,
         "person": p,
         "chart": chart_data,
-    })
+    }))
 
 @app.get("/add", response_class=HTMLResponse)
 async def add_person_form(request: Request):
-    return templates.TemplateResponse("add.html", {"request": request})
+    return HTMLResponse(templates.get_template("add.html").render({"request": request}))
 
 @app.post("/add")
 async def add_person_submit(
