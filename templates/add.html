@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добави човек — Миралог</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; }
+        .container { max-width: 500px; margin: 0 auto; padding: 20px; }
+        h1 { color: #c9b1ff; font-size: 1.5rem; margin-bottom: 24px; text-align: center; }
+        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 16px; }
+        .back-link:hover { color: #a78bfa; }
+        form { background: #1a1a2e; border-radius: 12px; padding: 24px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 4px; color: #a78bfa; font-size: 0.9rem; }
+        input, select {
+            width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #2a2a4a;
+            background: #16162a; color: #e0e0e0; font-size: 16px;
+        }
+        input:focus, select:focus { outline: none; border-color: #7c3aed; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+        .btn {
+            width: 100%; padding: 12px; border-radius: 8px; border: none;
+            background: #7c3aed; color: white; font-size: 1rem; font-weight: 600;
+            cursor: pointer; margin-top: 8px;
+        }
+        .btn:hover { background: #6d28d9; }
+        .hint { font-size: 0.75rem; color: #666; margin-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Назад</a>
+        <h1>Добави човек</h1>
+        <form method="POST" action="/add">
+            <div class="form-group">
+                <label>Име</label>
+                <input type="text" name="name" required placeholder="Име на човека">
+            </div>
+
+            <div class="row-3">
+                <div class="form-group">
+                    <label>Година</label>
+                    <input type="number" name="year" required placeholder="1988" min="1800" max="2100">
+                </div>
+                <div class="form-group">
+                    <label>Месец</label>
+                    <input type="number" name="month" required placeholder="1" min="1" max="12">
+                </div>
+                <div class="form-group">
+                    <label>Ден</label>
+                    <input type="number" name="day" required placeholder="8" min="1" max="31">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="form-group">
+                    <label>Час</label>
+                    <input type="number" name="hour" value="12" min="0" max="23">
+                    <span class="hint">по Гринуич</span>
+                </div>
+                <div class="form-group">
+                    <label>Минути</label>
+                    <input type="number" name="minute" value="0" min="0" max="59">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="form-group">
+                    <label>Географска ширина</label>
+                    <input type="number" name="lat" step="any" required placeholder="42.6977">
+                </div>
+                <div class="form-group">
+                    <label>Географска дължина</label>
+                    <input type="number" name="lon" step="any" required placeholder="23.3219">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Часова зона</label>
+                <input type="text" name="timezone" value="Europe/Sofia" placeholder="Europe/Sofia">
+            </div>
+
+            <button type="submit" class="btn">Създай натална карта</button>
+        </form>
+    </div>
+</body>
+</html>

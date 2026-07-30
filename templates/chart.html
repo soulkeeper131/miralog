@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ person.name }} — Натална карта | Миралог</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 16px; }
+        .back-link:hover { color: #a78bfa; }
+
+        .chart-header { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .chart-header h1 { color: #c9b1ff; font-size: 1.8rem; }
+        .chart-meta { color: #888; font-size: 0.9rem; margin-top: 8px; }
+
+        .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab {
+            padding: 8px 16px; border-radius: 8px; cursor: pointer;
+            background: #1a1a2e; border: 1px solid #2a2a4a; color: #888;
+            font-size: 0.9rem; transition: all .2s; user-select: none;
+        }
+        .tab.active { background: #7c3aed; border-color: #7c3aed; color: white; }
+        .tab:hover:not(.active) { border-color: #7c3aed; color: #a78bfa; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .section {
+            background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 16px;
+        }
+        .section h2 { color: #a78bfa; font-size: 1.1rem; margin-bottom: 12px; }
+
+        .planet-row {
+            display: grid; grid-template-columns: 120px 1fr 80px 80px;
+            padding: 8px 0; border-bottom: 1px solid #1e1e36; align-items: center;
+            font-size: 0.9rem;
+        }
+        .planet-row:last-child { border-bottom: none; }
+        .planet-name { color: #c9b1ff; font-weight: 600; }
+        .planet-sign { color: #e0e0e0; }
+        .planet-house { color: #888; text-align: center; }
+        .planet-move { color: #888; text-align: right; }
+        .planet-retro { color: #ef4444; }
+
+        .aspect-row {
+            padding: 6px 0; border-bottom: 1px solid #1e1e36;
+            font-size: 0.85rem; color: #aaa;
+        }
+
+        .interpretation {
+            white-space: pre-wrap; line-height: 1.8; font-size: 0.95rem;
+            color: #ccc;
+        }
+
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .error { background: #2d1b1b; border: 1px solid #ef4444; border-radius: 8px; padding: 12px; color: #fca5a5; }
+
+        .stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px; margin-top: 12px;
+        }
+        .stat {
+            background: #16162a; border-radius: 8px; padding: 12px; text-align: center;
+        }
+        .stat-label { color: #888; font-size: 0.8rem; }
+        .stat-value { color: #c9b1ff; font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
+
+        @media (max-width: 600px) {
+            .planet-row { grid-template-columns: 100px 1fr; }
+            .planet-house, .planet-move { display: none; }
+            .tabs { gap: 2px; }
+            .tab { padding: 6px 10px; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Всички хора</a>
+
+        <div class="chart-header">
+            <h1>{{ person.name }}</h1>
+            <div class="chart-meta">
+                {{ person.day }}.{{ person.month }}.{{ person.year }},
+                {{ person.hour }}:{{ '%02d'|format(person.minute) }} ч.
+                • {{ person.lat }}, {{ person.lon }}
+                • {{ person.timezone }}
+            </div>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-label">Форма</div>
+                    <div class="stat-value">{{ chart.shape or 'N/A' }}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Лунна фаза</div>
+                    <div class="stat-value">{{ chart.moon_phase or 'N/A' }}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Раждане</div>
+                    <div class="stat-value">{% if chart.diurnal %}Дневно{% else %}Нощно{% endif %}</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Домова система</div>
+                    <div class="stat-value">{{ chart.house_system }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('planets')">Планети</div>
+            <div class="tab" onclick="showTab('aspects')">Аспекти</div>
+            <div class="tab" onclick="showTab('interpretation')" id="tab-interpretation">AI Интерпретация</div>
+        </div>
+
+        <div id="tab-planets" class="tab-content active">
+            <div class="section">
+                <h2>Планети и точки</h2>
+                {% for oid, obj in chart.objects.items() %}
+                <div class="planet-row">
+                    <div class="planet-name">{{ obj.name }}</div>
+                    <div class="planet-sign">{{ obj.sign }} {{ obj.sign_longitude }}</div>
+                    <div class="planet-house">{{ obj.house }}</div>
+                    <div class="planet-move {% if obj.movement == 'Retrograde' %}planet-retro{% endif %}">
+                        {{ obj.movement or '' }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div id="tab-aspects" class="tab-content">
+            <div class="section">
+                <h2>Аспекти</h2>
+                {% if chart.aspects %}
+                    {% for a in chart.aspects %}
+                    <div class="aspect-row">
+                        {{ a.active }} <strong style="color:#a78bfa">{{ a.type }}</strong> {{ a.passive }}
+                        {% if a.orb %} (орб: {{ a.orb }}°){% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="color:#888">Няма данни за аспектите.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div id="tab-interpretation" class="tab-content">
+            <div class="section">
+                <h2>AI Интерпретация</h2>
+                <div id="interpretation-content" class="loading">
+                    Генериране на интерпретация...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-' + name).classList.add('active');
+
+            if (name === 'interpretation' && !window._interpretationLoaded) {
+                loadInterpretation();
+            }
+        }
+
+        async function loadInterpretation() {
+            window._interpretationLoaded = true;
+            const el = document.getElementById('interpretation-content');
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/interpretation');
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+    </script>
+</body>
+</html>
