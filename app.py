@@ -26,7 +26,7 @@ from jose import jwt, JWTError
 import bcrypt
 
 # --- App Setup ---
-DB_PATH = Path(__file__).parent / "persons.db"
+DB_PATH = Path(__file__).parent / "data" / "persons.db"
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production-secret-key")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
