@@ -15,8 +15,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY templates/ templates/
 
-# Create dirs for static files and ephemeris (ephe mounted via volume)
-RUN mkdir -p /app/static /app/ephe /app/data
+# Create dirs and download essential ephemeris files
+RUN mkdir -p /app/static /app/ephe /app/data && \
+    curl -sL -o /app/ephe/seas_18.se1 https://raw.githubusercontent.com/aloistr/swisseph/master/ephe/seas_18.se1 && \
+    curl -sL -o /app/ephe/sepl_18.se1 https://raw.githubusercontent.com/aloistr/swisseph/master/ephe/sepl_18.se1 && \
+    curl -sL -o /app/ephe/semo_18.se1 https://raw.githubusercontent.com/aloistr/swisseph/master/ephe/semo_18.se1 && \
+    curl -sL -o /app/ephe/sefstars.txt https://raw.githubusercontent.com/aloistr/swisseph/master/ephe/sefstars.txt && \
+    curl -sL -o /app/ephe/seorbel.txt https://raw.githubusercontent.com/aloistr/swisseph/master/ephe/seorbel.txt
 
 ENV SE_EPHE_PATH=/app/ephe
 ENV HOSTNAME=0.0.0.0
