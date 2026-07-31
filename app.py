@@ -569,32 +569,56 @@ def api_interpretation(person_id: int, user: Tuple[int, str] = Depends(get_curre
 
 Пиши на български, с професионален но разбираем език."""
 
-    # Try to call AI (DeepSeek/OpenAI)
-    ai_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    # Try Anthropic first, then DeepSeek/OpenAI
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    ai_key = anthropic_key or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if ai_key:
         try:
             import urllib.request
-            ai_response = urllib.request.Request(
-                "https://api.deepseek.com/v1/chat/completions",
-                data=json.dumps({
-                    "model": "deepseek-chat",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7,
-                    "max_tokens": 3000
-                }).encode(),
-                headers={
-                    "Authorization": f"Bearer {ai_key}",
-                    "Content-Type": "application/json"
-                },
-                method="POST"
-            )
-            with urllib.request.urlopen(ai_response, timeout=60) as resp:
-                result = json.loads(resp.read())
-                return {"interpretation": result["choices"][0]["message"]["content"]}
+
+            if anthropic_key:
+                # Anthropic Claude 3.5 Sonnet
+                ai_response = urllib.request.Request(
+                    "https://api.anthropic.com/v1/messages",
+                    data=json.dumps({
+                        "model": "claude-3-5-sonnet-20241022",
+                        "max_tokens": 3000,
+                        "temperature": 0.7,
+                        "messages": [{"role": "user", "content": prompt}]
+                    }).encode(),
+                    headers={
+                        "x-api-key": anthropic_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json"
+                    },
+                    method="POST"
+                )
+                with urllib.request.urlopen(ai_response, timeout=90) as resp:
+                    result = json.loads(resp.read())
+                    return {"interpretation": result["content"][0]["text"]}
+            else:
+                # DeepSeek / OpenAI compatible
+                ai_response = urllib.request.Request(
+                    "https://api.deepseek.com/v1/chat/completions",
+                    data=json.dumps({
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.7,
+                        "max_tokens": 3000
+                    }).encode(),
+                    headers={
+                        "Authorization": f"Bearer {ai_key}",
+                        "Content-Type": "application/json"
+                    },
+                    method="POST"
+                )
+                with urllib.request.urlopen(ai_response, timeout=60) as resp:
+                    result = json.loads(resp.read())
+                    return {"interpretation": result["choices"][0]["message"]["content"]}
         except Exception as e:
             return {"interpretation": f"⚠️ AI интерпретацията не можа да се генерира: {str(e)}. Моля, проверете API ключа."}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте DEEPSEEK_API_KEY или OPENAI_API_KEY в environment променливите."}
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте ANTHROPIC_API_KEY или DEEPSEEK_API_KEY в environment променливите."}
 
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
