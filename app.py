@@ -749,7 +749,16 @@ STYLE_RULES = """
 - ЛОГИКА: върви от общото към конкретното, така че читателят да вижда връзката между данните и изводите.
 - ДЪЛЖИНА: бъди подробен — всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи.
 - Бъди конкретен, избягвай клишета. Обяснявай астрологичните термини накратко, за да е разбираемо и за човек без познания.
-- Основавай се единствено на подадените данни, без да добавяш измислени детайли."""
+- Основавай се единствено на подадените данни, без да добавяш измислени детайли.
+
+=== ПРАВОПИС (задължително) ===
+Пиши на книжовен български. Внимавай особено за:
+- "в" / "във": пълната форма "във" се пише САМО пред думи, започващи с "в" или "ф" (във въздуха, във фокуса). Иначе винаги "в" (в дома, в знака, в картата).
+- "с" / "със": пълната форма "със" се пише САМО пред думи, започващи със "с" или "з" (със Сатурн, със знанието). Иначе винаги "с" (с Луната, с търпение, с хората).
+- Пълен и кратък член: пълен член (-ът, -ят) само при подлог (Сатурн е учителят); кратък (-а, -я) при допълнение (виждаш учителя).
+- Пълните форми на местоименията: "него/нея" след предлог, "го/я" като кратка форма.
+- Не пропускай запетаи пред "който", "която", "което", "които", "че", "но", "а".
+- Внимавай с бройната форма: два/три + мъжки род = "два аспекта", "три знака" (не "аспекти"/"знакове")."""
 
 def first_name(full_name: str) -> str:
     """First name only — the readings address the person informally."""
@@ -971,6 +980,188 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
             set_ai_cache(person_id, "profile", interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
+KARMIC_POINTS = ("True North Node", "True South Node", "Chiron", "Saturn", "Pluto", "True Lilith")
+
+def build_karmic(chart_data: dict, numerology: dict) -> dict:
+    """Collect the chart's traditionally karmic markers — lunar nodes, Chiron,
+    Saturn, Pluto, Lilith, 12th-house tenants and retrogrades — plus the
+    numerology life path. These are the factual basis the akashic reading uses."""
+    objects = chart_data.get("objects", {})
+    by_name = {o["name"]: o for o in objects.values()}
+
+    def pt(name):
+        o = by_name.get(name)
+        if not o:
+            return None
+        return {
+            "name_bg": o["name_bg"], "sign_bg": o["sign_bg"], "sign_symbol": o["sign_symbol"],
+            "house_bg": o["house_bg"], "house_number": o.get("house_number"),
+            "retrograde": o.get("movement") == "Retrograde",
+            "meaning": o.get("name_meaning", ""),
+        }
+
+    twelfth = [
+        {"name_bg": o["name_bg"], "sign_bg": o["sign_bg"], "sign_symbol": o["sign_symbol"]}
+        for o in objects.values()
+        if o.get("house_number") == 12 and o["name"] not in ("Asc", "Desc", "MC", "IC")
+    ]
+    retrogrades = [
+        {"name_bg": o["name_bg"], "sign_bg": o["sign_bg"], "sign_symbol": o["sign_symbol"],
+         "house_bg": o["house_bg"]}
+        for o in objects.values()
+        if o.get("movement") == "Retrograde"
+        and o["name"] in ("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Chiron")
+    ]
+
+    return {
+        "points": {k: pt(k) for k in KARMIC_POINTS if pt(k)},
+        "twelfth_house": twelfth,
+        "retrogrades": retrogrades,
+        "life_path": numerology["life_path"]["number"],
+        "moon_phase_bg": chart_data.get("moon_phase_bg"),
+        "diurnal": chart_data.get("diurnal"),
+    }
+
+@app.get("/api/persons/{person_id}/akashic")
+def api_akashic(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    """The karmic markers the akashic reading is built on (computed, no AI)."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
+    return build_karmic(compute_natal(p), numerology)
+
+@app.get("/api/persons/{person_id}/akashic/interpretation")
+def api_akashic_interpretation(person_id: int, refresh: bool = False,
+                               user: Tuple[int, str] = Depends(get_current_user)):
+    """Akashic-records style reading of the chart's karmic markers.
+
+    Framed as contemplative interpretation, not as retrieved record: there is no
+    data source for akashic records, so the reading stays anchored to the chart.
+    """
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+
+    if not refresh:
+        cached = get_ai_cache(person_id, "akashic")
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    chart_data = compute_natal(p)
+    numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
+    k = build_karmic(chart_data, numerology)
+
+    def line(label, point):
+        if not point:
+            return f"{label}: няма данни"
+        retro = " (ретрограден)" if point["retrograde"] else ""
+        return f"{label}: {point['name_bg']} в {point['sign_bg']}, {point['house_bg']}{retro}"
+
+    twelfth_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']}" for o in k["twelfth_house"]) or "празен"
+    retro_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']} ({o['house_bg']})" for o in k["retrogrades"]) or "няма"
+
+    # Aspects touching the karmic points give the reading far more to work with
+    # than the bare positions alone.
+    karmic_bg = {tr_object(n) for n in KARMIC_POINTS}
+    karmic_aspects = [
+        f"- {a['active_bg']} {a['type_bg']} {a['passive_bg']}"
+        + (f" (орб {a['orb']:.1f}°)" if a.get("orb") is not None else "")
+        for a in chart_data.get("aspects", [])
+        if a["type"] in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
+        and (a["active_bg"] in karmic_bg or a["passive_bg"] in karmic_bg)
+    ]
+    karmic_aspects_txt = "\n".join(karmic_aspects[:18]) or "няма значими аспекти към кармичните точки"
+
+    houses_txt = "\n".join(
+        f"- {h['number']}-ти дом започва в {h['sign_bg']} {h['sign_longitude']}"
+        for h in chart_data.get("houses", [])
+    ) or "няма данни"
+
+    all_positions = "\n".join(
+        f"- {o['name_bg']}: {o['sign_bg']} {o['sign_longitude']}, {o['house_bg']}"
+        + (" (ретрограден)" if o.get("movement") == "Retrograde" else "")
+        for o in chart_data.get("objects", {}).values()
+    )
+
+    prompt = f"""Ти си водач при четене на Акашови записи. Работиш съзерцателно: вглеждаш се в кармичните маркери на наталната карта и ги разчиташ като следи от пътя на душата.
+
+Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
+Роден: {p['day']}.{p['month']}.{p['year']} в {p['hour']:02d}:{p['minute']:02d}
+
+=== КАРМИЧНИ ТОЧКИ (точно изчислени със Swiss Ephemeris) ===
+{line('Северен възел (посока на растеж)', k['points'].get('True North Node'))}
+{line('Южен възел (наследено от миналото)', k['points'].get('True South Node'))}
+{line('Хирон (раната, която лекува)', k['points'].get('Chiron'))}
+{line('Сатурн (уроците и структурата)', k['points'].get('Saturn'))}
+{line('Плутон (дълбоката трансформация)', k['points'].get('Pluto'))}
+{line('Лилит (потиснатото и автентичното)', k['points'].get('True Lilith'))}
+
+Планети в 12-ти дом (домът на подсъзнанието и наследеното): {twelfth_txt}
+Ретроградни планети (енергия, обърната навътре — недовършена работа): {retro_txt}
+Лунна фаза при раждане: {k['moon_phase_bg']}
+Раждане: {'дневно' if k['diurnal'] else 'нощно'}
+Форма на картата: {chart_data.get('shape_bg', 'няма данни')}
+Число на съдбата (нумерология): {k['life_path']}
+
+=== АСПЕКТИ КЪМ КАРМИЧНИТЕ ТОЧКИ (по-малък орб = по-силно изразен) ===
+{karmic_aspects_txt}
+
+=== ВСИЧКИ ПОЗИЦИИ В КАРТАТА (за контекст) ===
+{all_positions}
+
+=== ДОМОВЕ ===
+{houses_txt}
+
+=== КАК СЕ ЧЕТАТ АКАШОВИТЕ ЗАПИСИ ===
+В тази традиция Акашовите записи се разбират като поле на паметта на душата. Не се "четат" като книга с факти, а се съзерцават чрез символите, които душата е оставила в наталната карта. Ключовите ориентири са:
+- Южният възел — какво душата вече владее до втръсване; зоната на комфорт, която в този живот вече не храни.
+- Северният възел — посоката, която отначало е неудобна, но носи израстване; обратният полюс на Южния.
+- Осите на възлите през домовете — двойката области от живота, между които се люлее развитието.
+- Хирон — раната, която не се лекува докрай, но точно затова прави човека способен да лекува същото у другите.
+- Сатурн — къде животът поставя условия, забавя и изисква зрялост; уроците, които се повтарят, докато не бъдат научени.
+- Плутон — където се случват необратимите смъртта-и-прераждане процеси на личността.
+- Лилит — това, което е било потискано и иска да бъде върнато без срам.
+- 12-ти дом — колективното, наследеното, неосъзнатото; всичко, което действа зад кулисите.
+- Ретроградните планети — енергии, които се проявяват навътре, преди да могат навън; често усещане за "недовършено".
+
+=== ЗАДАЧА ===
+Напиши задълбочено четене на Акашовите записи в следната структура:
+
+1. **Отваряне на записа** — 2-3 изречения въведение: настройка към момента, спокойно и с уважение. Без театралност.
+2. **Какво носи душата от преди** — Южният възел, 12-ти дом и ретроградните планети: какви модели, дарби и навици идват като наследство. Обвържи ги конкретно с изброените позиции и обясни защо точно този знак и дом дават този модел.
+3. **Раната, която се лекува** — Хирон: къде е болката, откъде идва, как се проявява в ежедневието и как точно се превръща в дарба за другите. Ползвай и аспектите към Хирон, ако има такива.
+4. **Договорът на този живот** — Северният възел и Сатурн: към какво се движи душата, каква е задачата ѝ, какви са условията на израстването и какво се иска да бъде оставено зад гърба.
+5. **Силата на трансформацията** — Плутон и Лилит: къде живее най-дълбоката промяна, какво е било потиснато и какво иска да бъде върнато.
+6. **Оста на развитието** — двойката домове на лунните възли: между кои две области от живота се движи растежът и как изглежда балансът между тях.
+7. **Кармичните възли** — 3-4 повтарящи се теми, които вероятно се връщат в живота, докато не бъдат осъзнати. За всяка посочи от коя точка в картата произтича.
+8. **Какво иска душата да чуе сега** — 4-5 конкретни насоки за освобождаване и движение напред.
+9. **Затваряне на записа** — 2-3 изречения спокойно обобщение.
+
+ВАЖНО ЗА ТОНА:
+- Пиши поетично и съзерцателно, с образи и метафори, но БЕЗ да твърдиш конкретни факти за минали животи (не измисляй имена, епохи, държави, професии или събития). Говори за модели, теми и енергии — не за биографии.
+- Всяко твърдение трябва да стъпва на изброените по-горе точки — читателят да вижда връзката с реалната карта.
+- Не плаши и не предсказвай нещастия. Кармата тук е урок, не наказание.
+- Бъди щедър в дължината: това е основният текст на раздела, разгърни всяка секция пълноценно.
+""" + STYLE_RULES
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000)
+            set_ai_cache(person_id, "akashic", interpretation)
             return {"interpretation": interpretation, "cached": False}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
