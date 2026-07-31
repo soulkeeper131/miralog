@@ -487,6 +487,57 @@
             border: none; border-top: 1px solid var(--border-soft); margin: 1.6em 0;
         }
 
+        /* --- daily summary cards --- */
+        .sum-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px; margin-bottom: 14px;
+        }
+        .sum-card {
+            border-radius: 14px; padding: 14px 16px; text-align: center;
+            border: 1px solid var(--border-soft);
+        }
+        .sum-mood { background: var(--surface-thistle); }
+        .sum-energy { background: var(--surface-icy); }
+        .sum-focus { background: var(--surface-petal); }
+        .sum-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .07em;
+            color: var(--text-dim); font-weight: 600; margin-bottom: 4px;
+        }
+        .sum-value { color: var(--text-heading); font-weight: 600; font-size: 1rem; line-height: 1.35; }
+
+        .sum-cols {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px; margin-bottom: 14px;
+        }
+        .sum-col {
+            border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border-soft);
+        }
+        .sum-do { background: var(--surface-icy); }
+        .sum-avoid { background: var(--surface-pink); }
+        .sum-col-head {
+            font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.01em;
+        }
+        .sum-do .sum-col-head { color: var(--on-icy); }
+        .sum-avoid .sum-col-head { color: var(--on-pink); }
+        .sum-col ul { list-style: none; padding: 0; margin: 0; }
+        .sum-col li {
+            font-size: 0.86rem; line-height: 1.5; color: var(--text);
+            padding: 3px 0 3px 14px; position: relative;
+        }
+        .sum-col li::before {
+            content: "·"; position: absolute; left: 3px; top: 2px;
+            color: var(--text-dim); font-weight: 700;
+        }
+
+        .sum-caution {
+            display: flex; gap: 10px; align-items: flex-start;
+            background: var(--surface-petal); border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 12px 16px; margin-bottom: 18px;
+            font-size: 0.88rem; line-height: 1.55; color: var(--text);
+        }
+        .sum-caution strong { color: var(--text-heading); }
+        .sum-caution-icon { flex-shrink: 0; font-size: 1rem; }
+
         /* --- "За мен" profile --- */
         .prof-grid {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -1256,6 +1307,7 @@
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadHoroscopeAI(true)') +
+                        summaryCards(data.summary) +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     el.innerHTML = '<div class="error">Не можа да се генерира разчитане.</div>';
@@ -1263,6 +1315,39 @@
             } catch (e) {
                 el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
             }
+        }
+
+        // Quick-glance cards above the full daily reading.
+        function summaryCards(s) {
+            if (!s) return '';
+            const list = (arr) => (Array.isArray(arr) ? arr : [])
+                .map(x => `<li>${escapeHtmlText(String(x))}</li>`).join('');
+            const cards = [];
+
+            if (s.mood) cards.push(`<div class="sum-card sum-mood">
+                <div class="sum-label">Настроение</div>
+                <div class="sum-value">${escapeHtmlText(s.mood)}</div></div>`);
+            if (s.energy) cards.push(`<div class="sum-card sum-energy">
+                <div class="sum-label">Енергия</div>
+                <div class="sum-value">${escapeHtmlText(s.energy)}</div></div>`);
+            if (s.focus) cards.push(`<div class="sum-card sum-focus">
+                <div class="sum-label">Фокус</div>
+                <div class="sum-value">${escapeHtmlText(s.focus)}</div></div>`);
+
+            let html = cards.length ? `<div class="sum-grid">${cards.join('')}</div>` : '';
+
+            const cols = [];
+            if (Array.isArray(s.do) && s.do.length) cols.push(`<div class="sum-col sum-do">
+                <div class="sum-col-head">✓ Добре е да</div><ul>${list(s.do)}</ul></div>`);
+            if (Array.isArray(s.avoid) && s.avoid.length) cols.push(`<div class="sum-col sum-avoid">
+                <div class="sum-col-head">✕ Избягвай</div><ul>${list(s.avoid)}</ul></div>`);
+            if (cols.length) html += `<div class="sum-cols">${cols.join('')}</div>`;
+
+            if (s.caution) html += `<div class="sum-caution">
+                <span class="sum-caution-icon">⚠</span>
+                <div><strong>Внимавай:</strong> ${escapeHtmlText(s.caution)}</div></div>`;
+
+            return html;
         }
 
         async function loadInterpretation(refresh) {
