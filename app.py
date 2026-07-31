@@ -29,6 +29,8 @@ DB_PATH = Path(__file__).parent / "persons.db"
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production-secret-key")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@miralog.bg")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -43,6 +45,12 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Create default admin if no users exist
+        if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+            conn.execute(
+                "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                (ADMIN_EMAIL, hash_password(ADMIN_PASSWORD))
+            )
         # Persons table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS persons (
@@ -354,22 +362,6 @@ def natal_to_text(person: dict, chart_data: dict) -> str:
     return "\n".join(lines)
 
 # --- Auth API Routes ---
-@app.post("/api/auth/register")
-def api_register(data: AuthRequest):
-    """Register a new user. Returns JWT token + user info."""
-    if len(data.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
-    existing = get_user_by_email(data.email)
-    if existing:
-        raise HTTPException(400, "Email already registered")
-    pw_hash = hash_password(data.password)
-    user = create_user(data.email, pw_hash)
-    token = create_token(user["id"], user["email"])
-    return {
-        "token": token,
-        "user": {"id": user["id"], "email": user["email"]}
-    }
-
 @app.post("/api/auth/login")
 def api_login(data: AuthRequest):
     """Login with email/password. Returns JWT token + user info."""
@@ -602,10 +594,6 @@ async def index(request: Request):
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return HTMLResponse(templates.get_template("login.html").render({"request": request}))
-
-@app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
-    return HTMLResponse(templates.get_template("register.html").render({"request": request}))
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
