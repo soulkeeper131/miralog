@@ -2,6 +2,7 @@ import os, json, sqlite3, datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -202,12 +203,15 @@ def update_person(person_id: int, user_id: int, data: BirthDataUpdate) -> bool:
         return cur.rowcount > 0
 
 def make_subject(person: dict) -> charts.Subject:
-    """Create an immanuel Subject from a person dict."""
-    return charts.Subject(
-        datetime.datetime(person["year"], person["month"], person["day"],
-                          person["hour"], person["minute"], 0),
-        person["lat"], person["lon"]
-    )
+    """Create an immanuel Subject from a person dict, using their timezone."""
+    tz_name = person.get("timezone", "Europe/Sofia")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Europe/Sofia")
+    dt = datetime.datetime(person["year"], person["month"], person["day"],
+                          person["hour"], person["minute"], 0, tzinfo=tz)
+    return charts.Subject(dt, person["lat"], person["lon"])
 
 def serialize_objects(objects: dict) -> dict:
     """Serialize chart objects to JSON-friendly format."""
@@ -498,6 +502,14 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_curr
         raise HTTPException(404, f"Person (id={data.person_id}) not found")
     try:
         target_date = datetime.datetime.fromisoformat(data.target_date)
+        # Attach person's timezone to naive datetime
+        tz_name = p.get("timezone", "Europe/Sofia")
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("Europe/Sofia")
+        if target_date.tzinfo is None:
+            target_date = target_date.replace(tzinfo=tz)
     except ValueError:
         raise HTTPException(400, "Invalid target_date format. Use ISO format: YYYY-MM-DDTHH:MM:SS")
     return compute_transits(p, target_date)
