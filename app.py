@@ -535,6 +535,21 @@ def api_login(data: AuthRequest):
         "user": {"id": user["id"], "email": user["email"]}
     }
 
+@app.post("/api/auth/register")
+def api_register(data: AuthRequest):
+    """Create an account. Each user only ever sees their own people."""
+    email = (data.email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
+    if len(data.password or "") < 6:
+        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    if get_user_by_email(email):
+        raise HTTPException(409, "Вече съществува акаунт с този имейл.")
+
+    user = create_user(email, hash_password(data.password))
+    token = create_token(user["id"], user["email"])
+    return {"token": token, "user": {"id": user["id"], "email": user["email"]}}
+
 @app.get("/api/auth/me")
 def api_me(user: Tuple[int, str] = Depends(get_current_user)):
     """Get current authenticated user from token."""
@@ -1753,9 +1768,12 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Root: redirect to /dashboard if token cookie exists, else /login"""
-    # Check for a simple cookie hint or just serve login — JS handles token check
-    return HTMLResponse(templates.get_template("login.html").render({"request": request}))
+    """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
+    return HTMLResponse(templates.get_template("landing.html").render({"request": request}))
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return HTMLResponse(templates.get_template("register.html").render({"request": request}))
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
