@@ -131,12 +131,13 @@
         /* The logo art is portrait with the wordmark at the bottom; the circle is
            centred on the illustration itself so nothing important gets clipped. */
         .hero-logo {
-            width: clamp(260px, 40vw, 380px); height: clamp(260px, 40vw, 380px);
-            border-radius: 50%; object-fit: contain;
-            display: block; margin: 0 auto 24px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            box-shadow: 0 0 0 12px var(--surface-thistle), var(--shadow-card);
+            width: auto; height: clamp(230px, 34vw, 330px);
+            max-width: 100%; object-fit: contain;
+            display: block; margin: 0 auto 20px;
+            filter: drop-shadow(0 16px 36px rgba(124,58,237,0.30));
+        }
+        :root[data-theme="light"] .hero-logo {
+            filter: drop-shadow(0 16px 32px rgba(134,89,163,0.24));
         }
         .hero h1 {
             font-family: var(--font-display); font-weight: 700;
