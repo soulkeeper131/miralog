@@ -131,11 +131,12 @@
         /* The logo art is portrait with the wordmark at the bottom; the circle is
            centred on the illustration itself so nothing important gets clipped. */
         .hero-logo {
-            width: clamp(210px, 34vw, 300px); height: clamp(210px, 34vw, 300px);
-            border-radius: 50%; object-fit: cover; object-position: center 36%;
+            width: clamp(260px, 40vw, 380px); height: clamp(260px, 40vw, 380px);
+            border-radius: 50%; object-fit: contain;
             display: block; margin: 0 auto 24px;
+            background: var(--bg-card);
             border: 1px solid var(--border);
-            box-shadow: 0 0 0 10px var(--surface-thistle), var(--shadow-card);
+            box-shadow: 0 0 0 12px var(--surface-thistle), var(--shadow-card);
         }
         .hero h1 {
             font-family: var(--font-display); font-weight: 700;
