@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && \
+    curl tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python deps
