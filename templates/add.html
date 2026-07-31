@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Добави човек — МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -11,9 +13,15 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
             --bg: #0a0a1a;
             --bg-card: #1a1a2e;
             --bg-input: #16162a;
@@ -44,6 +52,7 @@
             --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
             --bg: #faf7fb;
             --bg-card: #ffffff;
             --bg-input: #f7f1f9;
@@ -67,7 +76,7 @@
             --on-pink: #a81b4d;
             --on-sky: #5c5468;
         }
-        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
+        body { font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
         .theme-toggle {
             position: fixed;
             top: max(16px, env(safe-area-inset-top));
@@ -87,9 +96,23 @@
             z-index: 200;
         }
         .container { max-width: 500px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        h1 { color: var(--text-heading); font-size: 1.5rem; margin-bottom: 24px; text-align: center; }
-        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
+        h1 {
+            font-family: var(--font-display); font-weight: 700;
+            letter-spacing: -0.02em; line-height: 1.2;
+            color: var(--text-heading); font-size: 1.9rem; margin-bottom: 24px;
+        }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; min-height: 44px; transition: color 0.15s ease; }
         .back-link:hover { color: var(--accent-light); }
+        /* shared page mark: small logo sitting beside the back-link */
+        .page-nav {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        .page-logo {
+            width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+            flex-shrink: 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 3px var(--surface-thistle);
+        }
         form { background: var(--bg-card); border-radius: 12px; padding: 24px; }
         .form-group { margin-bottom: 16px; }
         label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.9rem; }
@@ -112,7 +135,10 @@
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <a href="/" class="back-link">← Назад</a>
+        <div class="page-nav">
+            <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="/" class="back-link">← Назад</a>
+        </div>
         <h1>Добави човек</h1>
         <form method="POST" action="/add">
             <div class="form-group">

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Съвместимост — МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -11,9 +13,16 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
             --bg: #0a0a1a;
             --bg-card: #1a1a2e;
             --bg-input: #16162a;
@@ -50,6 +59,8 @@
             --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
             --bg: #faf7fb;
             --bg-card: #ffffff;
             --bg-input: #f7f1f9;
@@ -80,7 +91,9 @@
             --on-sky: #5c5468;
         }
         body {
-            font-family: -apple-system, system-ui, sans-serif;
+            font-family: var(--font-body);
+            font-size: 0.95rem; line-height: 1.6;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
             background: var(--bg); color: var(--text); min-height: 100dvh;
             padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
             padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
@@ -110,19 +123,37 @@
             padding-bottom: max(20px, env(safe-area-inset-bottom));
         }
         .back-link {
-            color: var(--text-muted); text-decoration: none; font-size: 0.9rem;
-            display: inline-flex; align-items: center; margin-bottom: 16px;
-            min-height: 44px; min-width: 44px;
+            color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
+            display: inline-flex; align-items: center;
+            min-height: 44px;
+            transition: color 0.15s ease;
         }
         .back-link:hover { color: var(--accent-light); }
-        h1 { color: var(--text-heading); font-size: 1.6rem; margin-bottom: 4px; }
+        /* shared page mark: small logo sitting beside the back-link */
+        .page-nav {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        .page-logo {
+            width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+            flex-shrink: 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 3px var(--surface-thistle);
+        }
+        h1 {
+            font-family: var(--font-display); font-weight: 700;
+            letter-spacing: -0.02em; line-height: 1.2;
+            color: var(--text-heading); font-size: 1.9rem; margin-bottom: 4px;
+        }
         .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
 
         .section {
             background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
             padding: 24px; margin-bottom: 20px;
         }
-        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 14px; }
+        .section h2 {
+            color: var(--accent-light); font-size: 1.15rem; font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 14px;
+        }
 
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .form-group { margin-bottom: 14px; }
@@ -181,12 +212,81 @@
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .empty { text-align: center; color: var(--text-dim); padding: 30px 20px; }
+
+        .crystal-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
+        }
+        .crystal-loader .orb-wrap {
+            position: relative; width: 56px; height: 56px;
+        }
+        .crystal-loader .orb {
+            position: absolute; inset: 0; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
+            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: orb-pulse 1.8s ease-in-out infinite;
+        }
+        .crystal-loader .spark {
+            position: absolute; inset: 0;
+            animation: orb-spin 2.4s linear infinite;
+        }
+        .crystal-loader .spark::before {
+            content: "✦"; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
+        }
+        @keyframes orb-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes orb-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* AI-generated prose: comfortable measure (~68ch) and generous leading */
+        .interpretation {
+            line-height: 1.8; font-size: 0.97rem; color: var(--text-soft);
+            max-width: 68ch; text-align: left;
+        }
+        .interpretation p { margin: 0 0 1.05em; }
+        .interpretation p:last-child { margin-bottom: 0; }
+        .interpretation strong { color: var(--text-heading); font-weight: 600; }
+        .interpretation em { color: var(--text); font-style: italic; }
+
+        .interpretation .int-h {
+            display: flex; align-items: baseline; gap: 10px;
+            color: var(--text-heading); font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.35;
+            margin: 1.9em 0 0.7em; padding-bottom: 0.45em;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .interpretation .int-h:first-child { margin-top: 0; }
+        .interpretation .int-h1 { font-size: 1.15rem; }
+        .interpretation .int-h2 { font-size: 1.05rem; }
+        .interpretation .int-h3 { font-size: 0.98rem; }
+        .interpretation .int-num {
+            flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+            background: var(--surface-thistle); color: var(--accent-light);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.78rem; font-weight: 700;
+        }
+        .interpretation .int-list { margin: 0 0 1.05em; padding-left: 0; list-style: none; }
+        .interpretation .int-list li { position: relative; padding-left: 22px; margin-bottom: 0.55em; }
+        .interpretation .int-list li::before {
+            content: "✦"; position: absolute; left: 2px; top: 0;
+            color: var(--accent-light); font-size: 0.8rem;
+        }
+        .interpretation .int-num-inline { color: var(--accent-light); font-weight: 600; }
+        .interpretation .int-rule { border: none; border-top: 1px solid var(--border-soft); margin: 1.6em 0; }
+        .cache-note { margin-top: 14px; color: var(--text-dim); font-size: 0.8rem; }
     </style>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <a href="#" id="backLink" class="back-link">← Табло</a>
+        <div class="page-nav">
+            <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="#" id="backLink" class="back-link">← Табло</a>
+        </div>
         <h1>Съвместимост</h1>
         <div class="subtitle">Синастрия между двама души</div>
 
@@ -212,11 +312,95 @@
             <div class="stats" id="resultStats"></div>
             <div id="resultAspects"></div>
             <button class="btn btn-accent" id="interpretBtn" onclick="getInterpretation()" style="margin-top:16px;display:none;">🔮 AI Четене на съвместимостта</button>
-            <div id="interpretationBox" style="display:none;margin-top:16px;background:var(--bg-card);border-radius:12px;padding:20px;line-height:1.8;white-space:pre-wrap;"></div>
+            <div id="interpretationBox" style="display:none;margin-top:16px;background:var(--bg-card);border-radius:12px;padding:20px;"></div>
         </div>
     </div>
 
     <script>
+        function crystalLoader(text) {
+            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        }
+
+        // Presentation-only: turns the model's markdown-ish output into a structured
+        // block. Escapes first, so model output is never injected as live HTML.
+        function inlineMd(text) {
+            let html = escapeHtml(text);
+            html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>');
+            return html;
+        }
+
+        function formatInterpretation(raw) {
+            const lines = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').split('\n');
+            const out = [];
+            let listItems = [];
+            let paraLines = [];
+
+            const flushList = () => {
+                if (!listItems.length) return;
+                out.push('<ul class="int-list">' + listItems.map(li => '<li>' + li + '</li>').join('') + '</ul>');
+                listItems = [];
+            };
+            const flushPara = () => {
+                if (!paraLines.length) return;
+                out.push('<p>' + paraLines.join('<br>') + '</p>');
+                paraLines = [];
+            };
+            const flushAll = () => { flushList(); flushPara(); };
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line) { flushAll(); continue; }
+
+                if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) {
+                    flushAll();
+                    out.push('<hr class="int-rule">');
+                    continue;
+                }
+
+                const md = line.match(/^(#{1,6})\s+(.*)$/);
+                if (md) {
+                    flushAll();
+                    const level = Math.min(md[1].length, 3);
+                    out.push(`<h4 class="int-h int-h${level}">${inlineMd(md[2].replace(/[:：]\s*$/, ''))}</h4>`);
+                    continue;
+                }
+
+                const numbered = line.match(/^(\d+)[.)]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$/);
+                if (numbered) {
+                    flushAll();
+                    out.push(`<h4 class="int-h int-h2"><span class="int-num">${numbered[1]}</span>${inlineMd(numbered[2])}</h4>`);
+                    if (numbered[3]) paraLines.push(inlineMd(numbered[3]));
+                    continue;
+                }
+                if (/^\*\*[^*]+\*\*[:：]?$/.test(line)) {
+                    flushAll();
+                    out.push(`<h4 class="int-h int-h2">${inlineMd(line.replace(/^\*\*|\*\*[:：]?$/g, ''))}</h4>`);
+                    continue;
+                }
+
+                const bullet = line.match(/^[-•]\s+(.*)$/) || line.match(/^\*(?!\*)\s+(.*)$/);
+                if (bullet) {
+                    flushPara();
+                    listItems.push(inlineMd(bullet[1]));
+                    continue;
+                }
+
+                const numItem = line.match(/^(\d+)[.)]\s+(.+)$/);
+                if (numItem) {
+                    flushPara();
+                    listItems.push('<span class="int-num-inline">' + numItem[1] + '.</span> ' + inlineMd(numItem[2]));
+                    continue;
+                }
+
+                flushList();
+                paraLines.push(inlineMd(line));
+            }
+
+            flushAll();
+            return out.join('');
+        }
+
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
             document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
@@ -260,11 +444,13 @@
         let persons = [];
 
         async function loadPersons() {
+            document.getElementById('banner').innerHTML = crystalLoader('Зареждане на хората...');
             try {
                 const resp = await fetch('/api/persons', { headers: authHeaders() });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json();
                 persons = data.persons || [];
+                clearBanner();
                 const opts = persons.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
                 document.getElementById('person1').innerHTML = opts;
                 document.getElementById('person2').innerHTML = opts;
@@ -292,6 +478,12 @@
             const btn = document.getElementById('computeBtn');
             btn.disabled = true;
             btn.textContent = 'Изчисляване...';
+            const resultSection = document.getElementById('resultSection');
+            resultSection.style.display = 'block';
+            document.getElementById('resultStats').innerHTML = '';
+            document.getElementById('resultAspects').innerHTML = crystalLoader('Изчисляване на съвместимостта...');
+            document.getElementById('interpretBtn').style.display = 'none';
+            document.getElementById('interpretationBox').style.display = 'none';
             try {
                 const resp = await fetch('/api/synastry', {
                     method: 'POST',
@@ -307,6 +499,8 @@
                 synastryPerson2Id = Number(id2);
                 renderResult(data);
             } catch (e) {
+                document.getElementById('resultSection').style.display = 'none';
+                document.getElementById('resultAspects').innerHTML = '';
                 showBanner('Грешка при изчисляване: ' + e.message);
             } finally {
                 btn.disabled = false;
@@ -354,9 +548,9 @@
             const btn = document.getElementById('interpretBtn');
             const box = document.getElementById('interpretationBox');
             btn.disabled = true;
-            btn.textContent = '⏳ Генериране...';
+            btn.textContent = 'Генериране...';
             box.style.display = 'block';
-            box.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">⏳ Генериране на интерпретация чрез AI...</div>';
+            box.innerHTML = crystalLoader('Генериране на интерпретация чрез AI...');
 
             try {
                 const resp = await fetch('/api/synastry/interpretation', {
@@ -366,9 +560,9 @@
                 });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    box.innerHTML = data.interpretation.replace(/\n/g, '<br>');
+                    box.innerHTML = '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                     if (data.cached) {
-                        box.innerHTML += '<div style="margin-top:12px;color:var(--text-dim);font-size:0.8rem;">📋 Заредено от кеш</div>';
+                        box.innerHTML += '<div class="cache-note">📋 Заредено от кеш</div>';
                     }
                 } else {
                     box.innerHTML = '<div class="error-banner">Не можа да се генерира интерпретация.</div>';

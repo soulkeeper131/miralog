@@ -27,7 +27,8 @@ import bcrypt
 from translations import (
     tr_sign, tr_object, tr_aspect, tr_moon_phase, tr_movement, tr_shape, tr_house_system, tr_house,
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
-    sign_symbol,
+    sign_symbol, sign_element, sign_modality,
+    ELEMENTS_BG, MODALITIES_BG, ELEMENT_MEANINGS, MODALITY_MEANINGS,
 )
 from numerology import compute_numerology
 
@@ -558,6 +559,88 @@ def api_update_settings(data: SettingsUpdate, user: Tuple[int, str] = Depends(ge
         set_setting("ai_provider", data.ai_provider.strip())
     return {"ok": True}
 
+# --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
+_geocode_cache: dict = {}
+_geocode_last_call: list = [0.0]  # mutable holder so the helper can update it
+
+def geocode_place(query: str, limit: int = 6) -> list:
+    """Look up a place name and return candidate locations with coordinates.
+
+    Nominatim's usage policy requires an identifying User-Agent and at most one
+    request per second, so results are cached and calls are spaced out.
+    """
+    import time
+    import urllib.parse
+    import urllib.request
+
+    key = query.strip().lower()
+    if not key:
+        return []
+    if key in _geocode_cache:
+        return _geocode_cache[key]
+
+    # Respect Nominatim's 1 request/second limit.
+    elapsed = time.monotonic() - _geocode_last_call[0]
+    if elapsed < 1.0:
+        time.sleep(1.0 - elapsed)
+
+    params = urllib.parse.urlencode({
+        "q": query,
+        "format": "json",
+        "limit": limit,
+        "addressdetails": 1,
+        "accept-language": "bg",
+    })
+    req = urllib.request.Request(
+        f"https://nominatim.openstreetmap.org/search?{params}",
+        headers={"User-Agent": "MiraSkop/1.0 (astrology chart app)"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = json.loads(resp.read())
+    except Exception as e:
+        raise HTTPException(502, f"Грешка при търсене на място: {e}")
+    finally:
+        _geocode_last_call[0] = time.monotonic()
+
+    try:
+        from timezonefinder import TimezoneFinder
+        tf = TimezoneFinder()
+    except Exception:
+        tf = None
+
+    results = []
+    for item in raw:
+        addr = item.get("address", {})
+        place = (addr.get("city") or addr.get("town") or addr.get("village")
+                 or addr.get("municipality") or addr.get("county") or item.get("name", ""))
+        country = addr.get("country", "")
+        lat, lon = float(item["lat"]), float(item["lon"])
+        tz = None
+        if tf:
+            try:
+                tz = tf.timezone_at(lat=lat, lng=lon)
+            except Exception:
+                tz = None
+        results.append({
+            "label": item.get("display_name", ""),
+            "place": place,
+            "country": country,
+            "lat": lat,
+            "lon": lon,
+            "timezone": tz or "Europe/Sofia",
+        })
+
+    _geocode_cache[key] = results
+    return results
+
+@app.get("/api/geocode")
+def api_geocode(q: str, user: Tuple[int, str] = Depends(get_current_user)):
+    """Search for a place by name and return matching coordinates."""
+    if len(q.strip()) < 2:
+        return {"results": []}
+    return {"results": geocode_place(q)}
+
 # --- API Routes (AUTH REQUIRED) ---
 @app.get("/api/persons")
 def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
@@ -654,6 +737,211 @@ def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_us
     from chart_svg import generate_chart_svg
     svg = generate_chart_svg(chart_data)
     return Response(content=svg, media_type="image/svg+xml")
+
+PERSONAL_PLANETS = {"Sun", "Moon", "Mercury", "Venus", "Mars"}
+
+def build_profile(chart_data: dict) -> dict:
+    """Summarise a natal chart into a readable 'about me' profile:
+    key points, element/modality balance, house emphasis and strongest aspects."""
+    objects = chart_data.get("objects", {})
+    by_name = {o["name"]: o for o in objects.values()}
+
+    # Element and modality balance, counted over the personal + social planets
+    # plus the Ascendant, which is what actually colours the temperament.
+    counted = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Asc"]
+    elements: dict = {}
+    modalities: dict = {}
+    for name in counted:
+        obj = by_name.get(name)
+        if not obj:
+            continue
+        el = sign_element(obj["sign"])
+        mo = sign_modality(obj["sign"])
+        if el:
+            elements[el] = elements.get(el, 0) + 1
+        if mo:
+            modalities[mo] = modalities.get(mo, 0) + 1
+
+    def top_key(counts: dict):
+        return max(counts, key=counts.get) if counts else None
+
+    dominant_el = top_key(elements)
+    dominant_mo = top_key(modalities)
+
+    # Which houses hold the most planets — the life areas the chart emphasises.
+    house_counts: dict = {}
+    for obj in objects.values():
+        if obj["name"] in PERSONAL_PLANETS or obj["name"] in {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"}:
+            hn = obj.get("house_number")
+            if hn:
+                house_counts[hn] = house_counts.get(hn, 0) + 1
+    emphasised = sorted(house_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+
+    # Tightest aspects (smallest orb) between the meaningful bodies.
+    aspect_bodies = PERSONAL_PLANETS | {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Asc", "MC"}
+    scored = [
+        a for a in chart_data.get("aspects", [])
+        if a.get("orb") is not None
+        and a["active"] in aspect_bodies and a["passive"] in aspect_bodies
+        and a["type"] in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
+    ]
+    scored.sort(key=lambda a: abs(a["orb"]))
+    seen = set()
+    key_aspects = []
+    for a in scored:
+        pair = tuple(sorted((a["active"], a["passive"])))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        key_aspects.append(a)
+        if len(key_aspects) >= 6:
+            break
+
+    def point(name):
+        o = by_name.get(name)
+        if not o:
+            return None
+        return {
+            "name_bg": o["name_bg"],
+            "sign_bg": o["sign_bg"],
+            "sign_symbol": o["sign_symbol"],
+            "house_bg": o["house_bg"],
+            "meaning": o.get("name_meaning", ""),
+            "sign_meaning": o.get("sign_meaning", ""),
+        }
+
+    return {
+        "core": {
+            "sun": point("Sun"),
+            "moon": point("Moon"),
+            "ascendant": point("Asc"),
+            "mc": point("MC"),
+        },
+        "personal_planets": [point(n) for n in ("Mercury", "Venus", "Mars") if point(n)],
+        "elements": {
+            "counts": {ELEMENTS_BG[k]: v for k, v in elements.items()},
+            "dominant": ELEMENTS_BG.get(dominant_el) if dominant_el else None,
+            "dominant_meaning": ELEMENT_MEANINGS.get(dominant_el, "") if dominant_el else "",
+        },
+        "modalities": {
+            "counts": {MODALITIES_BG[k]: v for k, v in modalities.items()},
+            "dominant": MODALITIES_BG.get(dominant_mo) if dominant_mo else None,
+            "dominant_meaning": MODALITY_MEANINGS.get(dominant_mo, "") if dominant_mo else "",
+        },
+        "emphasised_houses": [
+            {"house": h, "count": c, "meaning": meaning_house(f"{h}{'st' if h == 1 else 'nd' if h == 2 else 'rd' if h == 3 else 'th'} House")}
+            for h, c in emphasised
+        ],
+        "key_aspects": [
+            {
+                "active_bg": a["active_bg"], "passive_bg": a["passive_bg"],
+                "type_bg": a["type_bg"], "type_meaning": a.get("type_meaning", ""),
+                "orb": round(a["orb"], 1),
+            }
+            for a in key_aspects
+        ],
+        "shape_bg": chart_data.get("shape_bg"),
+        "shape_meaning": chart_data.get("shape_meaning"),
+        "moon_phase_bg": chart_data.get("moon_phase_bg"),
+        "moon_phase_meaning": chart_data.get("moon_phase_meaning"),
+        "diurnal": chart_data.get("diurnal"),
+    }
+
+@app.get("/api/persons/{person_id}/profile")
+def api_profile(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    """Computed 'about me' profile — deterministic, no AI."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    return build_profile(compute_natal(p))
+
+@app.get("/api/persons/{person_id}/profile/interpretation")
+def api_profile_interpretation(person_id: int, refresh: bool = False,
+                               user: Tuple[int, str] = Depends(get_current_user)):
+    """AI 'about me' reading — strengths, weaknesses and what makes this chart distinctive."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+
+    if not refresh:
+        cached = get_ai_cache(person_id, "profile")
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    chart_data = compute_natal(p)
+    prof = build_profile(chart_data)
+
+    def fmt_point(label, pt):
+        return f"{label}: {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}" if pt else f"{label}: няма данни"
+
+    aspects_txt = "\n".join(
+        f"- {a['active_bg']} {a['type_bg']} {a['passive_bg']} (орб {a['orb']}°)"
+        for a in prof["key_aspects"]
+    )
+    houses_txt = ", ".join(f"{h['house']}-ти дом ({h['count']} планети)" for h in prof["emphasised_houses"])
+    el_txt = ", ".join(f"{k}: {v}" for k, v in prof["elements"]["counts"].items())
+    mo_txt = ", ".join(f"{k}: {v}" for k, v in prof["modalities"]["counts"].items())
+
+    prompt = f"""Ти си професионален астролог. Напиши раздел "ЗА МЕН" — личен портрет на човека, СТРИКТНО базиран на точните данни от наталната му карта по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции — обясни какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Роден: {p['day']}.{p['month']}.{p['year']} в {p['hour']:02d}:{p['minute']:02d}
+
+=== ЯДРО НА ЛИЧНОСТТА ===
+{fmt_point('Слънце (същност)', prof['core']['sun'])}
+{fmt_point('Луна (емоции)', prof['core']['moon'])}
+{fmt_point('Асцендент (как те виждат)', prof['core']['ascendant'])}
+{fmt_point('Медиум Коели (призвание)', prof['core']['mc'])}
+
+=== ЛИЧНИ ПЛАНЕТИ ===
+{chr(10).join(f"- {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}" for pt in prof['personal_planets'])}
+
+=== БАЛАНС НА СТИХИИТЕ ===
+{el_txt} — доминира: {prof['elements']['dominant']}
+
+=== БАЛАНС НА КАЧЕСТВАТА ===
+{mo_txt} — доминира: {prof['modalities']['dominant']}
+
+=== НАЙ-АКЦЕНТИРАНИ ДОМОВЕ ===
+{houses_txt}
+
+=== НАЙ-СИЛНИ АСПЕКТИ (най-малък орб = най-точен и осезаем) ===
+{aspects_txt}
+
+=== ДРУГИ ===
+Форма на картата: {prof['shape_bg']}
+Лунна фаза при раждане: {prof['moon_phase_bg']}
+Раждане: {'дневно' if prof['diurnal'] else 'нощно'}
+
+=== ЗАДАЧА ===
+Напиши личен портрет в следната структура (обръщай се на "ти", топло и директно):
+
+1. **Кой си ти в едно изречение** — есенцията на характера, уловена кратко и запомнящо се.
+2. **Твоята същност** — Слънце, Луна и Асцендент: кой си отвътре, какво чувстваш и как те виждат другите. Обясни разликите между трите, ако има такива.
+3. **Силните ти страни** — 4-5 конкретни, изведени от реалните аспекти и позиции. За всяка обясни КАК се проявява в ежедневието.
+4. **Слабите ти места** — 3-4 честни, но доброжелателни. Не плаши — обясни какъв е урокът и как се работи с тях.
+5. **Твоят темперамент** — какво значи доминацията на стихията и качеството за начина, по който живееш.
+6. **Къде е фокусът на живота ти** — акцентираните домове и какви теми носят.
+7. **Интересни особености** — 3-4 любопитни детайла от картата: рядка конфигурация, необичайно силен аспект, ретроградна планета, форма на картата, лунна фаза, дневно/нощно раждане. Направи ги наистина интересни, не банални.
+8. **Какво да развиваш** — 2-3 конкретни насоки за растеж.
+
+Обяснявай астрологичните термини накратко, за да е разбираемо и за човек без познания. Пиши на български, живо и конкретно. Основавай се единствено на данните по-горе."""
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
+            set_ai_cache(person_id, "profile", interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
 
 @app.get("/api/persons/{person_id}/numerology")
 def api_numerology(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
@@ -968,6 +1256,71 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(ge
         prev_pairs = curr_pairs
 
     return {"start_date": data.start_date, "end_date": data.end_date, "days": results}
+
+@app.post("/api/period-interpretation")
+def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
+                              user: Tuple[int, str] = Depends(get_current_user)):
+    """AI reading of a date range's transits. Cached per person + date range."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, f"Person (id={data.person_id}) not found")
+
+    cache_key = f"period:{data.start_date}:{data.end_date}"
+    if not refresh:
+        cached = get_ai_cache(data.person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    period = api_period_influence(data, user)
+    days = period.get("days", [])
+
+    if not days:
+        return {"interpretation": "През избрания период няма настъпващи или отпадащи значими транзити.",
+                "cached": False}
+
+    lines = []
+    for day in days:
+        parts = []
+        for a in day.get("entering", []):
+            parts.append(f"започва {a['active']} {a['type']} {a['passive']} (натал)")
+        for a in day.get("leaving", []):
+            parts.append(f"приключва {a['active']} {a['type']} {a['passive']} (натал)")
+        lines.append(f"- {day['date']}: " + "; ".join(parts))
+
+    prompt = f"""Ти си професионален астролог. Направи РАЗЧИТАНЕ НА ПЕРИОД за конкретен човек, СТРИКТНО базирано на точните транзитни данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Период: {data.start_date} до {data.end_date}
+
+=== ТРАНЗИТНИ СЪБИТИЯ ПО ДНИ ===
+{chr(10).join(lines)}
+
+=== ЗАДАЧА ===
+Напиши свързан, разбираем разказ за периода (НЕ просто списък), в следната структура:
+
+1. **Общ характер на периода** — каква е основната тема и енергия на тези седмици, като цялост.
+2. **Ключовите моменти** — 3-5 най-значими дати от списъка и какво конкретно носи всяка (по-бавните планети — Юпитер, Сатурн, Уран, Нептун, Плутон — тежат повече от бързите като Меркурий и Венера; отбележи това).
+3. **Възможности** — къде периодът дава отворени врати и какво си струва да се предприеме.
+4. **Предизвикателства** — кои дни изискват внимание или търпение и защо.
+5. **Практични съвети** — 3-4 конкретни препоръки, изведени пряко от аспектите.
+6. **Обобщение** — 2-3 изречения есенция на периода.
+
+Пиши на български, топло и практично, все едно говориш директно на човека. Обяснявай астрологичните термини (напр. "квадрат — напрежение, което подтиква към действие"), за да е разбираемо за човек без астрологични познания. Основавай се единствено на изброените данни."""
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
+            set_ai_cache(data.person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
 
 class AIError(Exception):
     """Raised with a user-facing Bulgarian explanation of what went wrong with an AI call."""

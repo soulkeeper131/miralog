@@ -18,6 +18,37 @@ SIGN_SYMBOLS = {
     "Pisces": "♓",
 }
 
+# Element (fire/earth/air/water) and modality (cardinal/fixed/mutable) per sign —
+# used to profile the overall temperament of a chart.
+SIGN_ELEMENTS = {
+    "Aries": "fire", "Leo": "fire", "Sagittarius": "fire",
+    "Taurus": "earth", "Virgo": "earth", "Capricorn": "earth",
+    "Gemini": "air", "Libra": "air", "Aquarius": "air",
+    "Cancer": "water", "Scorpio": "water", "Pisces": "water",
+}
+
+SIGN_MODALITIES = {
+    "Aries": "cardinal", "Cancer": "cardinal", "Libra": "cardinal", "Capricorn": "cardinal",
+    "Taurus": "fixed", "Leo": "fixed", "Scorpio": "fixed", "Aquarius": "fixed",
+    "Gemini": "mutable", "Virgo": "mutable", "Sagittarius": "mutable", "Pisces": "mutable",
+}
+
+ELEMENTS_BG = {"fire": "Огън", "earth": "Земя", "air": "Въздух", "water": "Вода"}
+MODALITIES_BG = {"cardinal": "Кардинални", "fixed": "Фиксирани", "mutable": "Променливи"}
+
+ELEMENT_MEANINGS = {
+    "fire": "Ентусиазъм, инициатива и действие. Води със сърце и вдъхновение.",
+    "earth": "Практичност, стабилност и търпение. Гради с ръце и с реални резултати.",
+    "air": "Мисъл, комуникация и идеи. Свързва се със света чрез разбиране.",
+    "water": "Емоция, интуиция и дълбочина. Усеща света, преди да го разбере.",
+}
+
+MODALITY_MEANINGS = {
+    "cardinal": "Започва нещата — инициатор, който поставя начала и повежда.",
+    "fixed": "Задържа нещата — упорит, довършва започнатото и не се отказва лесно.",
+    "mutable": "Променя нещата — гъвкав, приспособява се и свързва различни светове.",
+}
+
 OBJECTS = {
     "Asc": "Асцендент", "Desc": "Десцендент", "MC": "Медиум Коели", "IC": "Имум Коели",
     "ARMC": "ARMC",
@@ -81,6 +112,16 @@ def tr_sign(value):
 def sign_symbol(value):
     """Zodiac glyph for a sign name, e.g. 'Capricorn' -> '♑'."""
     return SIGN_SYMBOLS.get(value, "✦") if value else "✦"
+
+
+def sign_element(value):
+    """Element key for a sign, e.g. 'Capricorn' -> 'earth'."""
+    return SIGN_ELEMENTS.get(value)
+
+
+def sign_modality(value):
+    """Modality key for a sign, e.g. 'Capricorn' -> 'cardinal'."""
+    return SIGN_MODALITIES.get(value)
 
 
 def tr_object(value):

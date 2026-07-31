@@ -138,12 +138,14 @@
         }
         .logo-img {
             display: block;
-            margin: 0 auto 10px;
-            width: 96px;
-            height: 96px;
+            margin: 0 auto 12px;
+            width: 112px;
+            height: 112px;
             border-radius: 50%;
             object-fit: cover;
-            box-shadow: var(--shadow-raised);
+            /* soft pastel halo ringing the mark, then the lifted shadow */
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 8px var(--surface-thistle), var(--shadow-raised);
         }
         h1 {
             font-family: var(--font-display);
@@ -162,7 +164,8 @@
             font-size: 0.95rem;
         }
         .card {
-            background: var(--bg-card);
+            /* soft pastel wash layered over the approved --bg-card */
+            background: linear-gradient(var(--surface-thistle), var(--surface-icy)), var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 28px;

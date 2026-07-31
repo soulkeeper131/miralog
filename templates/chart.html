@@ -119,8 +119,19 @@
         .theme-toggle:active { transform: translateY(0); }
         .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; transition: color 0.15s ease; }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; min-height: 44px; transition: color 0.15s ease; }
         .back-link:hover { color: var(--accent-light); }
+
+        /* shared page mark: small logo sitting beside the back-link */
+        .page-nav {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        .page-logo {
+            width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+            flex-shrink: 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 3px var(--surface-thistle);
+        }
 
         .chart-header {
             background: var(--bg-card); border-radius: 16px; padding: 20px; margin-bottom: 20px;
@@ -132,12 +143,22 @@
         }
         .chart-meta { color: var(--text-muted); font-size: 0.85rem; margin-top: 8px; }
 
-        .tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tabs {
+            display: flex; gap: 5px; margin-bottom: 20px;
+            flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+            padding-bottom: 2px;
+            scrollbar-width: none; -ms-overflow-style: none;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x proximity;
+        }
+        .tabs::-webkit-scrollbar { display: none; }
         .tab {
             display: inline-flex; align-items: center; justify-content: center;
-            padding: 8px 16px; border-radius: 12px; cursor: pointer; min-height: 44px; min-width: 44px;
+            padding: 8px 13px; border-radius: 11px; cursor: pointer; min-height: 44px;
+            flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start;
             background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
-            font-family: var(--font-body); font-size: 0.85rem; font-weight: 500;
+            font-family: var(--font-body); font-size: 0.82rem; font-weight: 500;
+            letter-spacing: -0.005em;
             transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
             user-select: none;
         }
@@ -417,9 +438,123 @@
             .aspect-meaning { font-size: 0.8rem; }
         }
 
+        /* AI-generated prose: comfortable measure (~68ch) and generous leading */
         .interpretation {
-            white-space: pre-wrap; line-height: 1.8; font-size: 0.95rem;
+            line-height: 1.8; font-size: 0.97rem;
             color: var(--text-softer);
+            max-width: 68ch;
+            text-align: left;
+        }
+        .interpretation p { margin: 0 0 1.05em; }
+        .interpretation p:last-child { margin-bottom: 0; }
+        .interpretation strong { color: var(--text-heading); font-weight: 600; }
+        .interpretation em { color: var(--text); font-style: italic; }
+
+        /* section headings the model emits (### or "1. **Title**") */
+        .interpretation .int-h {
+            display: flex; align-items: baseline; gap: 10px;
+            color: var(--text-heading); font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.35;
+            margin: 1.9em 0 0.7em;
+            padding-bottom: 0.45em;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .interpretation .int-h:first-child { margin-top: 0; }
+        .interpretation .int-h1 { font-size: 1.15rem; }
+        .interpretation .int-h2 { font-size: 1.05rem; }
+        .interpretation .int-h3 { font-size: 0.98rem; }
+        .interpretation .int-num {
+            flex-shrink: 0;
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--surface-thistle); color: var(--accent-light);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.78rem; font-weight: 700;
+        }
+
+        .interpretation .int-list {
+            margin: 0 0 1.05em; padding-left: 0; list-style: none;
+        }
+        .interpretation .int-list li {
+            position: relative; padding-left: 22px; margin-bottom: 0.55em;
+        }
+        .interpretation .int-list li::before {
+            content: "✦"; position: absolute; left: 2px; top: 0;
+            color: var(--accent-light); font-size: 0.8rem;
+        }
+        .interpretation .int-num-inline { color: var(--accent-light); font-weight: 600; }
+
+        .interpretation .int-rule {
+            border: none; border-top: 1px solid var(--border-soft); margin: 1.6em 0;
+        }
+
+        /* --- "За мен" profile --- */
+        .prof-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px; margin-bottom: 20px;
+        }
+        .prof-point {
+            background: var(--surface-thistle); border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 14px 16px;
+        }
+        .prof-point-head { display: flex; gap: 12px; align-items: flex-start; }
+        .prof-glyph {
+            font-size: 1.5rem; line-height: 1; color: var(--accent-light);
+            background: var(--bg-card); border-radius: 50%; width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .prof-point-label {
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600;
+        }
+        .prof-point-value { color: var(--text-heading); font-weight: 600; font-size: 1rem; }
+        .prof-point-house { color: var(--text-muted); font-size: 0.8rem; }
+        .prof-point-meaning {
+            margin-top: 10px; font-size: 0.85rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .prof-block { margin-bottom: 22px; }
+        .prof-h3 {
+            font-size: 0.95rem; font-weight: 600; color: var(--text-heading);
+            margin-bottom: 12px; letter-spacing: -0.01em;
+        }
+        .prof-note {
+            margin-top: 10px; font-size: 0.85rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .bal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .bal-name { font-size: 0.85rem; color: var(--text); width: 92px; flex-shrink: 0; }
+        .bal-track {
+            flex: 1; height: 8px; border-radius: 99px; background: var(--surface-thistle);
+            overflow: hidden;
+        }
+        .bal-fill {
+            display: block; height: 100%; border-radius: 99px;
+            background: linear-gradient(90deg, var(--accent-light), var(--accent));
+        }
+        .bal-count { font-size: 0.8rem; color: var(--text-muted); width: 18px; text-align: right; }
+
+        .prof-house {
+            display: flex; gap: 12px; align-items: flex-start; padding: 10px 0;
+            border-bottom: 1px solid var(--border-soft); font-size: 0.88rem; line-height: 1.6;
+        }
+        .prof-house:last-child { border-bottom: none; }
+        .prof-house-num {
+            width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+            background: var(--surface-icy); color: var(--on-icy);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 0.85rem;
+        }
+
+        .prof-aspect { padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
+        .prof-aspect:last-child { border-bottom: none; }
+        .prof-aspect-title { font-size: 0.9rem; color: var(--text); }
+        .prof-aspect-title strong { color: var(--text-heading); }
+        .prof-orb {
+            font-size: 0.72rem; color: var(--text-dim); margin-left: 6px;
+            background: var(--surface-sky); padding: 2px 7px; border-radius: 99px;
+        }
+        .prof-aspect-meaning {
+            font-size: 0.82rem; color: var(--text-meaning); line-height: 1.55; margin-top: 3px;
         }
 
         .cache-bar {
@@ -471,11 +606,12 @@
 
         .stats {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 12px; margin-top: 12px;
+            gap: 12px; margin-top: 12px; align-items: stretch;
         }
         .stat {
             background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 14px;
             padding: 14px 12px; text-align: center;
+            display: flex; flex-direction: column; height: 100%;
             transition: border-color 0.15s ease, transform 0.15s ease;
         }
         /* rotating pastel surfaces so the four stat cards stay visually distinct */
@@ -486,7 +622,11 @@
         .stat:hover { border-color: var(--accent-light); transform: translateY(-1px); }
         .stat-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
         .stat-value { color: var(--text-heading); font-size: 1.05rem; font-weight: 600; line-height: 1.25; margin-top: 5px; }
-        .stat-meaning { color: var(--text-muted); font-size: 0.75rem; margin-top: 5px; line-height: 1.5; }
+        /* margin-top:auto pins the description to the card bottom so values stay aligned across cards */
+        .stat-meaning {
+            color: var(--text-muted); font-size: 0.75rem; line-height: 1.5;
+            margin-top: auto; padding-top: 7px;
+        }
 
         .period-form {
             display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;
@@ -546,15 +686,18 @@
             .planet-title-name { font-size: 0.95rem; }
             .planet-detail { font-size: 0.83rem; }
             .planet-meaning { font-size: 0.8rem; }
-            .tabs { gap: 2px; }
-            .tab { padding: 8px 12px; font-size: 0.85rem; min-height: 44px; min-width: 44px; }
+            .tabs { gap: 4px; margin-bottom: 16px; }
+            .tab { padding: 8px 12px; font-size: 0.8rem; min-height: 44px; }
         }
     </style>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <a href="/" class="back-link">← Всички хора</a>
+        <div class="page-nav">
+            <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="/" class="back-link">← Всички хора</a>
+        </div>
 
         <div class="chart-header">
             <h1>{{ person.name }}</h1>
@@ -588,6 +731,7 @@
 
         <div class="tabs">
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
+            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">За мен</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope">Дневен хороскоп</div>
@@ -603,6 +747,17 @@
                     <div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Зареждане на картата...</div>
                 </div>
                 <div class="wheel-legend" id="wheel-legend"></div>
+            </div>
+        </div>
+
+        <div id="tab-profile" class="tab-content">
+            <div class="section">
+                <h2>Твоят профил</h2>
+                <div id="profile-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div>
+            </div>
+            <div class="section">
+                <h2>Личен портрет</h2>
+                <div id="profile-ai-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div>
             </div>
         </div>
 
@@ -735,6 +890,7 @@
                     </div>
                     <button class="btn" id="periodBtn" onclick="loadPeriod()">Анализирай период</button>
                 </div>
+                <div id="period-ai-content"></div>
                 <div id="period-content"></div>
             </div>
         </div>
@@ -764,6 +920,103 @@
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        }
+
+        // Presentation-only: turns the AI's plain text into paragraphs and renders
+        // its markdown **bold** as <strong>. Escapes first, so model output is never
+        // injected as live HTML.
+        function escapeHtmlText(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Inline markdown (bold / italics) for a single line. Escapes first, so the
+        // model's output is never injected as live HTML.
+        function inlineMd(text) {
+            let html = escapeHtmlText(text);
+            html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>');
+            return html;
+        }
+
+        // Turns the model's markdown-ish output into a readable, structured block:
+        // headings, numbered sections, bullet lists and paragraphs.
+        function formatInterpretation(raw) {
+            const lines = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').split('\n');
+            const out = [];
+            let listItems = [];
+            let paraLines = [];
+
+            const flushList = () => {
+                if (!listItems.length) return;
+                out.push('<ul class="int-list">' + listItems.map(li => '<li>' + li + '</li>').join('') + '</ul>');
+                listItems = [];
+            };
+            const flushPara = () => {
+                if (!paraLines.length) return;
+                out.push('<p>' + paraLines.join('<br>') + '</p>');
+                paraLines = [];
+            };
+            const flushAll = () => { flushList(); flushPara(); };
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+
+                if (!line) { flushAll(); continue; }
+
+                // --- horizontal rule
+                if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) {
+                    flushAll();
+                    out.push('<hr class="int-rule">');
+                    continue;
+                }
+
+                // ### Heading  /  ## Heading
+                const md = line.match(/^(#{1,6})\s+(.*)$/);
+                if (md) {
+                    flushAll();
+                    const level = Math.min(md[1].length, 3);
+                    out.push(`<h4 class="int-h int-h${level}">${inlineMd(md[2].replace(/[:：]\s*$/, ''))}</h4>`);
+                    continue;
+                }
+
+                // "1. **Заглавие**" or "**Заглавие**" alone on a line
+                const numbered = line.match(/^(\d+)[.)]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$/);
+                if (numbered) {
+                    flushAll();
+                    out.push(`<h4 class="int-h int-h2"><span class="int-num">${numbered[1]}</span>${inlineMd(numbered[2])}</h4>`);
+                    if (numbered[3]) paraLines.push(inlineMd(numbered[3]));
+                    continue;
+                }
+                if (/^\*\*[^*]+\*\*[:：]?$/.test(line)) {
+                    flushAll();
+                    out.push(`<h4 class="int-h int-h2">${inlineMd(line.replace(/^\*\*|\*\*[:：]?$/g, ''))}</h4>`);
+                    continue;
+                }
+
+                // bullets: -, *, • (but not **bold** at line start)
+                const bullet = line.match(/^[-•]\s+(.*)$/) || line.match(/^\*(?!\*)\s+(.*)$/);
+                if (bullet) {
+                    flushPara();
+                    listItems.push(inlineMd(bullet[1]));
+                    continue;
+                }
+
+                // numbered list item without bold title
+                const numItem = line.match(/^(\d+)[.)]\s+(.+)$/);
+                if (numItem) {
+                    flushPara();
+                    listItems.push('<span class="int-num-inline">' + numItem[1] + '.</span> ' + inlineMd(numItem[2]));
+                    continue;
+                }
+
+                flushList();
+                paraLines.push(inlineMd(line));
+            }
+
+            flushAll();
+            return out.join('');
         }
 
         function updateThemeToggleIcon() {
@@ -806,6 +1059,10 @@
                 window._horoscopeLoaded = true;
                 loadHoroscope();
                 loadHoroscopeAI();
+            }
+            if (name === 'profile' && !window._profileLoaded) {
+                window._profileLoaded = true;
+                loadProfile();
             }
             if (name === 'numerology' && !window._numerologyLoaded) {
                 loadNumerology();
@@ -885,6 +1142,111 @@
             </div>`;
         }
 
+        function profilePoint(label, pt) {
+            if (!pt) return '';
+            return `<div class="prof-point">
+                <div class="prof-point-head">
+                    <span class="prof-glyph">${pt.sign_symbol}</span>
+                    <div>
+                        <div class="prof-point-label">${label}</div>
+                        <div class="prof-point-value">${pt.name_bg} в ${pt.sign_bg}</div>
+                        <div class="prof-point-house">${pt.house_bg}</div>
+                    </div>
+                </div>
+                ${pt.meaning ? `<p class="prof-point-meaning">${pt.meaning}</p>` : ''}
+            </div>`;
+        }
+
+        function balanceBars(counts, dominant, meaning, title) {
+            const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+            const rows = Object.entries(counts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `
+                    <div class="bal-row">
+                        <span class="bal-name">${k}</span>
+                        <span class="bal-track"><span class="bal-fill" style="width:${(v / total * 100).toFixed(0)}%"></span></span>
+                        <span class="bal-count">${v}</span>
+                    </div>`).join('');
+            return `<div class="prof-block">
+                <h3 class="prof-h3">${title}</h3>
+                ${rows}
+                ${dominant ? `<p class="prof-note"><strong>Доминира ${dominant}.</strong> ${meaning || ''}</p>` : ''}
+            </div>`;
+        }
+
+        async function loadProfile() {
+            const el = document.getElementById('profile-content');
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/profile', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const d = await resp.json();
+
+                let html = '<div class="prof-grid">';
+                html += profilePoint('Същност', d.core.sun);
+                html += profilePoint('Емоции', d.core.moon);
+                html += profilePoint('Как те виждат', d.core.ascendant);
+                html += profilePoint('Призвание', d.core.mc);
+                html += '</div>';
+
+                if (d.personal_planets && d.personal_planets.length) {
+                    html += '<div class="prof-block"><h3 class="prof-h3">Лични планети</h3><div class="prof-grid">';
+                    d.personal_planets.forEach(pt => { html += profilePoint(pt.name_bg, pt); });
+                    html += '</div></div>';
+                }
+
+                html += balanceBars(d.elements.counts, d.elements.dominant, d.elements.dominant_meaning, 'Баланс на стихиите');
+                html += balanceBars(d.modalities.counts, d.modalities.dominant, d.modalities.dominant_meaning, 'Баланс на качествата');
+
+                if (d.emphasised_houses && d.emphasised_houses.length) {
+                    html += '<div class="prof-block"><h3 class="prof-h3">Където животът ти е най-активен</h3>';
+                    d.emphasised_houses.forEach(h => {
+                        html += `<div class="prof-house">
+                            <span class="prof-house-num">${h.house}</span>
+                            <div><strong>${h.count} ${h.count === 1 ? 'планета' : 'планети'}</strong> — ${h.meaning}</div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                if (d.key_aspects && d.key_aspects.length) {
+                    html += '<div class="prof-block"><h3 class="prof-h3">Най-силните ти аспекти</h3>';
+                    d.key_aspects.forEach(a => {
+                        html += `<div class="prof-aspect">
+                            <div class="prof-aspect-title"><strong>${a.active_bg}</strong> ${a.type_bg} <strong>${a.passive_bg}</strong>
+                                <span class="prof-orb">орб ${a.orb}°</span></div>
+                            <div class="prof-aspect-meaning">${a.type_meaning || ''}</div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                document.getElementById('profile-ai-content').innerHTML = '';
+                return;
+            }
+            loadProfileAI();
+        }
+
+        async function loadProfileAI(refresh) {
+            const el = document.getElementById('profile-ai-content');
+            el.innerHTML = crystalLoader('Генериране на портрет...');
+            try {
+                const url = '/api/persons/{{ person.id }}/profile/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, { headers: authHeaders() });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, 'loadProfileAI(true)') +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира портрет.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
         async function loadHoroscopeAI(refresh) {
             const el = document.getElementById('horoscope-ai-content');
             el.innerHTML = crystalLoader('Генериране на разчитане...');
@@ -894,7 +1256,7 @@
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadHoroscopeAI(true)') +
-                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     el.innerHTML = '<div class="error">Не можа да се генерира разчитане.</div>';
                 }
@@ -913,7 +1275,7 @@
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadInterpretation(true)') +
-                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     el.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
                 }
@@ -958,7 +1320,7 @@
                     el.innerHTML = '<p style="color:var(--text-muted); margin-top:16px;">Няма настъпващи или отпадащи значими транзитни аспекти в избрания период.</p>';
                     return;
                 }
-                let html = '';
+                let html = '<h3 class="prof-h3" style="margin-top:22px;">Ден по ден</h3>';
                 data.days.forEach(day => {
                     html += `<div class="day-entry"><div class="day-date">${fmtDateShortBg(day.date)}</div>`;
                     day.entering.forEach(a => {
@@ -970,11 +1332,39 @@
                     html += '</div>';
                 });
                 el.innerHTML = html;
+                loadPeriodAI(startEl.value, endEl.value);
             } catch (e) {
                 el.innerHTML = '<div class="error">Грешка при анализа: ' + e.message + '</div>';
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Анализирай период';
+            }
+        }
+
+        async function loadPeriodAI(start, end, refresh) {
+            const el = document.getElementById('period-ai-content');
+            el.innerHTML = crystalLoader('Разчитане на периода...');
+            try {
+                const url = '/api/period-interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person_id: {{ person.id }}, start_date: start, end_date: end })
+                });
+                if (!resp.ok) {
+                    const d = await resp.json().catch(() => ({}));
+                    throw new Error(d.detail || ('HTTP ' + resp.status));
+                }
+                const data = await resp.json();
+                if (data.interpretation) {
+                    const refreshCall = `loadPeriodAI('${start}','${end}',true)`;
+                    el.innerHTML = cachedBadge(data, refreshCall) +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при разчитането: ' + e.message + '</div>';
             }
         }
 
@@ -1028,7 +1418,7 @@
                 const data = await resp.json();
                 if (data.interpretation) {
                     aiEl.innerHTML = cachedBadge(data, 'loadNumerologyAI(true)') +
-                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     aiEl.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
                 }
