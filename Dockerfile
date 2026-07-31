@@ -14,11 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy app
 COPY app.py .
 COPY templates/ templates/
-COPY static/ static/
-COPY ephe/ ephe/
 
-# Create data dir for SQLite
-RUN mkdir -p /app/data
+# Create dirs for static files and ephemeris (ephe mounted via volume)
+RUN mkdir -p /app/static /app/ephe /app/data
 
 ENV SE_EPHE_PATH=/app/ephe
 ENV HOSTNAME=0.0.0.0
