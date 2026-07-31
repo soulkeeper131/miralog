@@ -212,19 +212,16 @@
             border-radius: 10px;
             padding: 16px 18px;
             border: 1px solid var(--border-soft);
-            border-left: 4px solid var(--accent);
             transition: border-color 0.2s;
         }
         .aspect-card:hover { border-color: var(--accent); }
-        .aspect-card.major { border-left-color: #f59e0b; }
-        .aspect-card.harmony { border-left-color: #22c55e; }
-        .aspect-card.challenge { border-left-color: #ef4444; }
-        .aspect-card.minor { border-left-color: #6366f1; }
         .aspect-card-header {
             display: flex;
             align-items: center;
             gap: 10px;
             margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-soft);
         }
         .aspect-icon {
             font-size: 1.4rem;
@@ -234,29 +231,36 @@
         .aspect-title {
             flex: 1;
             min-width: 0;
+        }
+        .aspect-title-name {
             font-weight: 700;
-            font-size: 1rem;
+            font-size: 1.05rem;
             color: var(--text-heading);
         }
-        .aspect-type-badge {
+        .aspect-title-sub {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .aspect-badge {
             display: inline-block;
-            padding: 2px 10px;
+            padding: 2px 8px;
             border-radius: 10px;
-            font-size: 0.72rem;
+            font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.03em;
             text-transform: uppercase;
             flex-shrink: 0;
         }
-        .aspect-type-badge.major { background: rgba(245,158,11,0.12); color: #f59e0b; }
-        .aspect-type-badge.harmony { background: rgba(34,197,94,0.12); color: #22c55e; }
-        .aspect-type-badge.challenge { background: rgba(239,68,68,0.12); color: #ef4444; }
-        .aspect-type-badge.minor { background: rgba(99,102,241,0.12); color: #6366f1; }
+        .aspect-badge.major { background: rgba(245,158,11,0.12); color: #f59e0b; }
+        .aspect-badge.harmony { background: rgba(34,197,94,0.12); color: #22c55e; }
+        .aspect-badge.challenge { background: rgba(239,68,68,0.12); color: #ef4444; }
+        .aspect-badge.minor { background: rgba(99,102,241,0.12); color: #6366f1; }
         .aspect-detail {
-            margin-bottom: 5px;
-            font-size: 0.85rem;
+            margin-bottom: 7px;
+            font-size: 0.88rem;
             line-height: 1.55;
-            color: var(--text-soft);
         }
         .aspect-detail:last-child { margin-bottom: 0; }
         .aspect-detail strong {
@@ -266,10 +270,10 @@
         .aspect-detail-label {
             display: inline-block;
             color: var(--text-dim);
-            font-size: 0.7rem;
+            font-size: 0.72rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-            min-width: 44px;
+            min-width: 52px;
             margin-right: 4px;
         }
         .aspect-meaning {
@@ -307,9 +311,9 @@
             .aspect-card { padding: 14px 14px; }
             .aspect-card-header { gap: 8px; }
             .aspect-icon { font-size: 1.2rem; }
-            .aspect-title { font-size: 0.9rem; }
-            .aspect-detail { font-size: 0.8rem; }
-            .aspect-meaning { font-size: 0.78rem; }
+            .aspect-title-name { font-size: 0.95rem; }
+            .aspect-detail { font-size: 0.83rem; }
+            .aspect-meaning { font-size: 0.8rem; }
 
         .interpretation {
             white-space: pre-wrap; line-height: 1.8; font-size: 0.95rem;
@@ -511,13 +515,14 @@
                 {% if chart.aspects %}
                 <div class="aspect-cards">
                     {% for a in chart.aspects %}
-                    <div class="aspect-card {{ a.aspect_class or 'minor' }}">
+                    <div class="aspect-card">
                         <div class="aspect-card-header">
                             <div class="aspect-icon">{{ a.icon or '◇' }}</div>
                             <div class="aspect-title">
-                                {{ a.active_bg }} <span style="color:var(--accent-light);font-weight:700;">{{ a.type_bg }}</span> {{ a.passive_bg }}
+                                <div class="aspect-title-name">{{ a.active_bg }} <span style="color:var(--accent-light);">⯀</span> {{ a.passive_bg }}</div>
+                                <div class="aspect-title-sub">{{ a.type_bg }}</div>
                             </div>
-                            <span class="aspect-type-badge {{ a.aspect_class or 'minor' }}">{{ a.type_bg }}</span>
+                            <span class="aspect-badge {{ a.aspect_class or 'minor' }}">{{ a.type_bg }}</span>
                         </div>
                         {% if a.orb %}
                         <div class="aspect-detail">
