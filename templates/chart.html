@@ -489,12 +489,14 @@
 
         /* --- daily summary cards --- */
         .sum-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 10px; margin-bottom: 14px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px; margin-bottom: 12px; align-items: stretch;
         }
         .sum-card {
-            border-radius: 14px; padding: 14px 16px; text-align: center;
+            border-radius: 14px; padding: 16px 14px; text-align: center;
             border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column; justify-content: center;
+            gap: 4px; min-height: 84px;
         }
         .sum-mood { background: var(--surface-thistle); }
         .sum-energy { background: var(--surface-icy); }
@@ -506,11 +508,12 @@
         .sum-value { color: var(--text-heading); font-weight: 600; font-size: 1rem; line-height: 1.35; }
 
         .sum-cols {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 12px; margin-bottom: 14px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px; margin-bottom: 12px; align-items: stretch;
         }
         .sum-col {
             border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
         }
         .sum-do { background: var(--surface-icy); }
         .sum-avoid { background: var(--surface-pink); }
@@ -710,20 +713,44 @@
         .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-bottom: 6px; }
         .day-entry .day-aspect { font-size: 0.85rem; color: var(--text-soft); padding: 2px 0; }
 
-        .num-row {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 12px 0; border-bottom: 1px solid var(--border-soft); gap: 12px;
+        /* numerology: numbers on cards, meanings read below */
+        .num-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px; margin-bottom: 20px; align-items: stretch;
         }
-        .num-row:last-child { border-bottom: none; }
-        .num-label { color: var(--text-heading); font-weight: 600; font-size: 0.95rem; line-height: 1.25; flex-shrink: 0; }
-        .num-value {
-            font-family: var(--font-display); color: var(--accent-light);
-            font-size: 1.6rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; flex-shrink: 0;
+        .num-card {
+            border-radius: 14px; padding: 16px 12px; text-align: center;
+            border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column; justify-content: center; gap: 2px;
+            min-height: 96px;
         }
-        .num-meaning { color: var(--text-soft); font-size: 0.85rem; text-align: right; }
-        @media (max-width: 600px) {
-            .num-row { flex-direction: column; align-items: flex-start; }
-            .num-meaning { text-align: left; }
+        .num-t1 { background: var(--surface-thistle); }
+        .num-t2 { background: var(--surface-icy); }
+        .num-t3 { background: var(--surface-petal); }
+        .num-t4 { background: var(--surface-sky); }
+        .num-t5 { background: var(--surface-pink); }
+        .num-t6 { background: var(--surface-thistle); }
+        .num-card-value {
+            font-family: var(--font-display); color: var(--text-heading);
+            font-size: 2.1rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em;
+        }
+        .num-card-label {
+            font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em;
+            color: var(--text-dim); font-weight: 600; line-height: 1.3;
+        }
+
+        .num-detail {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 11px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.88rem; line-height: 1.6; color: var(--text-soft);
+        }
+        .num-detail:last-child { border-bottom: none; }
+        .num-detail strong { color: var(--text-heading); }
+        .num-detail-badge {
+            flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+            background: var(--surface-thistle); color: var(--accent-light);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.85rem;
         }
 
         @media (max-width: 600px) {
@@ -804,11 +831,11 @@
         <div id="tab-profile" class="tab-content">
             <div class="section">
                 <h2>Твоят профил</h2>
-                <div id="profile-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div>
+                <div id="profile-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
                 <h2>Личен портрет</h2>
-                <div id="profile-ai-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div>
+                <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
             </div>
         </div>
 
@@ -916,11 +943,11 @@
         <div id="tab-horoscope" class="tab-content">
             <div class="section">
                 <h2>Разчитане на деня</h2>
-                <div id="horoscope-ai-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на разчитане...</div>
+                <div id="horoscope-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на разчитане...</div></div>
             </div>
             <div class="section">
                 <h2>Дневен транзитен хороскоп — данни</h2>
-                <div id="horoscope-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div>
+                <div id="horoscope-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
         </div>
 
@@ -952,18 +979,18 @@
                 <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
                     Питагорова нумерология, изчислена математически от името и датата на раждане.
                 </p>
-                <div id="numerology-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div>
+                <div id="numerology-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
                 <h2>AI Интерпретация на нумерологията</h2>
-                <div id="numerology-ai-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div>
+                <div id="numerology-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
             </div>
         </div>
 
         <div id="tab-interpretation" class="tab-content">
             <div class="section">
                 <h2>AI Интерпретация</h2>
-                <div id="interpretation-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на интерпретация...</div>
+                <div id="interpretation-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на интерпретация...</div></div>
             </div>
         </div>
     </div>
@@ -1469,22 +1496,42 @@
                     personality: 'Личност',
                     birthday: 'Рожден ден',
                 };
-                let html = '';
-                for (const key of ['life_path', 'expression', 'soul_urge', 'personality', 'birthday']) {
+                // The numbers themselves go on cards; their meanings read below.
+                const order = ['life_path', 'expression', 'soul_urge', 'personality', 'birthday'];
+                const tints = ['num-t1', 'num-t2', 'num-t3', 'num-t4', 'num-t5'];
+
+                let cards = '';
+                order.forEach((key, i) => {
                     const item = data[key];
-                    html += `<div class="num-row">
-                        <div class="num-label">${labels[key]}</div>
-                        <div class="num-value">${item.number}</div>
-                        <div class="num-meaning">${item.meaning || ''}</div>
+                    cards += `<div class="num-card ${tints[i % tints.length]}">
+                        <div class="num-card-value">${item.number}</div>
+                        <div class="num-card-label">${labels[key]}</div>
+                    </div>`;
+                });
+                const py = data.personal_year;
+                cards += `<div class="num-card num-t6">
+                    <div class="num-card-value">${py.number}</div>
+                    <div class="num-card-label">Лична година ${py.year}</div>
+                </div>`;
+
+                let details = '';
+                order.forEach(key => {
+                    const item = data[key];
+                    if (!item.meaning) return;
+                    details += `<div class="num-detail">
+                        <span class="num-detail-badge">${item.number}</span>
+                        <div><strong>${labels[key]}</strong> — ${item.meaning}</div>
+                    </div>`;
+                });
+                if (py.meaning) {
+                    details += `<div class="num-detail">
+                        <span class="num-detail-badge">${py.number}</span>
+                        <div><strong>Лична година ${py.year}</strong> — ${py.meaning}</div>
                     </div>`;
                 }
-                const py = data.personal_year;
-                html += `<div class="num-row">
-                    <div class="num-label">Лична година (${py.year})</div>
-                    <div class="num-value">${py.number}</div>
-                    <div class="num-meaning">${py.meaning || ''}</div>
-                </div>`;
-                el.innerHTML = html;
+
+                el.innerHTML = `<div class="num-grid">${cards}</div>` +
+                    (details ? `<div class="num-details">${details}</div>` : '');
             } catch (e) {
                 el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
                 aiEl.innerHTML = '';
