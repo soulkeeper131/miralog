@@ -614,27 +614,18 @@ async def dashboard_page(request: Request):
 
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
-    """Chart view — uses token from localStorage on client side."""
-    # Try to get user from Bearer token in request
-    user_id = None
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if token:
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            user_id = int(payload["sub"])
-        except JWTError:
-            pass
-    if not user_id:
-        # Fallback: redirect to login (chart page needs auth)
-        return RedirectResponse("/login", status_code=302)
-
-    p = get_person(person_id, user_id)
+    """Chart view — public for single-user app."""
+    # Single-user app: get any person, use first user
+    import sqlite3 as _sql
+    with _sql.connect(DB_PATH) as conn:
+        conn.row_factory = _sql.Row
+        p = conn.execute("SELECT * FROM persons WHERE id = ?", (person_id,)).fetchone()
     if not p:
         raise HTTPException(404, "Person not found")
-    chart_data = compute_natal(p)
+    chart_data = compute_natal(dict(p))
     return HTMLResponse(templates.get_template("chart.html").render({
         "request": request,
-        "person": p,
+        "person": dict(p),
         "chart": chart_data,
     }))
 
