@@ -115,6 +115,16 @@
         .btn-primary { background: var(--accent); color: white; }
         .btn-primary:hover { background: var(--accent-hover); }
         .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-accent { 
+            background: linear-gradient(135deg, var(--accent-light), var(--accent)); 
+            color: white; border: none;
+            min-height: 44px; min-width: 44px;
+            padding: 10px 20px; border-radius: 10px;
+            font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; transition: opacity 0.2s;
+        }
+        .btn-accent:hover { opacity: 0.9; }
+        .btn-accent:disabled { opacity: 0.6; cursor: not-allowed; }
 
         .error-banner {
             background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px;
@@ -168,6 +178,8 @@
             <h2 id="resultTitle">Резултат</h2>
             <div class="stats" id="resultStats"></div>
             <div id="resultAspects"></div>
+            <button class="btn btn-accent" id="interpretBtn" onclick="getInterpretation()" style="margin-top:16px;display:none;">🔮 AI Четене на съвместимостта</button>
+            <div id="interpretationBox" style="display:none;margin-top:16px;background:var(--bg-card);border-radius:12px;padding:20px;line-height:1.8;white-space:pre-wrap;"></div>
         </div>
     </div>
 
@@ -258,6 +270,8 @@
                     throw new Error(data.detail || ('HTTP ' + resp.status));
                 }
                 const data = await resp.json();
+                synastryPerson1Id = Number(id1);
+                synastryPerson2Id = Number(id2);
                 renderResult(data);
             } catch (e) {
                 showBanner('Грешка при изчисляване: ' + e.message);
@@ -296,6 +310,42 @@
             }
             document.getElementById('resultAspects').innerHTML = html;
             document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('interpretBtn').style.display = 'inline-block';
+            document.getElementById('interpretationBox').style.display = 'none';
+        }
+
+        let synastryPerson1Id = null;
+        let synastryPerson2Id = null;
+
+        async function getInterpretation() {
+            const btn = document.getElementById('interpretBtn');
+            const box = document.getElementById('interpretationBox');
+            btn.disabled = true;
+            btn.textContent = '⏳ Генериране...';
+            box.style.display = 'block';
+            box.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">⏳ Генериране на интерпретация чрез AI...</div>';
+
+            try {
+                const resp = await fetch('/api/synastry/interpretation', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person1_id: synastryPerson1Id, person2_id: synastryPerson2Id })
+                });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    box.innerHTML = data.interpretation.replace(/\n/g, '<br>');
+                    if (data.cached) {
+                        box.innerHTML += '<div style="margin-top:12px;color:var(--text-dim);font-size:0.8rem;">📋 Заредено от кеш</div>';
+                    }
+                } else {
+                    box.innerHTML = '<div class="error-banner">Не можа да се генерира интерпретация.</div>';
+                }
+            } catch (e) {
+                box.innerHTML = '<div class="error-banner">Грешка: ' + e.message + '</div>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Ново четене';
+            }
         }
 
         loadPersons();

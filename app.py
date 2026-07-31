@@ -703,6 +703,83 @@ def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_curr
         raise HTTPException(404, f"Person 2 (id={data.person2_id}) not found")
     return compute_composite(p1, p2)
 
+
+@app.post("/api/synastry/interpretation")
+def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+    """Generate an AI interpretation of synastry between two persons."""
+    user_id, email = user
+    p1 = get_person(data.person1_id, user_id)
+    if not p1:
+        raise HTTPException(404, f"Person 1 (id={data.person1_id}) not found")
+    p2 = get_person(data.person2_id, user_id)
+    if not p2:
+        raise HTTPException(404, f"Person 2 (id={data.person2_id}) not found")
+
+    # Cache key: sort IDs to be order-independent
+    cache_key = f"synastry:{min(data.person1_id, data.person2_id)}:{max(data.person1_id, data.person2_id)}"
+    person_id = data.person1_id  # arbitrary, for cache table FK
+
+    if not refresh:
+        cached = get_ai_cache(person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "cached": True}
+
+    # Compute the composite chart
+    composite = compute_composite(p1, p2)
+
+    # Build prompt
+    planets1 = []
+    planets2 = []
+    for oid, obj in composite["objects"].items():
+        name = obj.get("name_bg", obj.get("name", ""))
+        s = f"{name} в {obj.get('sign_bg', obj.get('sign', ''))} ({obj.get('sign_longitude', '')})"
+        planets1.append(s)
+        planets2.append(s)
+
+    aspects_text = []
+    for a in composite.get("aspects", []):
+        aspects_text.append(f"{a.get('active_bg', a.get('active', ''))} {a.get('type_bg', a.get('type', ''))} {a.get('passive_bg', a.get('passive', ''))}")
+
+    prompt = f"""Ти си професионален астролог. Направи интерпретация на съвместимостта между двама души на български език.
+
+ПЪРВИ ЧОВЕК:
+Име: {p1['name']}
+Дата на раждане: {p1['year']}-{p1['month']:02d}-{p1['day']:02d} {p1['hour']:02d}:{p1['minute']:02d}
+
+ВТОРИ ЧОВЕК:
+Име: {p2['name']}
+Дата на раждане: {p2['year']}-{p2['month']:02d}-{p2['day']:02d} {p2['hour']:02d}:{p2['minute']:02d}
+
+Форма на съвместимостта: {composite.get('shape_bg', composite.get('shape', 'N/A'))}
+Лунна фаза: {composite.get('moon_phase_bg', composite.get('moon_phase', 'N/A'))}
+
+Основни аспекти между тях:
+{chr(10).join(aspects_text) if aspects_text else "Няма данни"}
+
+Моля, направи пълна интерпретация включваща:
+1. Обща характеристика на връзката — каква е динамиката между двамата
+2. Емоционална съвместимост — как се разбират на чувствено ниво
+3. Комуникация и интелектуална връзка — как общуват и мислят заедно
+4. Силни страни на връзката — какво ги сближава и прави добър екип
+5. Предизвикателства — къде може да има търкания и как да ги преодолеят
+6. Романтична и физическа химия
+7. Дългосрочен потенциал — какво показват звездите за бъдещето им
+
+Пиши на български, с топъл и разбираем език. Обърни се директно към тях (използвай имената им)."""
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=3000)
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
 @app.post("/api/transits")
 def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_current_user)):
     """Compute transits for a person at a given target date."""
