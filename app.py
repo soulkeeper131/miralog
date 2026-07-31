@@ -340,6 +340,18 @@ def serialize_objects(objects: dict) -> dict:
 def serialize_aspects(aspects: dict) -> list:
     """Serialize chart aspects to JSON-friendly format.
     Aspects are nested: {active_id: {passive_id: Aspect}}"""
+    icons = {
+        'Conjunction': '☌', 'Opposition': '☍', 'Square': '□', 'Trine': '△',
+        'Sextile': '⚹', 'Semisquare': '∠', 'Sesquisquare': '⚼',
+        'Semisextile': '⚺', 'Quincunx': '⚻', 'Quintile': '⬠', 'Biquintile': '⬟'
+    }
+    aspect_class = {
+        'Conjunction': 'major', 'Opposition': 'challenge', 'Square': 'challenge',
+        'Trine': 'harmony', 'Sextile': 'harmony',
+        'Semisquare': 'minor', 'Sesquisquare': 'minor',
+        'Semisextile': 'minor', 'Quincunx': 'minor',
+        'Quintile': 'minor', 'Biquintile': 'minor'
+    }
     result = []
     for active_id, passive_dict in aspects.items():
         for passive_id, aspect in passive_dict.items():
@@ -354,6 +366,8 @@ def serialize_aspects(aspects: dict) -> list:
                 "active_bg": tr_object(active),
                 "passive": passive,
                 "passive_bg": tr_object(passive),
+                "icon": icons.get(aspect_type, '◇'),
+                "aspect_class": aspect_class.get(aspect_type, 'minor'),
                 "aspect_angle": aspect.aspect if hasattr(aspect, 'aspect') else None,
                 "orb": aspect.orb if hasattr(aspect, 'orb') else None,
                 "distance": aspect.distance.formatted if hasattr(aspect, 'distance') and aspect.distance else None,
