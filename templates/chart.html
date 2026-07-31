@@ -3,69 +3,213 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>{{ person.name }} — Натална карта | Миралог</title>
+    <title>{{ person.name }} — Натална карта | МираСкоп</title>
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        :root {
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-soft: #1e1e36;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-soft: #aaa;
+            --text-softer: #ccc;
+            --text-meaning: #b8b0d0;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-soft: #efe3f4;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-soft: #7a6d8a;
+            --text-softer: #4a3f5c;
+            --text-meaning: #5c4d70;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+        }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+            z-index: 200;
+        }
         .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
-        .back-link:hover { color: #a78bfa; }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
+        .back-link:hover { color: var(--accent-light); }
 
-        .chart-header { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-        .chart-header h1 { color: #c9b1ff; font-size: 1.8rem; }
-        .chart-meta { color: #888; font-size: 0.9rem; margin-top: 8px; }
+        .chart-header { background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .chart-header h1 { color: var(--text-heading); font-size: 1.8rem; }
+        .chart-meta { color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; }
 
         .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
         .tab {
             padding: 8px 16px; border-radius: 8px; cursor: pointer; min-height: 44px; min-width: 44px;
-            background: #1a1a2e; border: 1px solid #2a2a4a; color: #888;
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
             font-size: 0.9rem; transition: all .2s; user-select: none;
         }
-        .tab.active { background: #7c3aed; border-color: #7c3aed; color: white; }
-        .tab:hover:not(.active) { border-color: #7c3aed; color: #a78bfa; }
+        .tab.active { background: var(--accent); border-color: var(--accent); color: white; }
+        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); }
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
         .section {
-            background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 16px;
+            background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 16px;
         }
-        .section h2 { color: #a78bfa; font-size: 1.1rem; margin-bottom: 12px; }
+        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 12px; }
 
         .planet-row {
             display: grid; grid-template-columns: 120px 1fr 80px 80px;
-            padding: 8px 0; border-bottom: 1px solid #1e1e36; align-items: center;
+            padding: 8px 0; border-bottom: 1px solid var(--border-soft); align-items: center;
             font-size: 0.9rem;
         }
         .planet-row:last-child { border-bottom: none; }
-        .planet-name { color: #c9b1ff; font-weight: 600; }
-        .planet-sign { color: #e0e0e0; }
-        .planet-house { color: #888; text-align: center; }
-        .planet-move { color: #888; text-align: right; }
-        .planet-retro { color: #ef4444; }
+        .planet-row-head { color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; }
+        .planet-row-head .planet-sign, .planet-row-head .planet-house, .planet-row-head .planet-move { color: var(--text-dim); }
+        .planet-name { color: var(--text-heading); font-weight: 600; }
+        .planet-sign { color: var(--text); }
+        .planet-house { color: var(--text-muted); text-align: center; }
+        .planet-move { color: var(--text-muted); text-align: right; }
+        .planet-retro { color: var(--danger); }
+
+        .planet-details { border-bottom: 1px solid var(--border-soft); }
+        .planet-details:last-child { border-bottom: none; }
+        .planet-details .planet-row { border-bottom: none; cursor: pointer; list-style: none; }
+        .planet-details summary::-webkit-details-marker { display: none; }
+        .meaning-box {
+            padding: 4px 0 14px 4px; font-size: 0.85rem; color: var(--text-meaning); line-height: 1.6;
+        }
+        .meaning-box p { margin-bottom: 6px; }
+        .meaning-box p:last-child { margin-bottom: 0; }
+
+        .aspect-details { border-bottom: 1px solid var(--border-soft); }
+        .aspect-details:last-child { border-bottom: none; }
+        .aspect-details .aspect-row { border-bottom: none; cursor: pointer; list-style: none; }
+        .aspect-details summary::-webkit-details-marker { display: none; }
+
+        .wheel-section { text-align: center; }
+        .wheel-container {
+            display: flex; justify-content: center; align-items: center;
+            min-height: 320px;
+        }
+        .wheel-container svg { max-width: 100%; height: auto; }
+        .wheel-legend {
+            display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center;
+            margin-top: 16px; font-size: 0.8rem; color: var(--text-soft);
+        }
+        .wheel-legend span { display: inline-flex; align-items: center; gap: 4px; }
+        .wheel-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
         .aspect-row {
-            padding: 6px 0; border-bottom: 1px solid #1e1e36;
-            font-size: 0.85rem; color: #aaa;
+            padding: 6px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.85rem; color: var(--text-soft);
         }
 
         .interpretation {
             white-space: pre-wrap; line-height: 1.8; font-size: 0.95rem;
-            color: #ccc;
+            color: var(--text-softer);
         }
 
-        .loading { text-align: center; padding: 40px; color: #888; }
-        .error { background: #2d1b1b; border: 1px solid #ef4444; border-radius: 8px; padding: 12px; color: #fca5a5; }
+        .cache-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft);
+        }
+        .cache-label { font-size: 0.78rem; color: var(--text-dim); }
+        .btn-refresh {
+            padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+            background: transparent; color: var(--accent-light); font-size: 0.78rem;
+            cursor: pointer; min-height: 32px;
+        }
+        .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        .error { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px; padding: 12px; color: var(--danger-text); }
 
         .stats {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 12px; margin-top: 12px;
         }
         .stat {
-            background: #16162a; border-radius: 8px; padding: 12px; text-align: center;
+            background: var(--bg-input); border-radius: 8px; padding: 12px; text-align: center;
         }
-        .stat-label { color: #888; font-size: 0.8rem; }
-        .stat-value { color: #c9b1ff; font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
+        .stat-label { color: var(--text-muted); font-size: 0.8rem; }
+        .stat-value { color: var(--text-heading); font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
+        .stat-meaning { color: var(--text-muted); font-size: 0.72rem; margin-top: 4px; line-height: 1.4; }
+
+        .period-form {
+            display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;
+        }
+        .period-form .form-group { margin-bottom: 0; }
+        .period-form label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
+        .period-form input[type="date"] {
+            padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg-input); color: var(--text); font-size: 15px; min-height: 44px;
+        }
+        .btn {
+            padding: 10px 18px; border-radius: 8px; border: none; background: var(--accent);
+            color: white; font-size: 0.9rem; font-weight: 600; cursor: pointer; min-height: 44px;
+        }
+        .btn:hover { background: var(--accent-hover); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .day-entry {
+            padding: 12px 0; border-bottom: 1px solid var(--border-soft);
+        }
+        .day-entry:last-child { border-bottom: none; }
+        .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+        .day-entry .day-aspect { font-size: 0.85rem; color: var(--text-soft); padding: 2px 0; }
+
+        .num-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 0; border-bottom: 1px solid var(--border-soft); gap: 12px;
+        }
+        .num-row:last-child { border-bottom: none; }
+        .num-label { color: var(--text-heading); font-weight: 600; font-size: 0.9rem; flex-shrink: 0; }
+        .num-value { color: var(--accent-light); font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
+        .num-meaning { color: var(--text-soft); font-size: 0.85rem; text-align: right; }
+        @media (max-width: 600px) {
+            .num-row { flex-direction: column; align-items: flex-start; }
+            .num-meaning { text-align: left; }
+        }
 
         @media (max-width: 600px) {
             .planet-row {
@@ -74,7 +218,7 @@
                 align-items: baseline;
                 gap: 0;
                 padding: 8px 0;
-                border-bottom: 1px solid #1e1e36;
+                border-bottom: 1px solid var(--border-soft);
                 font-size: 0.85rem;
             }
             .planet-row:last-child { border-bottom: none; }
@@ -87,7 +231,7 @@
             }
             .planet-house {
                 display: inline;
-                color: #888;
+                color: var(--text-muted);
                 font-size: 0.8rem;
             }
             .planet-house::before { content: " | "; }
@@ -102,6 +246,7 @@
     </style>
 </head>
 <body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
         <a href="/" class="back-link">← Всички хора</a>
 
@@ -116,11 +261,13 @@
             <div class="stats">
                 <div class="stat">
                     <div class="stat-label">Форма</div>
-                    <div class="stat-value">{{ chart.shape or 'N/A' }}</div>
+                    <div class="stat-value">{{ chart.shape_bg or 'Няма данни' }}</div>
+                    {% if chart.shape_meaning %}<div class="stat-meaning">{{ chart.shape_meaning }}</div>{% endif %}
                 </div>
                 <div class="stat">
                     <div class="stat-label">Лунна фаза</div>
-                    <div class="stat-value">{{ chart.moon_phase or 'N/A' }}</div>
+                    <div class="stat-value">{{ chart.moon_phase_bg or 'Няма данни' }}</div>
+                    {% if chart.moon_phase_meaning %}<div class="stat-meaning">{{ chart.moon_phase_meaning }}</div>{% endif %}
                 </div>
                 <div class="stat">
                     <div class="stat-label">Раждане</div>
@@ -128,29 +275,57 @@
                 </div>
                 <div class="stat">
                     <div class="stat-label">Домова система</div>
-                    <div class="stat-value">{{ chart.house_system }}</div>
+                    <div class="stat-value">{{ chart.house_system_bg }}</div>
                 </div>
             </div>
         </div>
 
         <div class="tabs">
-            <div class="tab active" onclick="showTab('planets')">Планети</div>
+            <div class="tab active" onclick="showTab('wheel')">Карта</div>
+            <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
-            <div class="tab" onclick="showTab('interpretation')" id="tab-interpretation">AI Интерпретация</div>
+            <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope">Дневен хороскоп</div>
+            <div class="tab" onclick="showTab('period')" id="tabbtn-period">Период</div>
+            <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology">Нумерология</div>
+            <div class="tab" onclick="showTab('interpretation')" id="tabbtn-interpretation">AI Интерпретация</div>
         </div>
 
-        <div id="tab-planets" class="tab-content active">
+        <div id="tab-wheel" class="tab-content active">
+            <div class="section wheel-section">
+                <h2>Натална карта</h2>
+                <div id="chart-wheel" class="wheel-container">
+                    <div class="loading">Зареждане на картата...</div>
+                </div>
+                <div class="wheel-legend" id="wheel-legend"></div>
+            </div>
+        </div>
+
+        <div id="tab-planets" class="tab-content">
             <div class="section">
                 <h2>Планети и точки</h2>
-                {% for oid, obj in chart.objects.items() %}
-                <div class="planet-row">
-                    <div class="planet-name">{{ obj.name }}</div>
-                    <div class="planet-sign">{{ obj.sign }} {{ obj.sign_longitude }}</div>
-                    <div class="planet-house">{{ obj.house }}</div>
-                    <div class="planet-move {% if obj.movement == 'Retrograde' %}planet-retro{% endif %}">
-                        {{ obj.movement or '' }}
-                    </div>
+                <div class="planet-row planet-row-head">
+                    <div class="planet-name">Точка</div>
+                    <div class="planet-sign">Знак</div>
+                    <div class="planet-house">Дом</div>
+                    <div class="planet-move">Движение</div>
                 </div>
+                {% for oid, obj in chart.objects.items() %}
+                <details class="planet-details">
+                    <summary class="planet-row">
+                        <div class="planet-name">{{ obj.name_bg }}</div>
+                        <div class="planet-sign">{{ obj.sign_bg }} {{ obj.sign_longitude }}</div>
+                        <div class="planet-house">{{ obj.house_bg }}</div>
+                        <div class="planet-move {% if obj.movement == 'Retrograde' %}planet-retro{% endif %}">
+                            {{ obj.movement_bg or '' }}
+                        </div>
+                    </summary>
+                    <div class="meaning-box">
+                        {% if obj.name_meaning %}<p>{{ obj.name_meaning }}</p>{% endif %}
+                        {% if obj.sign_meaning %}<p><strong>{{ obj.sign_bg }}:</strong> {{ obj.sign_meaning }}</p>{% endif %}
+                        {% if obj.house_meaning %}<p><strong>{{ obj.house_bg }}:</strong> {{ obj.house_meaning }}</p>{% endif %}
+                        {% if obj.movement_meaning %}<p><strong>{{ obj.movement_bg }}:</strong> {{ obj.movement_meaning }}</p>{% endif %}
+                    </div>
+                </details>
                 {% endfor %}
             </div>
         </div>
@@ -160,14 +335,63 @@
                 <h2>Аспекти</h2>
                 {% if chart.aspects %}
                     {% for a in chart.aspects %}
-                    <div class="aspect-row">
-                        {{ a.active }} <strong style="color:#a78bfa">{{ a.type }}</strong> {{ a.passive }}
-                        {% if a.orb %} (орб: {{ a.orb }}°){% endif %}
-                    </div>
+                    <details class="aspect-details">
+                        <summary class="aspect-row">
+                            {{ a.active_bg }} <strong style="color:var(--accent-light)">{{ a.type_bg }}</strong> {{ a.passive_bg }}
+                            {% if a.orb %} (орб: {{ a.orb }}°){% endif %}
+                        </summary>
+                        {% if a.type_meaning %}<div class="meaning-box"><p>{{ a.type_meaning }}</p></div>{% endif %}
+                    </details>
                     {% endfor %}
                 {% else %}
-                    <p style="color:#888">Няма данни за аспектите.</p>
+                    <p style="color:var(--text-muted)">Няма данни за аспектите.</p>
                 {% endif %}
+            </div>
+        </div>
+
+        <div id="tab-horoscope" class="tab-content">
+            <div class="section">
+                <h2>Разчитане на деня</h2>
+                <div id="horoscope-ai-content" class="loading">Генериране на разчитане...</div>
+            </div>
+            <div class="section">
+                <h2>Дневен транзитен хороскоп — данни</h2>
+                <div id="horoscope-content" class="loading">Изчисляване...</div>
+            </div>
+        </div>
+
+        <div id="tab-period" class="tab-content">
+            <div class="section">
+                <h2>Влияние на планетите за период</h2>
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
+                    Избери период — системата ще провери всеки ден и ще покаже само дните с настъпваща или напускаща значима транзитна промяна.
+                </p>
+                <div class="period-form">
+                    <div class="form-group">
+                        <label>От дата</label>
+                        <input type="date" id="periodStart">
+                    </div>
+                    <div class="form-group">
+                        <label>До дата</label>
+                        <input type="date" id="periodEnd">
+                    </div>
+                    <button class="btn" id="periodBtn" onclick="loadPeriod()">Анализирай период</button>
+                </div>
+                <div id="period-content"></div>
+            </div>
+        </div>
+
+        <div id="tab-numerology" class="tab-content">
+            <div class="section">
+                <h2>Нумерология</h2>
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
+                    Питагорова нумерология, изчислена математически от името и датата на раждане.
+                </p>
+                <div id="numerology-content" class="loading">Изчисляване...</div>
+            </div>
+            <div class="section">
+                <h2>AI Интерпретация на нумерологията</h2>
+                <div id="numerology-ai-content" class="loading">Генериране...</div>
             </div>
         </div>
 
@@ -182,6 +406,33 @@
     </div>
 
     <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token') || localStorage.getItem('miralog_token');
+        }
+
+        function authHeaders() {
+            const token = getToken();
+            return token ? { 'Authorization': 'Bearer ' + token } : {};
+        }
+
         function showTab(name) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -191,21 +442,238 @@
             if (name === 'interpretation' && !window._interpretationLoaded) {
                 loadInterpretation();
             }
+            if (name === 'horoscope' && !window._horoscopeLoaded) {
+                window._horoscopeLoaded = true;
+                loadHoroscope();
+                loadHoroscopeAI();
+            }
+            if (name === 'numerology' && !window._numerologyLoaded) {
+                loadNumerology();
+            }
         }
 
-        async function loadInterpretation() {
-            window._interpretationLoaded = true;
-            const el = document.getElementById('interpretation-content');
+        async function loadChartWheel() {
+            const el = document.getElementById('chart-wheel');
             try {
-                const resp = await fetch('/api/persons/{{ person.id }}/interpretation');
+                const resp = await fetch('/api/persons/{{ person.id }}/chart.svg', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const svgText = await resp.text();
+                el.innerHTML = svgText;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане на картата: ' + e.message + '</div>';
+            }
+        }
+        loadChartWheel();
+
+        function fmtDateBg(d) {
+            return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        async function loadHoroscope() {
+            const el = document.getElementById('horoscope-content');
+            try {
+                const now = new Date();
+                const resp = await fetch('/api/transits', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        person_id: {{ person.id }},
+                        target_date: now.toISOString().slice(0, 19)
+                    })
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.detail || ('HTTP ' + resp.status));
+                }
+                const data = await resp.json();
+
+                let html = `<p style="color:var(--text-muted); margin-bottom:16px;">Транзити за ${fmtDateBg(now)}</p>`;
+
+                html += `<div class="stats" style="margin-bottom:20px;">
+                    <div class="stat"><div class="stat-label">Форма</div><div class="stat-value">${data.shape_bg || 'Няма данни'}</div></div>
+                    <div class="stat"><div class="stat-label">Лунна фаза</div><div class="stat-value">${data.moon_phase_bg || 'Няма данни'}</div></div>
+                </div>`;
+
+                const aspects = (data.transit_aspects_to_natal || []).filter(a =>
+                    ['Conjunction', 'Sextile', 'Square', 'Trine', 'Opposition'].includes(a.type)
+                );
+                if (aspects.length) {
+                    html += '<h3 style="color:var(--accent-light); font-size:0.95rem; margin-bottom:10px;">Активни транзитни аспекти към наталната карта</h3>';
+                    aspects.forEach(a => {
+                        html += `<div class="aspect-row">
+                            <strong style="color:var(--text-heading)">${a.active_bg}</strong> (транзит)
+                            <strong style="color:var(--accent-light)">${a.type_bg}</strong>
+                            ${a.passive_bg} (натал)
+                            ${a.orb ? ' (орб: ' + Number(a.orb).toFixed(1) + '°)' : ''}
+                        </div>`;
+                    });
+                } else {
+                    html += '<p style="color:var(--text-muted)">Няма значими транзитни аспекти в момента.</p>';
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване на хороскопа: ' + e.message + '</div>';
+            }
+        }
+
+        function cachedBadge(data, onRefresh) {
+            const label = data.cached ? '📦 Кеширано разчитане' : '✨ Ново разчитане';
+            return `<div class="cache-bar">
+                <span class="cache-label">${label}</span>
+                <button class="btn-refresh" onclick="${onRefresh}">↻ Регенерирай</button>
+            </div>`;
+        }
+
+        async function loadHoroscopeAI(refresh) {
+            const el = document.getElementById('horoscope-ai-content');
+            el.innerHTML = '<div class="loading">Генериране на разчитане...</div>';
+            try {
+                const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    el.innerHTML = '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                    el.innerHTML = cachedBadge(data, 'loadHoroscopeAI(true)') +
+                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира разчитане.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadInterpretation(refresh) {
+            window._interpretationLoaded = true;
+            const el = document.getElementById('interpretation-content');
+            el.innerHTML = '<div class="loading">Генериране на интерпретация...</div>';
+            try {
+                const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, { headers: authHeaders() });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, 'loadInterpretation(true)') +
+                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
                 } else {
                     el.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
                 }
             } catch (e) {
                 el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        function fmtDateShortBg(iso) {
+            const d = new Date(iso + 'T12:00:00');
+            return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        async function loadPeriod() {
+            const startEl = document.getElementById('periodStart');
+            const endEl = document.getElementById('periodEnd');
+            const btn = document.getElementById('periodBtn');
+            const el = document.getElementById('period-content');
+            if (!startEl.value || !endEl.value) {
+                el.innerHTML = '<div class="error">Моля, изберете начална и крайна дата.</div>';
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'Анализиране...';
+            el.innerHTML = '<div class="loading">Изчисляване на периода...</div>';
+            try {
+                const resp = await fetch('/api/period-influence', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        person_id: {{ person.id }},
+                        start_date: startEl.value,
+                        end_date: endEl.value
+                    })
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.detail || ('HTTP ' + resp.status));
+                }
+                const data = await resp.json();
+                if (!data.days || !data.days.length) {
+                    el.innerHTML = '<p style="color:var(--text-muted); margin-top:16px;">Няма настъпващи или отпадащи значими транзитни аспекти в избрания период.</p>';
+                    return;
+                }
+                let html = '';
+                data.days.forEach(day => {
+                    html += `<div class="day-entry"><div class="day-date">${fmtDateShortBg(day.date)}</div>`;
+                    day.entering.forEach(a => {
+                        html += `<div class="day-aspect">🟢 Настъпва: <strong style="color:var(--text-heading)">${a.active_bg}</strong> (транзит) <strong style="color:var(--accent-light)">${a.type_bg}</strong> ${a.passive_bg} (натал)</div>`;
+                    });
+                    day.leaving.forEach(a => {
+                        html += `<div class="day-aspect">🔴 Отпада: <strong style="color:var(--text-heading)">${a.active_bg}</strong> (транзит) <strong style="color:var(--accent-light)">${a.type_bg}</strong> ${a.passive_bg} (натал)</div>`;
+                    });
+                    html += '</div>';
+                });
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при анализа: ' + e.message + '</div>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Анализирай период';
+            }
+        }
+
+        async function loadNumerology() {
+            window._numerologyLoaded = true;
+            const el = document.getElementById('numerology-content');
+            const aiEl = document.getElementById('numerology-ai-content');
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/numerology', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+
+                const labels = {
+                    life_path: 'Число на съдбата',
+                    expression: 'Число на изразяването',
+                    soul_urge: 'Душевен копнеж',
+                    personality: 'Личност',
+                    birthday: 'Рожден ден',
+                };
+                let html = '';
+                for (const key of ['life_path', 'expression', 'soul_urge', 'personality', 'birthday']) {
+                    const item = data[key];
+                    html += `<div class="num-row">
+                        <div class="num-label">${labels[key]}</div>
+                        <div class="num-value">${item.number}</div>
+                        <div class="num-meaning">${item.meaning || ''}</div>
+                    </div>`;
+                }
+                const py = data.personal_year;
+                html += `<div class="num-row">
+                    <div class="num-label">Лична година (${py.year})</div>
+                    <div class="num-value">${py.number}</div>
+                    <div class="num-meaning">${py.meaning || ''}</div>
+                </div>`;
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                aiEl.innerHTML = '';
+                return;
+            }
+
+            loadNumerologyAI();
+        }
+
+        async function loadNumerologyAI(refresh) {
+            const aiEl = document.getElementById('numerology-ai-content');
+            aiEl.innerHTML = '<div class="loading">Генериране...</div>';
+            try {
+                const url = '/api/persons/{{ person.id }}/numerology/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, { headers: authHeaders() });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    aiEl.innerHTML = cachedBadge(data, 'loadNumerologyAI(true)') +
+                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                } else {
+                    aiEl.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
+                }
+            } catch (e) {
+                aiEl.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
             }
         }
     </script>

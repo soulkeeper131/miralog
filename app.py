@@ -24,6 +24,11 @@ from immanuel.const import chart, names
 from pydantic import BaseModel
 from jose import jwt, JWTError
 import bcrypt
+from translations import (
+    tr_sign, tr_object, tr_aspect, tr_moon_phase, tr_movement, tr_shape, tr_house_system, tr_house,
+    meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
+)
+from numerology import compute_numerology
 
 # --- App Setup ---
 DB_PATH = Path(__file__).parent / "data" / "persons.db"
@@ -92,6 +97,24 @@ def init_db():
             """)
             conn.execute("DROP TABLE persons")
             conn.execute("ALTER TABLE persons_new RENAME TO persons")
+        # Settings table (single row of app-wide key/value config, e.g. AI API key)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        # AI interpretation cache: avoids re-spending tokens on every tab open.
+        # cache_key examples: "natal", "numerology", "horoscope:2026-07-31"
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_cache (
+                person_id INTEGER NOT NULL REFERENCES persons(id),
+                cache_key TEXT NOT NULL,
+                content TEXT NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (person_id, cache_key)
+            )
+        """)
         conn.commit()
 
 @asynccontextmanager
@@ -103,7 +126,7 @@ templates = Jinja2Templates(directory="templates")
 # Fix for Jinja2 3.1.6 + Starlette 1.0.1: request object is not hashable
 templates.env.cache_size = 0
 
-app = FastAPI(title="Миралог", lifespan=lifespan)
+app = FastAPI(title="МираСкоп", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- Pydantic Models ---
@@ -125,9 +148,18 @@ class TransitsRequest(BaseModel):
     person_id: int
     target_date: str  # ISO format: "2026-08-15T12:00:00"
 
+class PeriodRequest(BaseModel):
+    person_id: int
+    start_date: str  # ISO date: "2026-08-01"
+    end_date: str    # ISO date: "2026-08-31"
+
 class AuthRequest(BaseModel):
     email: str
     password: str
+
+class SettingsUpdate(BaseModel):
+    ai_api_key: Optional[str] = None
+    ai_provider: Optional[str] = None
 
 # --- Auth Helpers ---
 def hash_password(password: str) -> str:
@@ -191,6 +223,59 @@ def get_all_persons(user_id: int) -> list[dict]:
             "SELECT * FROM persons WHERE user_id = ? ORDER BY name", (user_id,)
         ).fetchall()]
 
+def get_setting(key: str) -> Optional[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+def set_setting(key: str, value: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value)
+        )
+        conn.commit()
+
+def get_ai_cache(person_id: int, cache_key: str) -> Optional[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT content, generated_at FROM ai_cache WHERE person_id = ? AND cache_key = ?",
+            (person_id, cache_key)
+        ).fetchone()
+        return {"content": row[0], "generated_at": row[1]} if row else None
+
+def set_ai_cache(person_id: int, cache_key: str, content: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO ai_cache (person_id, cache_key, content, generated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(person_id, cache_key) DO UPDATE SET content = excluded.content, generated_at = CURRENT_TIMESTAMP",
+            (person_id, cache_key, content)
+        )
+        conn.commit()
+
+def clear_ai_cache(person_id: int) -> None:
+    """Invalidate all cached AI interpretations for a person (e.g. after birth data changes)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (person_id,))
+        conn.commit()
+
+def get_ai_config() -> Tuple[Optional[str], str]:
+    """Returns (api_key, provider) where provider is 'deepseek', 'openai' or 'anthropic'.
+    DB setting takes priority over environment variables."""
+    key = get_setting("ai_api_key")
+    provider = get_setting("ai_provider")
+    if key and provider:
+        return key, provider
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return os.environ["ANTHROPIC_API_KEY"], "anthropic"
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return os.environ["DEEPSEEK_API_KEY"], "deepseek"
+    if os.environ.get("OPENAI_API_KEY"):
+        return os.environ["OPENAI_API_KEY"], "openai"
+    return None, provider or "deepseek"
+
 def update_person(person_id: int, user_id: int, data: BirthDataUpdate) -> bool:
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
@@ -217,16 +302,28 @@ def serialize_objects(objects: dict) -> dict:
     """Serialize chart objects to JSON-friendly format."""
     result = {}
     for obj in objects.values():
+        name = obj.name
+        sign = obj.sign.name
+        house = obj.house.name if hasattr(obj.house, 'name') else str(obj.house.number)
+        movement = obj.movement.formatted if hasattr(obj, 'movement') and obj.movement else None
         result[str(obj.index)] = {
-            "name": obj.name,
+            "name": name,
+            "name_bg": tr_object(name),
+            "name_meaning": meaning_object(name),
             "type": obj.type.name if hasattr(obj.type, 'name') else str(obj.type),
-            "sign": obj.sign.name,
+            "sign": sign,
+            "sign_bg": tr_sign(sign),
+            "sign_meaning": meaning_sign(sign),
             "sign_longitude": obj.sign_longitude.formatted,
             "longitude": obj.longitude.formatted,
-            "house": obj.house.name if hasattr(obj.house, 'name') else str(obj.house.number),
+            "house": house,
+            "house_bg": tr_house(house),
+            "house_meaning": meaning_house(house),
             "house_number": obj.house.number,
             "speed": obj.speed if hasattr(obj, 'speed') else None,
-            "movement": obj.movement.formatted if hasattr(obj, 'movement') and obj.movement else None,
+            "movement": movement,
+            "movement_bg": tr_movement(movement),
+            "movement_meaning": meaning_movement(movement),
         }
     return result
 
@@ -236,10 +333,17 @@ def serialize_aspects(aspects: dict) -> list:
     result = []
     for active_id, passive_dict in aspects.items():
         for passive_id, aspect in passive_dict.items():
+            aspect_type = aspect.type if isinstance(aspect.type, str) else aspect.type.name
+            active = aspect._active_name if hasattr(aspect, '_active_name') else str(aspect.active)
+            passive = aspect._passive_name if hasattr(aspect, '_passive_name') else str(aspect.passive)
             result.append({
-                "type": aspect.type if isinstance(aspect.type, str) else aspect.type.name,
-                "active": aspect._active_name if hasattr(aspect, '_active_name') else str(aspect.active),
-                "passive": aspect._passive_name if hasattr(aspect, '_passive_name') else str(aspect.passive),
+                "type": aspect_type,
+                "type_bg": tr_aspect(aspect_type),
+                "type_meaning": meaning_aspect(aspect_type),
+                "active": active,
+                "active_bg": tr_object(active),
+                "passive": passive,
+                "passive_bg": tr_object(passive),
                 "aspect_angle": aspect.aspect if hasattr(aspect, 'aspect') else None,
                 "orb": aspect.orb if hasattr(aspect, 'orb') else None,
                 "distance": aspect.distance.formatted if hasattr(aspect, 'distance') and aspect.distance else None,
@@ -247,6 +351,20 @@ def serialize_aspects(aspects: dict) -> list:
                 "movement": aspect.movement.formatted if hasattr(aspect, 'movement') and aspect.movement else None,
                 "condition": aspect.condition.formatted if hasattr(aspect, 'condition') and aspect.condition else None,
             })
+    return result
+
+def serialize_houses(houses: dict) -> list:
+    """Serialize house cusps (1st-12th) to a simple ordered list with absolute longitude."""
+    result = []
+    for house in houses.values():
+        result.append({
+            "number": house.number,
+            "sign": house.sign.name,
+            "sign_bg": tr_sign(house.sign.name),
+            "sign_longitude": house.sign_longitude.formatted,
+            "longitude": house.longitude.raw if hasattr(house.longitude, 'raw') else None,
+        })
+    result.sort(key=lambda h: h["number"])
     return result
 
 def compute_natal(person: dict) -> dict:
@@ -264,11 +382,17 @@ def compute_natal(person: dict) -> dict:
             "timezone": person.get("timezone", "Europe/Sofia"),
         },
         "house_system": natal.house_system if hasattr(natal, 'house_system') else "Placidus",
+        "house_system_bg": tr_house_system(natal.house_system if hasattr(natal, 'house_system') else "Placidus"),
         "shape": natal.shape if hasattr(natal, 'shape') else None,
+        "shape_bg": tr_shape(natal.shape if hasattr(natal, 'shape') else None),
+        "shape_meaning": meaning_shape(natal.shape if hasattr(natal, 'shape') else None),
         "diurnal": natal.diurnal if hasattr(natal, 'diurnal') else None,
         "moon_phase": natal.moon_phase.formatted if hasattr(natal, 'moon_phase') and natal.moon_phase else None,
+        "moon_phase_bg": tr_moon_phase(natal.moon_phase.formatted if hasattr(natal, 'moon_phase') and natal.moon_phase else None),
+        "moon_phase_meaning": meaning_moon_phase(natal.moon_phase.formatted if hasattr(natal, 'moon_phase') and natal.moon_phase else None),
         "objects": serialize_objects(natal.objects),
         "aspects": serialize_aspects(natal.aspects),
+        "houses": serialize_houses(natal.houses) if hasattr(natal, 'houses') else [],
     }
 
 def compute_composite(person1: dict, person2: dict) -> dict:
@@ -294,9 +418,12 @@ def compute_composite(person1: dict, person2: dict) -> dict:
             "lon": person2["lon"],
         },
         "house_system": composite.house_system if hasattr(composite, 'house_system') else "Placidus",
+        "house_system_bg": tr_house_system(composite.house_system if hasattr(composite, 'house_system') else "Placidus"),
         "shape": composite.shape if hasattr(composite, 'shape') else None,
+        "shape_bg": tr_shape(composite.shape if hasattr(composite, 'shape') else None),
         "diurnal": composite.diurnal if hasattr(composite, 'diurnal') else None,
         "moon_phase": composite.moon_phase.formatted if hasattr(composite, 'moon_phase') and composite.moon_phase else None,
+        "moon_phase_bg": tr_moon_phase(composite.moon_phase.formatted if hasattr(composite, 'moon_phase') and composite.moon_phase else None),
         "objects": serialize_objects(composite.objects),
         "aspects": serialize_aspects(composite.aspects),
     }
@@ -327,9 +454,12 @@ def compute_transits(person: dict, target_date: datetime.datetime) -> dict:
         },
         "transit_datetime": target_date.isoformat(),
         "house_system": transit_chart.house_system if hasattr(transit_chart, 'house_system') else "Placidus",
+        "house_system_bg": tr_house_system(transit_chart.house_system if hasattr(transit_chart, 'house_system') else "Placidus"),
         "shape": transit_chart.shape if hasattr(transit_chart, 'shape') else None,
+        "shape_bg": tr_shape(transit_chart.shape if hasattr(transit_chart, 'shape') else None),
         "diurnal": transit_chart.diurnal if hasattr(transit_chart, 'diurnal') else None,
         "moon_phase": transit_chart.moon_phase.formatted if hasattr(transit_chart, 'moon_phase') and transit_chart.moon_phase else None,
+        "moon_phase_bg": tr_moon_phase(transit_chart.moon_phase.formatted if hasattr(transit_chart, 'moon_phase') and transit_chart.moon_phase else None),
         "transit_objects": serialize_objects(transit_chart.objects),
         "transit_aspects_to_natal": serialize_aspects(transit_chart.aspects),
     }
@@ -383,6 +513,24 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
     """Get current authenticated user from token."""
     user_id, email = user
     return {"id": user_id, "email": email}
+
+# --- Settings API Routes (AUTH REQUIRED) ---
+@app.get("/api/settings")
+def api_get_settings(user: Tuple[int, str] = Depends(get_current_user)):
+    """Return current settings. The API key is masked, never sent back in full."""
+    key = get_setting("ai_api_key")
+    provider = get_setting("ai_provider") or "deepseek"
+    masked = ("•" * 8 + key[-4:]) if key and len(key) > 4 else ("•" * 8 if key else None)
+    return {"ai_provider": provider, "ai_api_key_set": bool(key), "ai_api_key_masked": masked}
+
+@app.post("/api/settings")
+def api_update_settings(data: SettingsUpdate, user: Tuple[int, str] = Depends(get_current_user)):
+    """Update settings. Only non-empty fields are changed."""
+    if data.ai_api_key is not None and data.ai_api_key.strip():
+        set_setting("ai_api_key", data.ai_api_key.strip())
+    if data.ai_provider is not None and data.ai_provider.strip():
+        set_setting("ai_provider", data.ai_provider.strip())
+    return {"ok": True}
 
 # --- API Routes (AUTH REQUIRED) ---
 @app.get("/api/persons")
@@ -454,6 +602,7 @@ def api_natal_chart_update(
         raise HTTPException(404, "Person not found")
     if not update_person(person_id, user_id, data):
         raise HTTPException(500, "Failed to update person")
+    clear_ai_cache(person_id)
     p = get_person(person_id, user_id)
     return compute_natal(p)
 
@@ -479,6 +628,67 @@ def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_us
     from chart_svg import generate_chart_svg
     svg = generate_chart_svg(chart_data)
     return Response(content=svg, media_type="image/svg+xml")
+
+@app.get("/api/persons/{person_id}/numerology")
+def api_numerology(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    """Compute the Pythagorean numerology profile for a person (deterministic, no AI)."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    return compute_numerology(p["name"], p["year"], p["month"], p["day"])
+
+@app.get("/api/persons/{person_id}/numerology/interpretation")
+def api_numerology_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+    """Generate AI interpretation of a person's numerology profile. Cached per year — pass ?refresh=true to regenerate."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+
+    current_year = datetime.date.today().year
+    cache_key = f"numerology:{current_year}"
+    if not refresh:
+        cached = get_ai_cache(person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "cached": True, "generated_at": cached["generated_at"]}
+
+    profile = compute_numerology(p["name"], p["year"], p["month"], p["day"])
+
+    prompt = f"""Ти си професионален нумеролог. Интерпретирай СТРИКТНО следния питагоров нумерологичен профил, изчислен математически от името и датата на раждане. Не измисляй и не променяй числата — те са точен резултат от изчислението. Обясни само какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Дата на раждане: {p['day']}.{p['month']}.{p['year']}
+
+Число на съдбата (Life Path): {profile['life_path']['number']}
+Число на изразяването (от пълното име): {profile['expression']['number']}
+Число на душевния копнеж (гласни от името): {profile['soul_urge']['number']}
+Число на личността (съгласни от името): {profile['personality']['number']}
+Число на рождения ден: {profile['birthday']['number']}
+Лично число за {profile['personal_year']['year']} година: {profile['personal_year']['number']}
+
+Моля, направи пълна интерпретация включваща:
+1. Число на съдбата — основен жизнен път и цел
+2. Число на изразяването — таланти и как се проявяват навън
+3. Душевен копнеж — вътрешни желания и мотивация
+4. Личност — как те възприемат другите
+5. Лична година — на какво да наблегне тази година
+6. Как числата си взаимодействат — хармония или напрежение между тях
+
+Пиши на български, с ясен и практичен език. Основавай се единствено на изброените по-горе числа."""
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
 
 
 @app.post("/api/synastry")
@@ -514,87 +724,319 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_curr
         raise HTTPException(400, "Invalid target_date format. Use ISO format: YYYY-MM-DDTHH:MM:SS")
     return compute_transits(p, target_date)
 
-@app.get("/api/persons/{person_id}/interpretation")
-def api_interpretation(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
-    """Generate AI interpretation of a natal chart."""
+@app.get("/api/persons/{person_id}/daily-horoscope")
+def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+    """Generate an AI-written interpretation of today's transits to the person's natal chart.
+    Cached per calendar day — pass ?refresh=true to force a new generation for today."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
 
+    tz_name = p.get("timezone", "Europe/Sofia")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Europe/Sofia")
+    now = datetime.datetime.now(tz)
+    cache_key = f"horoscope:{now.date().isoformat()}"
+
+    if not refresh:
+        cached = get_ai_cache(person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "date": now.strftime("%d.%m.%Y"), "cached": True}
+
+    transit_data = compute_transits(p, now)
+
+    aspects_lines = []
+    for a in transit_data.get("transit_aspects_to_natal", []):
+        if a["type"] not in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}:
+            continue
+        orb = f", орб {a['orb']:.1f}°" if a.get("orb") is not None else ""
+        aspects_lines.append(f"- {a['active']} (транзит) {a['type']} {a['passive']} (натал){orb}")
+
+    date_bg = now.strftime("%d.%m.%Y")
+
+    prompt = f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Дата на анализа: {date_bg}
+
+=== ФОН НА ДЕНЯ ===
+Форма на транзитната карта: {transit_data.get('shape', 'N/A')}
+Лунна фаза днес: {transit_data.get('moon_phase', 'N/A')}
+
+=== АКТИВНИ ТРАНЗИТНИ АСПЕКТИ КЪМ НАТАЛНАТА КАРТА ===
+{chr(10).join(aspects_lines) if aspects_lines else "Няма значими активни аспекти днес."}
+
+=== ЗАДАЧА ===
+Напиши подробен, практичен дневен хороскоп в следната структура:
+1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня.
+2. **Разчитане на всеки значим транзитен аспект** — за всеки от списъка обясни конкретно какво носи (възможности, предизвикателства, теми, които изникват).
+3. **На какво да обърне внимание** — 2-3 практични съвета за деня, изведени пряко от аспектите.
+4. **Емоции и настроение** — базирано на транзитите към Луната и личните планети.
+5. **Кратко обобщение** — 1-2 изречения "essence" на деня.
+
+Пиши на български, топло и практично, все едно говориш директно на човека. Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли."""
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=3000)
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "date": date_bg, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}", "date": date_bg}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}", "date": date_bg}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки.", "date": date_bg}
+
+MAJOR_ASPECT_TYPES = {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
+# Fast-moving transit bodies (Moon, and daily-recalculated angles like Asc/MC) create
+# a new "aspect" almost every day, drowning out the slower, more meaningful transits.
+# The period view only tracks transiting bodies from Mercury outward.
+PERIOD_TRANSIT_BODIES = {
+    "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Chiron",
+}
+
+@app.post("/api/period-influence")
+def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(get_current_user)):
+    """Scan a date range day-by-day and report only days where a major transit
+    aspect to the natal chart newly forms or dissolves (changes vs. the previous day)."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, f"Person (id={data.person_id}) not found")
+
+    try:
+        start = datetime.date.fromisoformat(data.start_date)
+        end = datetime.date.fromisoformat(data.end_date)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use ISO format: YYYY-MM-DD")
+
+    if start > end:
+        raise HTTPException(400, "start_date must be before end_date")
+    if (end - start).days > 62:
+        raise HTTPException(400, "Period too long. Maximum range is 62 days.")
+
+    tz_name = p.get("timezone", "Europe/Sofia")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Europe/Sofia")
+
+    native = make_subject(p)
+    natal = charts.Natal(native)
+
+    def active_pairs(day: datetime.date) -> dict:
+        dt = datetime.datetime(day.year, day.month, day.day, 12, 0, tzinfo=tz)
+        target_subject = charts.Subject(dt, p["lat"], p["lon"])
+        transit_chart = charts.Natal(target_subject, aspects_to=natal)
+        aspects = serialize_aspects(transit_chart.aspects)
+        pairs = {}
+        for a in aspects:
+            if a["type"] not in MAJOR_ASPECT_TYPES:
+                continue
+            if a["active"] not in PERIOD_TRANSIT_BODIES:
+                continue
+            key = (a["active"], a["type"], a["passive"])
+            pairs[key] = a
+        return pairs
+
+    days = []
+    d = start
+    while d <= end:
+        days.append(d)
+        d += datetime.timedelta(days=1)
+
+    prev_pairs = active_pairs(start - datetime.timedelta(days=1))
+    results = []
+    for day in days:
+        curr_pairs = active_pairs(day)
+        entering = [a for key, a in curr_pairs.items() if key not in prev_pairs]
+        leaving = [a for key, a in prev_pairs.items() if key not in curr_pairs]
+        if entering or leaving:
+            results.append({
+                "date": day.isoformat(),
+                "entering": entering,
+                "leaving": leaving,
+            })
+        prev_pairs = curr_pairs
+
+    return {"start_date": data.start_date, "end_date": data.end_date, "days": results}
+
+class AIError(Exception):
+    """Raised with a user-facing Bulgarian explanation of what went wrong with an AI call."""
+    pass
+
+def _explain_http_error(provider: str, e) -> str:
+    import urllib.error
+    if not isinstance(e, urllib.error.HTTPError):
+        return str(e)
+    body = ""
+    try:
+        body = e.read().decode("utf-8", errors="ignore")
+    except Exception:
+        pass
+    code = e.code
+    provider_name = {"openai": "OpenAI", "deepseek": "DeepSeek", "anthropic": "Anthropic"}.get(provider, provider)
+    if code == 401:
+        return f"{provider_name} отказа ключа (401 Unauthorized) — ключът е невалиден или изтрит."
+    if code == 429:
+        # Both "no billing/quota" and "too many requests" surface as 429 on most providers.
+        hint = "Най-честата причина: акаунтът няма зареден billing/quota (при OpenAI новите ключове изискват добавена платежна карта дори за минимални тестове), или е ударен реален rate limit."
+        return f"{provider_name} върна 429 Too Many Requests / изчерпана квота. {hint}"
+    if code == 404:
+        return f"{provider_name} върна 404 — моделът не е наличен за този ключ/акаунт."
+    if code >= 500:
+        return f"{provider_name} има временен сървърен проблем ({code}). Опитайте отново след малко."
+    return f"{provider_name} върна грешка {code}: {body[:200]}"
+
+def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) -> str:
+    """Call the configured AI provider's chat completion endpoint and return the text."""
+    import urllib.request
+    import urllib.error
+
+    try:
+        if provider == "anthropic":
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=json.dumps({
+                    "model": "claude-sonnet-4-5",
+                    "max_tokens": max_tokens,
+                    "messages": [{"role": "user", "content": prompt}],
+                }).encode(),
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read())
+                return result["content"][0]["text"]
+
+        if provider == "deepseek":
+            url = "https://api.deepseek.com/v1/chat/completions"
+            model = "deepseek-chat"
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+            model = "gpt-4o-mini"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": max_tokens
+            }).encode(),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            result = json.loads(resp.read())
+            return result["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        raise AIError(_explain_http_error(provider, e)) from e
+    except TimeoutError:
+        raise AIError(f"{provider} отне прекалено дълго да отговори (над 3 минути). Опитайте отново — генерирането на дълъг текст понякога отнема повече време.")
+    except urllib.error.URLError as e:
+        raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
+
+@app.get("/api/persons/{person_id}/interpretation")
+def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+    """Generate AI interpretation of a natal chart. Cached — pass ?refresh=true to regenerate."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+
+    if not refresh:
+        cached = get_ai_cache(person_id, "natal")
+        if cached:
+            return {"interpretation": cached["content"], "cached": True, "generated_at": cached["generated_at"]}
+
     chart_data = compute_natal(p)
 
     # Build prompt for AI
     sun = moon = rising = "Unknown"
-    planets_summary = []
+    planets_lines = []
     for oid, obj in chart_data["objects"].items():
         name = obj["name"]
-        s = f"{name} в {obj['sign']} ({obj['sign_longitude']}), дом {obj['house_number']}"
-        planets_summary.append(s)
-        if name == "Sun": sun = s
-        if name == "Moon": moon = s
-        if name == "Asc": rising = s
+        retro = " (ретрограден)" if obj.get("movement") == "Retrograde" else ""
+        line = f"- {name}: {obj['sign']} {obj['sign_longitude']}, {obj['house']}{retro}"
+        planets_lines.append(line)
+        if name == "Sun": sun = line
+        if name == "Moon": moon = line
+        if name == "Asc": rising = line
 
-    aspects_summary = []
+    houses_lines = [f"- {h['number']}-ти дом: начало в {h['sign']} {h['sign_longitude']}"
+                     for h in chart_data.get("houses", [])]
+
+    aspects_lines = []
     for a in chart_data["aspects"]:
-        aspects_summary.append(f"{a['active']} {a['type']} {a['passive']}")
+        orb = f", орб {a['orb']:.1f}°" if a.get("orb") is not None else ""
+        aspects_lines.append(f"- {a['active']} {a['type']} {a['passive']}{orb}")
 
-    prompt = f"""Ти си професионален астролог. Интерпретирай следната натална карта на български език.
+    prompt = f"""Ти си професионален астролог с дългогодишен опит. Интерпретирай СТРИКТНО следната натална карта, изчислена астрономически точно с Swiss Ephemeris. Не измисляй, не добавяй и не променяй никакви позиции, знаци, домове или аспекти извън изброените по-долу — те са точен астрономически факт. Твоята задача е да ОБЯСНИШ подробно, задълбочено и практично какво означават дадените данни за живота на човека — не просто да ги изредиш.
 
+=== ДАННИ ЗА ЛИЧНОСТТА ===
 Име: {chart_data['native']['name']}
 Дата и час на раждане: {chart_data['native']['datetime']}
+Място: {chart_data['native']['lat']}, {chart_data['native']['lon']} ({chart_data['native']['timezone']})
 
 Слънце: {sun}
 Луна: {moon}
 Асцендент: {rising}
 
-Всички планети и точки:
-{chr(10).join(planets_summary)}
+=== ВСИЧКИ ПЛАНЕТИ И ТОЧКИ (точни изчислени позиции) ===
+{chr(10).join(planets_lines)}
 
-Основни аспекти:
-{chr(10).join(aspects_summary) if aspects_summary else "Няма данни"}
+=== ДОМОВЕ (система Плацидус) ===
+{chr(10).join(houses_lines) if houses_lines else "Няма данни"}
 
+=== ВСИЧКИ АСПЕКТИ (точно изчислени, с орб) ===
+{chr(10).join(aspects_lines) if aspects_lines else "Няма данни"}
+
+=== ОБЩИ ХАРАКТЕРИСТИКИ ===
 Форма на хороскопа: {chart_data.get('shape', 'N/A')}
 Лунна фаза: {chart_data.get('moon_phase', 'N/A')}
 Дневно/Нощно раждане: {'Дневно' if chart_data.get('diurnal') else 'Нощно'}
+Домова система: {chart_data.get('house_system', 'Placidus')}
 
-Моля, направи пълна интерпретация включваща:
-1. Обща характеристика на личността
-2. Слънце, Луна и Асцендент - как си взаимодействат
-3. Основни силни страни и предизвикателства
-4. Любов и взаимоотношения
-5. Кариера и призвание
-6. Кармични уроци (Лунни възли)
-7. Ключови аспекти и какво означават
+=== ЗАДАЧА ===
+Направи ПОДРОБНА и ИЗЧЕРПАТЕЛНА интерпретация (не кратко резюме — реален задълбочен анализ, всеки раздел с по няколко изречения конкретен коментар, не общи фрази) в следната структура:
 
-Пиши на български, с професионален но разбираем език."""
+1. **Обща характеристика на личността** — синтез на Слънце/Луна/Асцендент триадата, темперамент, доминиращи стихии (огън/земя/въздух/вода) и качества (кардинални/фиксирани/променливи) сред планетите.
+2. **Слънце, Луна и Асцендент подробно** — всяко поотделно: какво означава знакът и домът им конкретно за тази карта, после как трите си взаимодействат.
+3. **Меркурий, Венера, Марс** — стил на мислене/комуникация, стил на обич и естетика, начин на действие и желание.
+4. **Социалните и поколенчески планети** (Юпитер, Сатурн, Уран, Нептун, Плутон) — къде носят растеж/ограничения/трансформация в конкретните домове.
+5. **Домовете** — кои области от живота (кариера, дом, взаимоотношения и т.н.) са най-акцентирани заради концентрация на планети, и какво означава това практически.
+6. **Силни страни и предизвикателства** — конкретни, изведени от реалните аспекти, не общи клишета.
+7. **Любов и взаимоотношения** — базирано на Венера, 7-ми дом, аспекти към тях.
+8. **Кариера и призвание** — базирано на MC, 10-ти дом, Сатурн, Слънце.
+9. **Кармични уроци** — Лунни възли (Северен/Южен), какво трябва да развие и какво да остави.
+10. **Най-важните 5-8 аспекта** — обяснени поотделно, всеки с конкретно практическо значение.
 
-    # Try to call AI (DeepSeek/OpenAI)
-    ai_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+Пиши на български, с топъл но професионален и практичен език — все едно говориш директно на човека. Основавай се единствено на изброените по-горе данни, без да добавяш измислени детайли. Целта е дълъг, наситен с конкретика текст, не кратко обобщение."""
+
+    ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            import urllib.request
-            ai_response = urllib.request.Request(
-                "https://api.deepseek.com/v1/chat/completions",
-                data=json.dumps({
-                    "model": "deepseek-chat",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7,
-                    "max_tokens": 3000
-                }).encode(),
-                headers={
-                    "Authorization": f"Bearer {ai_key}",
-                    "Content-Type": "application/json"
-                },
-                method="POST"
-            )
-            with urllib.request.urlopen(ai_response, timeout=60) as resp:
-                result = json.loads(resp.read())
-                return {"interpretation": result["choices"][0]["message"]["content"]}
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
+            set_ai_cache(person_id, "natal", interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
-            return {"interpretation": f"⚠️ AI интерпретацията не можа да се генерира: {str(e)}. Моля, проверете API ключа."}
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте DEEPSEEK_API_KEY или OPENAI_API_KEY в environment променливите."}
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
 
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
@@ -615,9 +1057,9 @@ async def dashboard_page(request: Request):
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
     """Chart view — uses token from localStorage on client side."""
-    # Try to get user from Bearer token in request
+    # Try to get user from Bearer token in request (header, falling back to query string for plain navigation)
     user_id = None
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    token = request.headers.get("Authorization", "").replace("Bearer ", "") or request.query_params.get("token", "")
     if token:
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -637,6 +1079,16 @@ async def view_chart(request: Request, person_id: int):
         "person": p,
         "chart": chart_data,
     }))
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    """Settings page — client-side JS handles auth check via localStorage token."""
+    return HTMLResponse(templates.get_template("settings.html").render({"request": request}))
+
+@app.get("/synastry", response_class=HTMLResponse)
+async def synastry_page(request: Request):
+    """Synastry page — client-side JS handles auth check via localStorage token."""
+    return HTMLResponse(templates.get_template("synastry.html").render({"request": request}))
 
 @app.get("/healthz")
 def health():

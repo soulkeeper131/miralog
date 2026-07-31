@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Съвместимост — МираСкоп</title>
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-soft: #1e1e36;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-soft: #aaa;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --partner: #60a5fa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-soft: #efe3f4;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-soft: #7a6d8a;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --partner: #2a6db3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+        }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100dvh;
+            padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+            z-index: 200;
+        }
+        .container {
+            max-width: 720px; margin: 0 auto; padding: 20px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        .back-link {
+            color: var(--text-muted); text-decoration: none; font-size: 0.9rem;
+            display: inline-flex; align-items: center; margin-bottom: 16px;
+            min-height: 44px; min-width: 44px;
+        }
+        .back-link:hover { color: var(--accent-light); }
+        h1 { color: var(--text-heading); font-size: 1.6rem; margin-bottom: 4px; }
+        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
+
+        .section {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 24px; margin-bottom: 20px;
+        }
+        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 14px; }
+
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
+        .form-group select {
+            width: 100%; padding: 10px 12px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-size: 16px; min-height: 44px; min-width: 44px;
+        }
+        .form-group select:focus { outline: none; border-color: var(--accent); }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 10px 18px; border-radius: 10px; border: none;
+            font-size: 0.95rem; font-weight: 500; cursor: pointer;
+            min-height: 44px; min-width: 44px;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .error-banner {
+            background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px;
+            padding: 12px 16px; color: var(--danger-text); font-size: 0.9rem; margin-bottom: 16px;
+        }
+
+        .stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px; margin-bottom: 16px;
+        }
+        .stat { background: var(--bg-input); border-radius: 8px; padding: 12px; text-align: center; }
+        .stat-label { color: var(--text-muted); font-size: 0.8rem; }
+        .stat-value { color: var(--text-heading); font-size: 1.05rem; font-weight: 600; margin-top: 4px; }
+
+        .aspect-row {
+            padding: 8px 0; border-bottom: 1px solid var(--border-soft); font-size: 0.88rem; color: var(--text-soft);
+        }
+        .aspect-row:last-child { border-bottom: none; }
+        .aspect-row .who { color: var(--text-heading); font-weight: 600; }
+        .aspect-row .partner { color: var(--partner); font-weight: 600; }
+
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        .empty { text-align: center; color: var(--text-dim); padding: 30px 20px; }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <div class="container">
+        <a href="#" id="backLink" class="back-link">← Табло</a>
+        <h1>Съвместимост</h1>
+        <div class="subtitle">Синастрия между двама души</div>
+
+        <div id="banner"></div>
+
+        <div class="section">
+            <h2>Избери двама души</h2>
+            <div class="row">
+                <div class="form-group">
+                    <label>Първи човек</label>
+                    <select id="person1"></select>
+                </div>
+                <div class="form-group">
+                    <label>Втори човек</label>
+                    <select id="person2"></select>
+                </div>
+            </div>
+            <button class="btn btn-primary" id="computeBtn" onclick="computeSynastry()">Изчисли съвместимост</button>
+        </div>
+
+        <div id="resultSection" style="display:none;" class="section">
+            <h2 id="resultTitle">Резултат</h2>
+            <div class="stats" id="resultStats"></div>
+            <div id="resultAspects"></div>
+        </div>
+    </div>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token') || localStorage.getItem('miralog_token');
+        }
+        function authHeaders() {
+            const token = getToken();
+            return token ? { 'Authorization': 'Bearer ' + token } : {};
+        }
+        if (!getToken()) { window.location.replace('/login'); }
+        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken());
+
+        function showBanner(msg) {
+            document.getElementById('banner').innerHTML = `<div class="error-banner">${msg}</div>`;
+        }
+        function clearBanner() {
+            document.getElementById('banner').innerHTML = '';
+        }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        let persons = [];
+
+        async function loadPersons() {
+            try {
+                const resp = await fetch('/api/persons', { headers: authHeaders() });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                const data = await resp.json();
+                persons = data.persons || [];
+                const opts = persons.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+                document.getElementById('person1').innerHTML = opts;
+                document.getElementById('person2').innerHTML = opts;
+                if (persons.length > 1) {
+                    document.getElementById('person2').selectedIndex = 1;
+                }
+                if (persons.length < 2) {
+                    showBanner('Трябват поне двама добавени хора, за да изчислите съвместимост.');
+                    document.getElementById('computeBtn').disabled = true;
+                }
+            } catch (e) {
+                showBanner('Грешка при зареждане на хората: ' + e.message);
+            }
+        }
+
+        async function computeSynastry() {
+            clearBanner();
+            const id1 = document.getElementById('person1').value;
+            const id2 = document.getElementById('person2').value;
+            if (!id1 || !id2) return;
+            if (id1 === id2) {
+                showBanner('Изберете двама различни хора.');
+                return;
+            }
+            const btn = document.getElementById('computeBtn');
+            btn.disabled = true;
+            btn.textContent = 'Изчисляване...';
+            try {
+                const resp = await fetch('/api/synastry', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person1_id: Number(id1), person2_id: Number(id2) })
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.detail || ('HTTP ' + resp.status));
+                }
+                const data = await resp.json();
+                renderResult(data);
+            } catch (e) {
+                showBanner('Грешка при изчисляване: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Изчисли съвместимост';
+            }
+        }
+
+        function renderResult(data) {
+            const name1 = data.native.name;
+            const name2 = data.partner.name;
+            document.getElementById('resultTitle').textContent = `${name1} & ${name2}`;
+
+            document.getElementById('resultStats').innerHTML = `
+                <div class="stat"><div class="stat-label">Форма</div><div class="stat-value">${data.shape_bg || 'Няма данни'}</div></div>
+                <div class="stat"><div class="stat-label">Лунна фаза</div><div class="stat-value">${data.moon_phase_bg || 'Няма данни'}</div></div>
+                <div class="stat"><div class="stat-label">Домова система</div><div class="stat-value">${data.house_system_bg || ''}</div></div>
+            `;
+
+            const majorTypes = ['Conjunction', 'Sextile', 'Square', 'Trine', 'Opposition'];
+            const aspects = (data.aspects || []).filter(a => majorTypes.includes(a.type));
+
+            let html = '';
+            if (aspects.length) {
+                aspects.forEach(a => {
+                    html += `<div class="aspect-row">
+                        <span class="who">${escapeHtml(a.active_bg)}</span>
+                        <strong style="color:var(--accent-light)">${escapeHtml(a.type_bg)}</strong>
+                        <span class="partner">${escapeHtml(a.passive_bg)}</span>
+                        ${a.orb ? ' (орб: ' + Number(a.orb).toFixed(1) + '°)' : ''}
+                    </div>`;
+                });
+            } else {
+                html = '<div class="empty">Няма открити значими аспекти между двамата.</div>';
+            }
+            document.getElementById('resultAspects').innerHTML = html;
+            document.getElementById('resultSection').style.display = 'block';
+        }
+
+        loadPersons();
+    </script>
+</body>
+</html>

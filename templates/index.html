@@ -3,23 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Миралог</title>
+    <title>МираСкоп</title>
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        :root {
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-soft: #1e1e36;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-soft: #aaa;
+            --text-softer: #ccc;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --accent-lighter: #c9b1ff;
+            --accent-tint: #7c3aed20;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+            --danger-tint: #ef444420;
+            --success: #22c55e;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-soft: #efe3f4;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-soft: #7a6d8a;
+            --text-softer: #4a3f5c;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --accent-lighter: #6d4a89;
+            --accent-tint: #8659a31a;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+            --danger-tint: #c2255c1a;
+            --success: #16a34a;
+        }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+            z-index: 200;
+        }
         .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        h1 { color: #c9b1ff; font-size: 2rem; margin-bottom: 10px; text-align: center; }
-        h2 { color: #a78bfa; margin: 20px 0 10px; }
-        .subtitle { text-align: center; color: #888; margin-bottom: 30px; }
+        h1 { color: var(--text-heading); font-size: 2rem; margin-bottom: 10px; text-align: center; }
+        h2 { color: var(--accent-light); margin: 20px 0 10px; }
+        .subtitle { text-align: center; color: var(--text-muted); margin-bottom: 30px; }
 
         .person-card {
-            background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px;
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
             padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between;
             align-items: center; transition: border-color .2s;
         }
-        .person-card:hover { border-color: #a78bfa; }
-        .person-info h3 { color: #c9b1ff; font-size: 1.1rem; }
-        .person-info span { color: #888; font-size: 0.85rem; }
+        .person-card:hover { border-color: var(--accent-light); }
+        .person-info h3 { color: var(--text-heading); font-size: 1.1rem; }
+        .person-info span { color: var(--text-muted); font-size: 0.85rem; }
         .person-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
         .btn {
@@ -27,64 +98,64 @@
             font-size: 0.9rem; font-weight: 500; cursor: pointer; border: none;
             transition: all .2s; min-height: 44px; min-width: 44px;
         }
-        .btn-primary { background: #7c3aed; color: white; min-height: 44px; min-width: 44px; }
-        .btn-primary:hover { background: #6d28d9; }
-        .btn-outline { background: transparent; border: 1px solid #7c3aed; color: #a78bfa; min-height: 44px; min-width: 44px; }
-        .btn-outline:hover { background: #7c3aed20; }
-        .btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; min-height: 44px; min-width: 44px; }
-        .btn-danger:hover { background: #ef444420; }
+        .btn-primary { background: var(--accent); color: white; min-height: 44px; min-width: 44px; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 1px solid var(--accent); color: var(--accent-light); min-height: 44px; min-width: 44px; }
+        .btn-outline:hover { background: var(--accent-tint); }
+        .btn-danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); min-height: 44px; min-width: 44px; }
+        .btn-danger:hover { background: var(--danger-tint); }
         .btn-large { padding: 12px 28px; font-size: 1rem; min-height: 44px; min-width: 44px; }
 
         .add-bar { text-align: center; margin: 30px 0; }
-        .empty { text-align: center; color: #666; padding: 60px 20px; }
+        .empty { text-align: center; color: var(--text-dim); padding: 60px 20px; }
 
         form { max-width: 500px; margin: 0 auto; }
         .form-group { margin-bottom: 16px; }
-        label { display: block; margin-bottom: 4px; color: #a78bfa; font-size: 0.9rem; }
+        label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.9rem; }
         input, select {
-            width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #2a2a4a;
-            background: #16162a; color: #e0e0e0; font-size: 16px; min-height: 44px; min-width: 44px;
+            width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg-input); color: var(--text); font-size: 16px; min-height: 44px; min-width: 44px;
         }
-        input:focus, select:focus { outline: none; border-color: #7c3aed; }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
 
         /* Chart page */
-        .chart-header { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-        .chart-section { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .chart-header { background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .chart-section { background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
         .planet-row {
             display: grid; grid-template-columns: 120px 1fr 80px 80px;
-            padding: 8px 0; border-bottom: 1px solid #1e1e36; align-items: center;
+            padding: 8px 0; border-bottom: 1px solid var(--border-soft); align-items: center;
             font-size: 0.9rem;
         }
         .planet-row:last-child { border-bottom: none; }
-        .planet-name { color: #c9b1ff; font-weight: 600; }
-        .planet-sign { color: #e0e0e0; }
-        .planet-house { color: #888; text-align: center; }
-        .planet-move { color: #888; text-align: right; }
+        .planet-name { color: var(--text-heading); font-weight: 600; }
+        .planet-sign { color: var(--text); }
+        .planet-house { color: var(--text-muted); text-align: center; }
+        .planet-move { color: var(--text-muted); text-align: right; }
 
         .aspect-row {
-            padding: 6px 0; border-bottom: 1px solid #1e1e36;
-            font-size: 0.85rem; color: #aaa;
+            padding: 6px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.85rem; color: var(--text-soft);
         }
 
         .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
         .tab {
             padding: 8px 16px; border-radius: 8px; cursor: pointer; min-height: 44px; min-width: 44px;
-            background: #1a1a2e; border: 1px solid #2a2a4a; color: #888;
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
             font-size: 0.9rem; transition: all .2s;
         }
-        .tab.active { background: #7c3aed; border-color: #7c3aed; color: white; }
-        .tab:hover:not(.active) { border-color: #7c3aed; color: #a78bfa; }
+        .tab.active { background: var(--accent); border-color: var(--accent); color: white; }
+        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); }
 
         .interpretation {
             white-space: pre-wrap; line-height: 1.7; font-size: 0.95rem;
-            color: #ccc;
+            color: var(--text-softer);
         }
 
-        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
-        .back-link:hover { color: #a78bfa; }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
+        .back-link:hover { color: var(--accent-light); }
 
-        .loading { text-align: center; padding: 40px; color: #888; }
-        .error { background: #2d1b1b; border: 1px solid #ef4444; border-radius: 8px; padding: 12px; color: #fca5a5; }
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        .error { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px; padding: 12px; color: var(--danger-text); }
 
         @media (max-width: 600px) {
             .container { padding: 12px; }
@@ -96,8 +167,9 @@
     </style>
 </head>
 <body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <h1>🔮 Миралог</h1>
+        <h1>🔮 МираСкоп</h1>
         <p class="subtitle">Натални карти • AI Интерпретации • Синастрия</p>
 
         <h2>Хора</h2>
@@ -127,6 +199,23 @@
     </div>
 
     <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
         async function deletePerson(id) {
             if (!confirm('Сигурни ли сте, че искате да изтриете този човек?')) return;
             await fetch('/api/persons/' + id, { method: 'DELETE' });

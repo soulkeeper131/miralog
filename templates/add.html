@@ -3,34 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Добави човек — Миралог</title>
+    <title>Добави човек — МираСкоп</title>
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-        .container { max-width: 500px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        h1 { color: #c9b1ff; font-size: 1.5rem; margin-bottom: 24px; text-align: center; }
-        .back-link { color: #888; text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
-        .back-link:hover { color: #a78bfa; }
-        form { background: #1a1a2e; border-radius: 12px; padding: 24px; }
-        .form-group { margin-bottom: 16px; }
-        label { display: block; margin-bottom: 4px; color: #a78bfa; font-size: 0.9rem; }
-        input, select {
-            width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #2a2a4a;
-            background: #16162a; color: #e0e0e0; font-size: 16px; min-height: 44px; min-width: 44px;
+        :root {
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #999;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
         }
-        input:focus, select:focus { outline: none; border-color: #7c3aed; }
+        :root[data-theme="light"] {
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+        }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+            z-index: 200;
+        }
+        .container { max-width: 500px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+        h1 { color: var(--text-heading); font-size: 1.5rem; margin-bottom: 24px; text-align: center; }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
+        .back-link:hover { color: var(--accent-light); }
+        form { background: var(--bg-card); border-radius: 12px; padding: 24px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.9rem; }
+        input, select {
+            width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg-input); color: var(--text); font-size: 16px; min-height: 44px; min-width: 44px;
+        }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
         .btn {
             width: 100%; padding: 12px; border-radius: 8px; border: none;
-            background: #7c3aed; color: white; font-size: 1rem; font-weight: 600;
+            background: var(--accent); color: white; font-size: 1rem; font-weight: 600;
             cursor: pointer; margin-top: 8px; min-height: 44px; min-width: 44px;
         }
-        .btn:hover { background: #6d28d9; }
-        .hint { font-size: 0.75rem; color: #999; margin-top: 2px; }
+        .btn:hover { background: var(--accent-hover); }
+        .hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
     </style>
 </head>
 <body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
         <a href="/" class="back-link">← Назад</a>
         <h1>Добави човек</h1>
@@ -86,5 +138,23 @@
             <button type="submit" class="btn">Създай натална карта</button>
         </form>
     </div>
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
 </body>
 </html>

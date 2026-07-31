@@ -3,18 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Табло — Миралог</title>
+    <title>Табло — МираСкоп</title>
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-dashed: #2a2a4a;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+            --danger-tint: #ef444420;
+            --success: #22c55e;
+            --overlay: rgba(0,0,0,0.7);
+            --cancel-border: #555;
+            --cancel-text: #888;
+            --cancel-tint: #55555520;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-dashed: #d9c2e6;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+            --danger-tint: #c2255c1a;
+            --success: #16a34a;
+            --overlay: rgba(45,36,56,0.5);
+            --cancel-border: #d9c7e2;
+            --cancel-text: #7a6d8a;
+            --cancel-tint: #e5d4ec55;
+        }
         body {
             font-family: -apple-system, system-ui, sans-serif;
-            background: #0a0a1a;
-            color: #e0e0e0;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100dvh;
             padding-top: env(safe-area-inset-top);
             padding-bottom: env(safe-area-inset-bottom);
             padding-left: env(safe-area-inset-left);
             padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .theme-toggle {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
         }
         .container {
             max-width: 800px;
@@ -34,11 +102,11 @@
             gap: 12px;
         }
         .topbar h1 {
-            color: #c9b1ff;
+            color: var(--text-heading);
             font-size: 1.6rem;
         }
         .topbar .greeting {
-            color: #888;
+            color: var(--text-muted);
             font-size: 0.9rem;
             margin-top: 2px;
         }
@@ -64,10 +132,10 @@
             min-width: 44px;
             white-space: nowrap;
         }
-        .btn-primary { background: #7c3aed; color: white; }
-        .btn-primary:hover { background: #6d28d9; }
-        .btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
-        .btn-danger:hover { background: #ef444420; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+        .btn-danger:hover { background: var(--danger-tint); }
         .btn-large { padding: 14px 28px; font-size: 1.05rem; min-height: 48px; min-width: 48px; }
         .btn-icon { padding: 10px; min-width: 44px; min-height: 44px; }
 
@@ -80,14 +148,14 @@
             margin-top: 8px;
         }
         .section-header h2 {
-            color: #a78bfa;
+            color: var(--accent-light);
             font-size: 1.2rem;
         }
 
         /* Person cards */
         .person-card {
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 16px 20px;
             margin-bottom: 10px;
@@ -97,15 +165,15 @@
             transition: border-color 0.2s;
             gap: 12px;
         }
-        .person-card:hover { border-color: #a78bfa; }
+        .person-card:hover { border-color: var(--accent-light); }
         .person-info { flex: 1; min-width: 0; }
         .person-info h3 {
-            color: #c9b1ff;
+            color: var(--text-heading);
             font-size: 1.05rem;
             margin-bottom: 3px;
         }
         .person-info .meta {
-            color: #888;
+            color: var(--text-muted);
             font-size: 0.82rem;
         }
         .person-actions {
@@ -117,10 +185,10 @@
         /* Empty state */
         .empty {
             text-align: center;
-            color: #666;
+            color: var(--text-dim);
             padding: 50px 20px;
-            background: #1a1a2e;
-            border: 1px dashed #2a2a4a;
+            background: var(--bg-card);
+            border: 1px dashed var(--border-dashed);
             border-radius: 12px;
         }
         .empty p { margin-bottom: 6px; }
@@ -135,14 +203,14 @@
         .loading {
             text-align: center;
             padding: 40px;
-            color: #888;
+            color: var(--text-muted);
         }
         .error-banner {
-            background: #2d1b1b;
-            border: 1px solid #ef4444;
+            background: var(--danger-bg);
+            border: 1px solid var(--danger);
             border-radius: 8px;
             padding: 12px 16px;
-            color: #fca5a5;
+            color: var(--danger-text);
             font-size: 0.9rem;
             margin-bottom: 16px;
         }
@@ -152,7 +220,7 @@
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
+            background: var(--overlay);
             z-index: 100;
             align-items: center;
             justify-content: center;
@@ -162,8 +230,8 @@
         }
         .modal-overlay.open { display: flex; }
         .modal {
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 16px;
             padding: 28px;
             width: 100%;
@@ -172,7 +240,7 @@
             overflow-y: auto;
         }
         .modal h2 {
-            color: #c9b1ff;
+            color: var(--text-heading);
             font-size: 1.3rem;
             margin-bottom: 20px;
         }
@@ -182,16 +250,16 @@
         .form-group label {
             display: block;
             margin-bottom: 4px;
-            color: #a78bfa;
+            color: var(--accent-light);
             font-size: 0.85rem;
         }
         .form-group input, .form-group select {
             width: 100%;
             padding: 10px 12px;
             border-radius: 8px;
-            border: 1px solid #2a2a4a;
-            background: #16162a;
-            color: #e0e0e0;
+            border: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text);
             font-size: 16px;
             min-height: 44px;
             min-width: 44px;
@@ -199,19 +267,19 @@
         }
         .form-group input:focus, .form-group select:focus {
             outline: none;
-            border-color: #7c3aed;
+            border-color: var(--accent);
         }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-        .hint { font-size: 0.72rem; color: #999; margin-top: 2px; }
+        .hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
         .modal-actions {
             display: flex;
             gap: 10px;
             margin-top: 20px;
             justify-content: flex-end;
         }
-        .btn-cancel { background: transparent; border: 1px solid #555; color: #888; }
-        .btn-cancel:hover { background: #55555520; color: #ccc; }
+        .btn-cancel { background: transparent; border: 1px solid var(--cancel-border); color: var(--cancel-text); }
+        .btn-cancel:hover { background: var(--cancel-tint); color: var(--text); }
 
         @media (max-width: 600px) {
             .container { padding: 12px; }
@@ -228,11 +296,14 @@
         <!-- Top bar -->
         <div class="topbar">
             <div>
-                <h1>🔮 Миралог</h1>
+                <h1>🔮 МираСкоп</h1>
                 <div class="greeting">Здравей, <span id="userEmail">...</span>!</div>
             </div>
             <div class="topbar-right">
+                <a class="btn btn-cancel" id="synastryLink" href="#">💞 Съвместимост</a>
+                <a class="btn btn-cancel" id="settingsLink" href="#">⚙ Настройки</a>
                 <button class="btn btn-danger" onclick="logout()">Изход</button>
+                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
             </div>
         </div>
 
@@ -311,6 +382,23 @@
     </div>
 
     <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
         // --- Auth helpers ---
         function getToken() {
             return localStorage.getItem('miralog_token');
@@ -336,6 +424,8 @@
         // Show email
         const email = localStorage.getItem('miralog_email') || '...';
         document.getElementById('userEmail').textContent = email;
+        document.getElementById('settingsLink').href = '/settings?token=' + encodeURIComponent(getToken());
+        document.getElementById('synastryLink').href = '/synastry?token=' + encodeURIComponent(getToken());
 
         // --- API helpers ---
         function showError(msg) {
@@ -388,7 +478,7 @@
                                 </div>
                             </div>
                             <div class="person-actions">
-                                <a href="/chart/${p.id}" class="btn btn-primary">Карта</a>
+                                <a href="/chart/${p.id}?token=${encodeURIComponent(getToken())}" class="btn btn-primary">Карта</a>
                                 <button class="btn btn-danger btn-icon" onclick="deletePerson(${p.id})" title="Изтрий">✕</button>
                             </div>
                         </div>`;

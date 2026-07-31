@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Настройки — МираСкоп</title>
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #999;
+            --text-off: #666;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+            --success: #22c55e;
+            --success-bg: #14261c;
+            --success-text: #86efac;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-off: #c9b8d4;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+            --success: #16a34a;
+            --success-bg: #f0fdf4;
+            --success-text: #16a34a;
+        }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+            z-index: 200;
+        }
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        .back-link {
+            color: var(--text-muted); text-decoration: none; font-size: 0.9rem;
+            display: inline-flex; align-items: center; margin-bottom: 16px;
+            min-height: 44px; min-width: 44px;
+        }
+        .back-link:hover { color: var(--accent-light); }
+        h1 { color: var(--text-heading); font-size: 1.6rem; margin-bottom: 4px; }
+        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
+
+        .section {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 24px; margin-bottom: 20px;
+        }
+        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 6px; }
+        .section .desc { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 18px; line-height: 1.5; }
+
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px 12px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-size: 16px; min-height: 44px; min-width: 44px;
+        }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
+        .hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+
+        .status-row {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 18px;
+            font-size: 0.9rem;
+        }
+        .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-off); flex-shrink: 0; }
+        .status-dot.on { background: var(--success); }
+        .status-dot.off { background: var(--danger); }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 10px 18px; border-radius: 10px; border: none;
+            font-size: 0.95rem; font-weight: 500; cursor: pointer;
+            min-height: 44px; min-width: 44px;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .error-banner, .success-banner {
+            border-radius: 8px; padding: 12px 16px; font-size: 0.9rem; margin-bottom: 16px;
+        }
+        .error-banner { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger-text); }
+        .success-banner { background: var(--success-bg); border: 1px solid var(--success); color: var(--success-text); }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <div class="container">
+        <a href="#" id="backLink" class="back-link">← Табло</a>
+        <h1>Настройки</h1>
+        <div class="subtitle">Конфигурация на приложението</div>
+
+        <div id="banner"></div>
+
+        <div class="section">
+            <h2>AI Интерпретация</h2>
+            <div class="desc">
+                API ключ за генериране на AI интерпретация на натални карти.
+                Ключът се пази в базата данни на приложението.
+            </div>
+
+            <div class="status-row">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Зареждане...</span>
+            </div>
+
+            <form id="settingsForm">
+                <div class="form-group">
+                    <label>Доставчик</label>
+                    <select id="aiProvider">
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="openai">OpenAI</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>API ключ</label>
+                    <input type="password" id="aiApiKey" placeholder="Оставете празно, за да не променяте текущия ключ" autocomplete="off">
+                    <div class="hint" id="keyHint"></div>
+                </div>
+                <button type="submit" class="btn btn-primary" id="saveBtn">Запази</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token') || localStorage.getItem('miralog_token');
+        }
+        function authHeaders() {
+            const token = getToken();
+            return token ? { 'Authorization': 'Bearer ' + token } : {};
+        }
+        if (!getToken()) {
+            window.location.replace('/login');
+        }
+        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken());
+
+        function showBanner(msg, kind) {
+            const el = document.getElementById('banner');
+            el.innerHTML = `<div class="${kind === 'error' ? 'error-banner' : 'success-banner'}">${msg}</div>`;
+            setTimeout(() => { el.innerHTML = ''; }, 4000);
+        }
+
+        async function loadSettings() {
+            try {
+                const resp = await fetch('/api/settings', { headers: authHeaders() });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                const data = await resp.json();
+                document.getElementById('aiProvider').value = data.ai_provider || 'deepseek';
+                const dot = document.getElementById('statusDot');
+                const text = document.getElementById('statusText');
+                const hint = document.getElementById('keyHint');
+                if (data.ai_api_key_set) {
+                    dot.classList.add('on');
+                    text.textContent = 'AI ключ е конфигуриран (' + data.ai_api_key_masked + ')';
+                    hint.textContent = 'Текущ ключ е зададен. Въведете нов, за да го смените.';
+                } else {
+                    dot.classList.add('off');
+                    text.textContent = 'Няма конфигуриран AI ключ';
+                    hint.textContent = '';
+                }
+            } catch (e) {
+                showBanner('Грешка при зареждане на настройките: ' + e.message, 'error');
+            }
+        }
+
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Запазване...';
+            try {
+                const key = document.getElementById('aiApiKey').value.trim();
+                const provider = document.getElementById('aiProvider').value;
+                const resp = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ai_api_key: key || null, ai_provider: provider })
+                });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.detail || 'Грешка при запазване');
+                }
+                document.getElementById('aiApiKey').value = '';
+                showBanner('Настройките са запазени успешно.', 'success');
+                loadSettings();
+            } catch (err) {
+                showBanner(err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Запази';
+            }
+        });
+
+        loadSettings();
+    </script>
+</body>
+</html>
