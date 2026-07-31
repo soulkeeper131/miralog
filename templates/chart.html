@@ -183,14 +183,27 @@
         .planet-meaning {
             font-size: 0.83rem;
             color: var(--text-meaning);
-            line-height: 1.62;
-            margin-top: 6px;
-            padding-top: 6px;
+            line-height: 1.7;
+            margin-top: 8px;
+            padding-top: 8px;
             border-top: 1px dotted var(--border-soft);
         }
         .planet-meaning br { display: none; }
-        .planet-meaning .meaning-line { display: block; margin-bottom: 5px; }
-        .planet-meaning .meaning-line:last-child { margin-bottom: 0; }
+        .planet-meaning .meaning-line {
+            display: block;
+            margin-bottom: 8px;
+            padding: 6px 0 6px 26px;
+            position: relative;
+            border-bottom: 1px dotted transparent;
+        }
+        .planet-meaning .meaning-line:last-child { margin-bottom: 0; padding-bottom: 0; }
+        .planet-meaning .meaning-line .ml-icon {
+            position: absolute;
+            left: 0;
+            top: 6px;
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
         .planet-meaning .meaning-line strong {
             color: var(--text-heading);
             font-weight: 600;
@@ -279,10 +292,20 @@
         .aspect-meaning {
             font-size: 0.83rem;
             color: var(--text-meaning);
-            line-height: 1.62;
-            margin-top: 6px;
-            padding-top: 6px;
+            line-height: 1.7;
+            margin-top: 8px;
+            padding-top: 8px;
             border-top: 1px dotted var(--border-soft);
+            padding-left: 26px;
+            position: relative;
+        }
+        .aspect-meaning::before {
+            content: '💡';
+            position: absolute;
+            left: 0;
+            top: 8px;
+            font-size: 0.85rem;
+            opacity: 0.7;
         }
 
         .wheel-section { text-align: center; }
@@ -497,10 +520,10 @@
                         </div>
                         {% if obj.name_meaning or obj.sign_meaning or obj.house_meaning %}
                         <div class="planet-meaning">
-                            {% if obj.name_meaning %}<span class="meaning-line">{{ obj.name_meaning }}</span>{% endif %}
-                            {% if obj.sign_meaning %}<span class="meaning-line"><strong>{{ obj.sign_bg }}:</strong> {{ obj.sign_meaning }}</span>{% endif %}
-                            {% if obj.house_meaning %}<span class="meaning-line"><strong>{{ obj.house_bg }}:</strong> {{ obj.house_meaning }}</span>{% endif %}
-                            {% if obj.movement_meaning %}<span class="meaning-line"><strong>Движение:</strong> {{ obj.movement_meaning }}</span>{% endif %}
+                            {% if obj.name_meaning %}<span class="meaning-line"><span class="ml-icon">✦</span>{{ obj.name_meaning }}</span>{% endif %}
+                            {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">♈</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
+                            {% if obj.house_meaning %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
+                            {% if obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
                         </div>
                         {% endif %}
                     </div>
