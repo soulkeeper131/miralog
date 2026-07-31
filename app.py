@@ -300,6 +300,15 @@ def make_subject(person: dict) -> charts.Subject:
 
 def serialize_objects(objects: dict) -> dict:
     """Serialize chart objects to JSON-friendly format."""
+    icons = {
+        'Sun': '☀️', 'Moon': '🌙', 'Mercury': '☿', 'Venus': '♀', 'Mars': '♂',
+        'Jupiter': '♃', 'Saturn': '♄', 'Uranus': '⛢', 'Neptune': '♆', 'Pluto': '♇',
+        'Asc': '⬆', 'Desc': '⬇', 'MC': '🏛️', 'IC': '🏠',
+        'Chiron': '⚷', 'North Node': '☊', 'South Node': '☋',
+        'True North Node': '☊', 'True South Node': '☋',
+        'Part of Fortune': '⊕', 'Vertex': '⩒', 'Lilith': '⚸', 'True Lilith': '⚸',
+        'Ceres': '⚳', 'Pallas': '⚴', 'Juno': '⚵', 'Vesta': '⚶',
+    }
     result = {}
     for obj in objects.values():
         name = obj.name
@@ -311,6 +320,7 @@ def serialize_objects(objects: dict) -> dict:
             "name_bg": tr_object(name),
             "name_meaning": meaning_object(name),
             "type": obj.type.name if hasattr(obj.type, 'name') else str(obj.type),
+            "icon": icons.get(name, '🪐'),
             "sign": sign,
             "sign_bg": tr_sign(sign),
             "sign_meaning": meaning_sign(sign),

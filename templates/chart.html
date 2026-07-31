@@ -97,29 +97,104 @@
         }
         .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 12px; }
 
-        .planet-row {
-            display: grid; grid-template-columns: 120px 1fr 80px 80px;
-            padding: 8px 0; border-bottom: 1px solid var(--border-soft); align-items: center;
-            font-size: 0.9rem;
+        /* ── Planets card grid ── */
+        .planet-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 14px;
         }
-        .planet-row:last-child { border-bottom: none; }
-        .planet-row-head { color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; }
-        .planet-row-head .planet-sign, .planet-row-head .planet-house, .planet-row-head .planet-move { color: var(--text-dim); }
-        .planet-name { color: var(--text-heading); font-weight: 600; }
-        .planet-sign { color: var(--text); }
-        .planet-house { color: var(--text-muted); text-align: center; }
-        .planet-move { color: var(--text-muted); text-align: right; }
-        .planet-retro { color: var(--danger); }
-
-        .planet-details { border-bottom: 1px solid var(--border-soft); }
-        .planet-details:last-child { border-bottom: none; }
-        .planet-details .planet-row { border-bottom: none; cursor: pointer; list-style: none; }
-        .planet-details summary::-webkit-details-marker { display: none; }
-        .meaning-box {
-            padding: 4px 0 14px 4px; font-size: 0.85rem; color: var(--text-meaning); line-height: 1.6;
+        .planet-card {
+            background: var(--bg-input);
+            border-radius: 10px;
+            padding: 16px 18px;
+            border: 1px solid var(--border-soft);
+            transition: border-color 0.2s;
         }
-        .meaning-box p { margin-bottom: 6px; }
-        .meaning-box p:last-child { margin-bottom: 0; }
+        .planet-card:hover { border-color: var(--accent); }
+        .planet-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .planet-icon {
+            font-size: 1.6rem;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .planet-title {
+            flex: 1;
+            min-width: 0;
+        }
+        .planet-title-name {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: var(--text-heading);
+        }
+        .planet-title-type {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .planet-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        .planet-badge.retro {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+        .planet-badge.direct {
+            background: rgba(34,197,94,0.12);
+            color: #22c55e;
+        }
+        .planet-badge.stationary {
+            background: rgba(251,191,36,0.12);
+            color: #fbbf24;
+        }
+        .planet-detail {
+            margin-bottom: 7px;
+            font-size: 0.88rem;
+            line-height: 1.55;
+        }
+        .planet-detail:last-child { margin-bottom: 0; }
+        .planet-detail strong {
+            color: var(--text-heading);
+            font-weight: 600;
+        }
+        .planet-detail-label {
+            display: inline-block;
+            color: var(--text-dim);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            min-width: 52px;
+            margin-right: 4px;
+        }
+        .planet-meaning {
+            font-size: 0.83rem;
+            color: var(--text-meaning);
+            line-height: 1.62;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dotted var(--border-soft);
+        }
+        .planet-meaning br { display: none; }
+        .planet-meaning .meaning-line { display: block; margin-bottom: 5px; }
+        .planet-meaning .meaning-line:last-child { margin-bottom: 0; }
+        .planet-meaning .meaning-line strong {
+            color: var(--text-heading);
+            font-weight: 600;
+        }
 
         .aspect-details { border-bottom: 1px solid var(--border-soft); }
         .aspect-details:last-child { border-bottom: none; }
@@ -212,34 +287,16 @@
         }
 
         @media (max-width: 600px) {
-            .planet-row {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: baseline;
-                gap: 0;
-                padding: 8px 0;
-                border-bottom: 1px solid var(--border-soft);
-                font-size: 0.85rem;
+            .planet-cards {
+                grid-template-columns: 1fr;
+                gap: 10px;
             }
-            .planet-row:last-child { border-bottom: none; }
-            .planet-name {
-                min-width: 80px;
-                flex-shrink: 0;
-            }
-            .planet-sign {
-                flex: 1;
-            }
-            .planet-house {
-                display: inline;
-                color: var(--text-muted);
-                font-size: 0.8rem;
-            }
-            .planet-house::before { content: " | "; }
-            .planet-move {
-                display: inline;
-                font-size: 0.8rem;
-            }
-            .planet-move::before { content: " | "; }
+            .planet-card { padding: 14px 14px; }
+            .planet-card-header { gap: 8px; }
+            .planet-icon { font-size: 1.4rem; }
+            .planet-title-name { font-size: 0.95rem; }
+            .planet-detail { font-size: 0.83rem; }
+            .planet-meaning { font-size: 0.8rem; }
             .tabs { gap: 2px; }
             .tab { padding: 8px 12px; font-size: 0.85rem; min-height: 44px; min-width: 44px; }
         }
@@ -303,30 +360,56 @@
         <div id="tab-planets" class="tab-content">
             <div class="section">
                 <h2>Планети и точки</h2>
-                <div class="planet-row planet-row-head">
-                    <div class="planet-name">Точка</div>
-                    <div class="planet-sign">Знак</div>
-                    <div class="planet-house">Дом</div>
-                    <div class="planet-move">Движение</div>
-                </div>
+                <div class="planet-cards">
                 {% for oid, obj in chart.objects.items() %}
-                <details class="planet-details">
-                    <summary class="planet-row">
-                        <div class="planet-name">{{ obj.name_bg }}</div>
-                        <div class="planet-sign">{{ obj.sign_bg }} {{ obj.sign_longitude }}</div>
-                        <div class="planet-house">{{ obj.house_bg }}</div>
-                        <div class="planet-move {% if obj.movement == 'Retrograde' %}planet-retro{% endif %}">
-                            {{ obj.movement_bg or '' }}
+                    <div class="planet-card">
+                        <div class="planet-card-header">
+                            <div class="planet-icon">{{ obj.icon or '🪐' }}</div>
+                            <div class="planet-title">
+                                <div class="planet-title-name">{{ obj.name_bg }}</div>
+                                {% if obj.type == 'Planet' %}
+                                <div class="planet-title-type">Планета</div>
+                                {% elif 'Node' in obj.type or obj.type == 'LunarNode' %}
+                                <div class="planet-title-type">Лунен възел</div>
+                                {% elif 'Asteroid' in obj.type %}
+                                <div class="planet-title-type">Астероид</div>
+                                {% elif obj.type == 'Angle' %}
+                                <div class="planet-title-type">Ъглова точка</div>
+                                {% else %}
+                                <div class="planet-title-type">{{ obj.type }}</div>
+                                {% endif %}
+                            </div>
+                            {% if obj.movement == 'Retrograde' %}
+                            <span class="planet-badge retro">⟲ Ретро</span>
+                            {% elif obj.movement == 'Stationary' %}
+                            <span class="planet-badge stationary">⬤ Стац.</span>
+                            {% elif obj.movement == 'Direct' and obj.speed and obj.speed > 0 %}
+                            <span class="planet-badge direct">→ Директ.</span>
+                            {% endif %}
                         </div>
-                    </summary>
-                    <div class="meaning-box">
-                        {% if obj.name_meaning %}<p>{{ obj.name_meaning }}</p>{% endif %}
-                        {% if obj.sign_meaning %}<p><strong>{{ obj.sign_bg }}:</strong> {{ obj.sign_meaning }}</p>{% endif %}
-                        {% if obj.house_meaning %}<p><strong>{{ obj.house_bg }}:</strong> {{ obj.house_meaning }}</p>{% endif %}
-                        {% if obj.movement_meaning %}<p><strong>{{ obj.movement_bg }}:</strong> {{ obj.movement_meaning }}</p>{% endif %}
+                        <div class="planet-detail">
+                            <span class="planet-detail-label">Знак</span>
+                            <strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_longitude }}
+                        </div>
+                        <div class="planet-detail">
+                            <span class="planet-detail-label">Дом</span>
+                            <strong>{{ obj.house_bg }}</strong>
+                        </div>
+                        <div class="planet-detail">
+                            <span class="planet-detail-label">Дълж.</span>
+                            {{ obj.longitude }}
+                        </div>
+                        {% if obj.name_meaning or obj.sign_meaning or obj.house_meaning %}
+                        <div class="planet-meaning">
+                            {% if obj.name_meaning %}<span class="meaning-line">{{ obj.name_meaning }}</span>{% endif %}
+                            {% if obj.sign_meaning %}<span class="meaning-line"><strong>{{ obj.sign_bg }}:</strong> {{ obj.sign_meaning }}</span>{% endif %}
+                            {% if obj.house_meaning %}<span class="meaning-line"><strong>{{ obj.house_bg }}:</strong> {{ obj.house_meaning }}</span>{% endif %}
+                            {% if obj.movement_meaning %}<span class="meaning-line"><strong>Движение:</strong> {{ obj.movement_meaning }}</span>{% endif %}
+                        </div>
+                        {% endif %}
                     </div>
-                </details>
                 {% endfor %}
+                </div>
             </div>
         </div>
 
