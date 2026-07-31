@@ -11,6 +11,13 @@ SIGNS = {
     "Pisces": "Риби",
 }
 
+SIGN_SYMBOLS = {
+    "Aries": "♈", "Taurus": "♉", "Gemini": "♊", "Cancer": "♋",
+    "Leo": "♌", "Virgo": "♍", "Libra": "♎", "Scorpio": "♏",
+    "Sagittarius": "♐", "Capricorn": "♑", "Aquarius": "♒",
+    "Pisces": "♓",
+}
+
 OBJECTS = {
     "Asc": "Асцендент", "Desc": "Десцендент", "MC": "Медиум Коели", "IC": "Имум Коели",
     "ARMC": "ARMC",
@@ -69,6 +76,11 @@ HOUSE_NAMES = {
 
 def tr_sign(value):
     return SIGNS.get(value, value) if value else value
+
+
+def sign_symbol(value):
+    """Zodiac glyph for a sign name, e.g. 'Capricorn' -> '♑'."""
+    return SIGN_SYMBOLS.get(value, "✦") if value else "✦"
 
 
 def tr_object(value):

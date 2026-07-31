@@ -31,6 +31,23 @@
             --danger: #ef4444;
             --danger-bg: #2d1b1b;
             --danger-text: #fca5a5;
+            /* --- pastel palette (raw tones, identical in both themes) --- */
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
             --bg: #faf7fb;
@@ -50,6 +67,17 @@
             --danger: #c2255c;
             --danger-bg: #fff0f5;
             --danger-text: #c2255c;
+            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
         }
         body {
             font-family: -apple-system, system-ui, sans-serif;
@@ -136,6 +164,11 @@
             gap: 12px; margin-bottom: 16px;
         }
         .stat { background: var(--bg-input); border-radius: 8px; padding: 12px; text-align: center; }
+        /* rotating pastel surfaces, matching chart.html */
+        .stat:nth-child(4n+1) { background: var(--surface-thistle); }
+        .stat:nth-child(4n+2) { background: var(--surface-icy); }
+        .stat:nth-child(4n+3) { background: var(--surface-petal); }
+        .stat:nth-child(4n+4) { background: var(--surface-sky); }
         .stat-label { color: var(--text-muted); font-size: 0.8rem; }
         .stat-value { color: var(--text-heading); font-size: 1.05rem; font-weight: 600; margin-top: 4px; }
 

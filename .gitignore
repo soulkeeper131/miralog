@@ -4,7 +4,6 @@ __pycache__/
 persons.db
 data/
 ephe/
-static/
 venv/
 .venv/
 *.egg-info/

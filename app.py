@@ -27,6 +27,7 @@ import bcrypt
 from translations import (
     tr_sign, tr_object, tr_aspect, tr_moon_phase, tr_movement, tr_shape, tr_house_system, tr_house,
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
+    sign_symbol,
 )
 from numerology import compute_numerology
 
@@ -323,6 +324,7 @@ def serialize_objects(objects: dict) -> dict:
             "icon": icons.get(name, '🪐'),
             "sign": sign,
             "sign_bg": tr_sign(sign),
+            "sign_symbol": sign_symbol(sign),
             "sign_meaning": meaning_sign(sign),
             "sign_longitude": obj.sign_longitude.formatted,
             "longitude": obj.longitude.formatted,

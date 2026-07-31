@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ person.name }} — Натална карта | МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -11,9 +13,18 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --shadow-inner-card: 0 2px 10px rgba(0,0,0,0.28);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
             --bg: #0a0a1a;
             --bg-card: #1a1a2e;
             --bg-input: #16162a;
@@ -32,8 +43,29 @@
             --danger: #ef4444;
             --danger-bg: #2d1b1b;
             --danger-text: #fca5a5;
+            /* --- pastel palette (raw tones, identical in both themes) --- */
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --shadow-inner-card: 0 1px 3px rgba(45,36,56,0.06);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
             --bg: #faf7fb;
             --bg-card: #ffffff;
             --bg-input: #f7f1f9;
@@ -52,8 +84,19 @@
             --danger: #c2255c;
             --danger-bg: #fff0f5;
             --danger-text: #c2255c;
+            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
         }
-        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
+        body { font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
         .theme-toggle {
             position: fixed;
             top: max(16px, env(safe-area-inset-top));
@@ -69,33 +112,53 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.2s, border-color 0.2s;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
             z-index: 200;
         }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+        .theme-toggle:active { transform: translateY(0); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; transition: color 0.15s ease; }
         .back-link:hover { color: var(--accent-light); }
 
-        .chart-header { background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-        .chart-header h1 { color: var(--text-heading); font-size: 1.8rem; }
-        .chart-meta { color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; }
-
-        .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
-        .tab {
-            padding: 8px 16px; border-radius: 8px; cursor: pointer; min-height: 44px; min-width: 44px;
-            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
-            font-size: 0.9rem; transition: all .2s; user-select: none;
+        .chart-header {
+            background: var(--bg-card); border-radius: 16px; padding: 20px; margin-bottom: 20px;
+            box-shadow: var(--shadow-card);
         }
-        .tab.active { background: var(--accent); border-color: var(--accent); color: white; }
-        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); }
+        .chart-header h1 {
+            font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; line-height: 1.25;
+            color: var(--text-heading); font-size: 2rem;
+        }
+        .chart-meta { color: var(--text-muted); font-size: 0.85rem; margin-top: 8px; }
+
+        .tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 8px 16px; border-radius: 12px; cursor: pointer; min-height: 44px; min-width: 44px;
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
+            font-family: var(--font-body); font-size: 0.85rem; font-weight: 500;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+            user-select: none;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            border-color: var(--accent); color: white; font-weight: 600;
+            box-shadow: var(--shadow-raised);
+        }
+        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); transform: translateY(-1px); }
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
         .section {
-            background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 16px;
+            background: var(--bg-card); border-radius: 16px; padding: 20px; margin-bottom: 16px;
+            box-shadow: var(--shadow-card);
         }
-        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 12px; }
+        .section h2 {
+            color: var(--accent-light); font-size: 1.05rem; font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 12px;
+        }
 
         /* ── Planets card grid ── */
         .planet-cards {
@@ -105,12 +168,13 @@
         }
         .planet-card {
             background: var(--bg-input);
-            border-radius: 10px;
+            border-radius: 14px;
             padding: 16px 18px;
             border: 1px solid var(--border-soft);
-            transition: border-color 0.2s;
+            box-shadow: var(--shadow-inner-card);
+            transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .planet-card:hover { border-color: var(--accent); }
+        .planet-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
         .planet-card-header {
             display: flex;
             align-items: center;
@@ -129,8 +193,10 @@
             min-width: 0;
         }
         .planet-title-name {
-            font-weight: 700;
+            font-weight: 600;
             font-size: 1.05rem;
+            letter-spacing: -0.01em;
+            line-height: 1.25;
             color: var(--text-heading);
         }
         .planet-title-type {
@@ -141,8 +207,8 @@
         }
         .planet-badge {
             display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
+            padding: 3px 9px;
+            border-radius: 999px;
             font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.03em;
@@ -150,16 +216,16 @@
             flex-shrink: 0;
         }
         .planet-badge.retro {
-            background: var(--danger-bg);
-            color: var(--danger-text);
+            background: var(--surface-pink);
+            color: var(--on-pink);
         }
         .planet-badge.direct {
-            background: rgba(34,197,94,0.12);
-            color: #22c55e;
+            background: var(--surface-icy);
+            color: var(--on-icy);
         }
         .planet-badge.stationary {
-            background: rgba(251,191,36,0.12);
-            color: #fbbf24;
+            background: var(--surface-petal);
+            color: var(--on-thistle);
         }
         .planet-detail {
             margin-bottom: 7px;
@@ -200,9 +266,17 @@
         .planet-meaning .meaning-line .ml-icon {
             position: absolute;
             left: 0;
-            top: 6px;
+            top: 4px;
             font-size: 0.85rem;
-            opacity: 0.7;
+            opacity: 0.9;
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: var(--surface-thistle);
+            line-height: 1;
         }
         .planet-meaning .meaning-line strong {
             color: var(--text-heading);
@@ -222,12 +296,13 @@
         }
         .aspect-card {
             background: var(--bg-input);
-            border-radius: 10px;
+            border-radius: 14px;
             padding: 16px 18px;
             border: 1px solid var(--border-soft);
-            transition: border-color 0.2s;
+            box-shadow: var(--shadow-inner-card);
+            transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .aspect-card:hover { border-color: var(--accent); }
+        .aspect-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
         .aspect-card-header {
             display: flex;
             align-items: center;
@@ -246,8 +321,10 @@
             min-width: 0;
         }
         .aspect-title-name {
-            font-weight: 700;
+            font-weight: 600;
             font-size: 1.05rem;
+            letter-spacing: -0.01em;
+            line-height: 1.25;
             color: var(--text-heading);
         }
         .aspect-title-sub {
@@ -258,18 +335,19 @@
         }
         .aspect-badge {
             display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
+            padding: 3px 9px;
+            border-radius: 999px;
             font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.03em;
             text-transform: uppercase;
             flex-shrink: 0;
         }
-        .aspect-badge.major { background: rgba(245,158,11,0.12); color: #f59e0b; }
-        .aspect-badge.harmony { background: rgba(34,197,94,0.12); color: #22c55e; }
-        .aspect-badge.challenge { background: rgba(239,68,68,0.12); color: #ef4444; }
-        .aspect-badge.minor { background: rgba(99,102,241,0.12); color: #6366f1; }
+        /* semantics preserved: major=important, harmony=pleasant, challenge=tense, minor=neutral */
+        .aspect-badge.major { background: var(--surface-thistle); color: var(--on-thistle); }
+        .aspect-badge.harmony { background: var(--surface-icy); color: var(--on-icy); }
+        .aspect-badge.challenge { background: var(--surface-pink); color: var(--on-pink); }
+        .aspect-badge.minor { background: var(--surface-sky); color: var(--on-sky); }
         .aspect-detail {
             margin-bottom: 7px;
             font-size: 0.88rem;
@@ -337,6 +415,7 @@
             .aspect-title-name { font-size: 0.95rem; }
             .aspect-detail { font-size: 0.83rem; }
             .aspect-meaning { font-size: 0.8rem; }
+        }
 
         .interpretation {
             white-space: pre-wrap; line-height: 1.8; font-size: 0.95rem;
@@ -347,15 +426,47 @@
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft);
         }
-        .cache-label { font-size: 0.78rem; color: var(--text-dim); }
+        .cache-label { font-size: 0.75rem; color: var(--text-dim); }
         .btn-refresh {
-            padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
-            background: transparent; color: var(--accent-light); font-size: 0.78rem;
-            cursor: pointer; min-height: 32px;
+            padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border);
+            background: transparent; color: var(--accent-light);
+            font-family: var(--font-body); font-size: 0.75rem; font-weight: 500;
+            cursor: pointer; min-height: 36px;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
         }
-        .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); }
+        .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); transform: translateY(-1px); }
+        .btn-refresh:active { transform: translateY(0); }
+        .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        .crystal-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
+        }
+        .crystal-loader .orb-wrap {
+            position: relative; width: 56px; height: 56px;
+        }
+        .crystal-loader .orb {
+            position: absolute; inset: 0; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
+            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: orb-pulse 1.8s ease-in-out infinite;
+        }
+        .crystal-loader .spark {
+            position: absolute; inset: 0;
+            animation: orb-spin 2.4s linear infinite;
+        }
+        .crystal-loader .spark::before {
+            content: "✦"; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
+        }
+        @keyframes orb-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes orb-spin {
+            to { transform: rotate(360deg); }
+        }
         .error { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px; padding: 12px; color: var(--danger-text); }
 
         .stats {
@@ -363,33 +474,49 @@
             gap: 12px; margin-top: 12px;
         }
         .stat {
-            background: var(--bg-input); border-radius: 8px; padding: 12px; text-align: center;
+            background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 14px;
+            padding: 14px 12px; text-align: center;
+            transition: border-color 0.15s ease, transform 0.15s ease;
         }
-        .stat-label { color: var(--text-muted); font-size: 0.8rem; }
-        .stat-value { color: var(--text-heading); font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
-        .stat-meaning { color: var(--text-muted); font-size: 0.72rem; margin-top: 4px; line-height: 1.4; }
+        /* rotating pastel surfaces so the four stat cards stay visually distinct */
+        .stat:nth-child(4n+1) { background: var(--surface-thistle); }
+        .stat:nth-child(4n+2) { background: var(--surface-icy); }
+        .stat:nth-child(4n+3) { background: var(--surface-petal); }
+        .stat:nth-child(4n+4) { background: var(--surface-sky); }
+        .stat:hover { border-color: var(--accent-light); transform: translateY(-1px); }
+        .stat-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        .stat-value { color: var(--text-heading); font-size: 1.05rem; font-weight: 600; line-height: 1.25; margin-top: 5px; }
+        .stat-meaning { color: var(--text-muted); font-size: 0.75rem; margin-top: 5px; line-height: 1.5; }
 
         .period-form {
             display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;
         }
         .period-form .form-group { margin-bottom: 0; }
-        .period-form label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
+        .period-form label { display: block; margin-bottom: 5px; color: var(--accent-light); font-size: 0.85rem; font-weight: 500; }
         .period-form input[type="date"] {
-            padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
-            background: var(--bg-input); color: var(--text); font-size: 15px; min-height: 44px;
+            padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+            background: var(--bg-input); color: var(--text);
+            font-family: var(--font-body); font-size: 15px; min-height: 44px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
         }
+        .period-form input[type="date"]:hover { border-color: var(--accent-light); }
+        .period-form input[type="date"]:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
         .btn {
-            padding: 10px 18px; border-radius: 8px; border: none; background: var(--accent);
-            color: white; font-size: 0.9rem; font-weight: 600; cursor: pointer; min-height: 44px;
+            padding: 10px 18px; border-radius: 12px; border: none; background: var(--accent);
+            color: white; font-family: var(--font-body); font-size: 0.9rem; font-weight: 600;
+            letter-spacing: 0.01em; cursor: pointer; min-height: 44px;
+            transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .btn:hover { background: var(--accent-hover); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-raised); }
+        .btn:active { transform: translateY(0); box-shadow: none; }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .day-entry {
             padding: 12px 0; border-bottom: 1px solid var(--border-soft);
         }
         .day-entry:last-child { border-bottom: none; }
-        .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+        .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-bottom: 6px; }
         .day-entry .day-aspect { font-size: 0.85rem; color: var(--text-soft); padding: 2px 0; }
 
         .num-row {
@@ -397,8 +524,11 @@
             padding: 12px 0; border-bottom: 1px solid var(--border-soft); gap: 12px;
         }
         .num-row:last-child { border-bottom: none; }
-        .num-label { color: var(--text-heading); font-weight: 600; font-size: 0.9rem; flex-shrink: 0; }
-        .num-value { color: var(--accent-light); font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
+        .num-label { color: var(--text-heading); font-weight: 600; font-size: 0.95rem; line-height: 1.25; flex-shrink: 0; }
+        .num-value {
+            font-family: var(--font-display); color: var(--accent-light);
+            font-size: 1.6rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; flex-shrink: 0;
+        }
         .num-meaning { color: var(--text-soft); font-size: 0.85rem; text-align: right; }
         @media (max-width: 600px) {
             .num-row { flex-direction: column; align-items: flex-start; }
@@ -470,7 +600,7 @@
             <div class="section wheel-section">
                 <h2>Натална карта</h2>
                 <div id="chart-wheel" class="wheel-container">
-                    <div class="loading">Зареждане на картата...</div>
+                    <div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Зареждане на картата...</div>
                 </div>
                 <div class="wheel-legend" id="wheel-legend"></div>
             </div>
@@ -521,7 +651,7 @@
                         {% if obj.name_meaning or obj.sign_meaning or obj.house_meaning %}
                         <div class="planet-meaning">
                             {% if obj.name_meaning %}<span class="meaning-line"><span class="ml-icon">✦</span>{{ obj.name_meaning }}</span>{% endif %}
-                            {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">♈</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
+                            {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">{{ obj.sign_symbol }}</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
                             {% if obj.house_meaning %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
                             {% if obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
                         </div>
@@ -580,11 +710,11 @@
         <div id="tab-horoscope" class="tab-content">
             <div class="section">
                 <h2>Разчитане на деня</h2>
-                <div id="horoscope-ai-content" class="loading">Генериране на разчитане...</div>
+                <div id="horoscope-ai-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на разчитане...</div>
             </div>
             <div class="section">
                 <h2>Дневен транзитен хороскоп — данни</h2>
-                <div id="horoscope-content" class="loading">Изчисляване...</div>
+                <div id="horoscope-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div>
             </div>
         </div>
 
@@ -615,25 +745,27 @@
                 <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
                     Питагорова нумерология, изчислена математически от името и датата на раждане.
                 </p>
-                <div id="numerology-content" class="loading">Изчисляване...</div>
+                <div id="numerology-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div>
             </div>
             <div class="section">
                 <h2>AI Интерпретация на нумерологията</h2>
-                <div id="numerology-ai-content" class="loading">Генериране...</div>
+                <div id="numerology-ai-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div>
             </div>
         </div>
 
         <div id="tab-interpretation" class="tab-content">
             <div class="section">
                 <h2>AI Интерпретация</h2>
-                <div id="interpretation-content" class="loading">
-                    Генериране на интерпретация...
-                </div>
+                <div id="interpretation-content" class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на интерпретация...</div>
             </div>
         </div>
     </div>
 
     <script>
+        function crystalLoader(text) {
+            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        }
+
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
             document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
@@ -755,7 +887,7 @@
 
         async function loadHoroscopeAI(refresh) {
             const el = document.getElementById('horoscope-ai-content');
-            el.innerHTML = '<div class="loading">Генериране на разчитане...</div>';
+            el.innerHTML = crystalLoader('Генериране на разчитане...');
             try {
                 const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
                 const resp = await fetch(url, { headers: authHeaders() });
@@ -774,7 +906,7 @@
         async function loadInterpretation(refresh) {
             window._interpretationLoaded = true;
             const el = document.getElementById('interpretation-content');
-            el.innerHTML = '<div class="loading">Генериране на интерпретация...</div>';
+            el.innerHTML = crystalLoader('Генериране на интерпретация...');
             try {
                 const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await fetch(url, { headers: authHeaders() });
@@ -806,7 +938,7 @@
             }
             btn.disabled = true;
             btn.textContent = 'Анализиране...';
-            el.innerHTML = '<div class="loading">Изчисляване на периода...</div>';
+            el.innerHTML = crystalLoader('Изчисляване на периода...');
             try {
                 const resp = await fetch('/api/period-influence', {
                     method: 'POST',
@@ -889,7 +1021,7 @@
 
         async function loadNumerologyAI(refresh) {
             const aiEl = document.getElementById('numerology-ai-content');
-            aiEl.innerHTML = '<div class="loading">Генериране...</div>';
+            aiEl.innerHTML = crystalLoader('Генериране...');
             try {
                 const url = '/api/persons/{{ person.id }}/numerology/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await fetch(url, { headers: authHeaders() });

@@ -35,6 +35,23 @@
             --cancel-border: #555;
             --cancel-text: #888;
             --cancel-tint: #55555520;
+            /* --- pastel palette (raw tones, identical in both themes) --- */
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
             --bg: #faf7fb;
@@ -58,6 +75,17 @@
             --cancel-border: #d9c7e2;
             --cancel-text: #7a6d8a;
             --cancel-tint: #e5d4ec55;
+            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
         }
         body {
             font-family: -apple-system, system-ui, sans-serif;
@@ -162,10 +190,10 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: border-color 0.2s;
+            transition: border-color 0.2s, background-color 0.2s;
             gap: 12px;
         }
-        .person-card:hover { border-color: var(--accent-light); }
+        .person-card:hover { border-color: var(--accent-light); background: var(--surface-thistle); }
         .person-info { flex: 1; min-width: 0; }
         .person-info h3 {
             color: var(--text-heading);
