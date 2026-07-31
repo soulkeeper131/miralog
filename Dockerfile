@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
 COPY app.py .
+COPY chart_svg.py .
 COPY templates/ templates/
 
 # Create dirs and download essential ephemeris files
