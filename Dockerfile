@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl tzdata && \
+    curl tzdata fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python deps
@@ -16,6 +16,8 @@ COPY app.py .
 COPY chart_svg.py .
 COPY translations.py .
 COPY numerology.py .
+COPY bg_text.py .
+COPY pdf_report.py .
 COPY templates/ templates/
 COPY static/ static/
 

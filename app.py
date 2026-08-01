@@ -1,4 +1,4 @@
-import os, json, sqlite3, datetime
+import os, re, json, sqlite3, datetime, urllib.parse
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
@@ -35,9 +35,11 @@ from translations import (
 )
 from numerology import compute_numerology
 from bg_text import clean_bg
+from pdf_report import build_reading_pdf
 
 # --- App Setup ---
-DB_PATH = Path(__file__).parent / "data" / "persons.db"
+BASE_DIR = Path(__file__).parent
+DB_PATH = BASE_DIR / "data" / "persons.db"
 SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production-secret-key")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
@@ -1118,41 +1120,61 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
 
     return {"ok": True}
 
+def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> None:
+    """Send a message over the configured SMTP server.
+
+    `attachment` is an optional (filename, bytes, mimetype) triple.
+    Raises HTTPException with a readable message on failure.
+    """
+    import smtplib
+    from email.message import EmailMessage
+
+    host = get_setting("smtp_host")
+    if not host:
+        raise HTTPException(400, "SMTP сървърът не е конфигуриран. Задай го в Настройки.")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = get_setting("smtp_from") or get_setting("smtp_user") or "noreply@miraskop.bg"
+    msg["To"] = to
+    msg.set_content(body)
+
+    if attachment:
+        filename, data, mimetype = attachment
+        maintype, _, subtype = mimetype.partition("/")
+        msg.add_attachment(data, maintype=maintype, subtype=subtype or "octet-stream",
+                           filename=filename)
+
+    user = get_setting("smtp_user")
+    password = get_setting("smtp_password") or ""
+    port = int(get_setting("smtp_port") or 587)
+    use_tls = (get_setting("smtp_use_tls") or "1") == "1"
+
+    try:
+        if use_tls:
+            with smtplib.SMTP(host, port, timeout=30) as s:
+                s.starttls()
+                if user:
+                    s.login(user, password)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP_SSL(host, port, timeout=30) as s:
+                if user:
+                    s.login(user, password)
+                s.send_message(msg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Изпращането се провали: {e}")
+
 @app.post("/api/admin/settings/test-email")
 def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
     """Send a test message through the configured SMTP server."""
     to = (payload.get("to") or "").strip()
     if "@" not in to:
         raise HTTPException(400, "Въведи валиден имейл адрес.")
-
-    host = get_setting("smtp_host")
-    if not host:
-        raise HTTPException(400, "SMTP сървърът не е конфигуриран.")
-
-    import smtplib
-    from email.message import EmailMessage
-
-    msg = EmailMessage()
-    msg["Subject"] = "Тестов имейл от МираСкоп"
-    msg["From"] = get_setting("smtp_from") or get_setting("smtp_user") or "noreply@miraskop.bg"
-    msg["To"] = to
-    msg.set_content("Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
-
-    try:
-        port = int(get_setting("smtp_port") or 587)
-        if (get_setting("smtp_use_tls") or "1") == "1":
-            with smtplib.SMTP(host, port, timeout=20) as s:
-                s.starttls()
-                if get_setting("smtp_user"):
-                    s.login(get_setting("smtp_user"), get_setting("smtp_password") or "")
-                s.send_message(msg)
-        else:
-            with smtplib.SMTP_SSL(host, port, timeout=20) as s:
-                if get_setting("smtp_user"):
-                    s.login(get_setting("smtp_user"), get_setting("smtp_password") or "")
-                s.send_message(msg)
-    except Exception as e:
-        raise HTTPException(502, f"Изпращането се провали: {e}")
+    send_email(to, "Тестов имейл от МираСкоп",
+               "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
     return {"ok": True}
 
 # --- Settings API Routes (AUTH REQUIRED) ---
@@ -1556,11 +1578,12 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     if not p:
         raise HTTPException(404, "Person not found")
 
+    cache_key = "profile"
     if not refresh:
-        cached = get_ai_cache(person_id, "profile")
+        cached = get_ai_cache(person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     chart_data = compute_natal(p)
     prof = build_profile(chart_data)
@@ -1625,8 +1648,8 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
-            set_ai_cache(person_id, "profile", interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
@@ -1699,11 +1722,12 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     if not p:
         raise HTTPException(404, "Person not found")
 
+    cache_key = "akashic"
     if not refresh:
-        cached = get_ai_cache(person_id, "akashic")
+        cached = get_ai_cache(person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     chart_data = compute_natal(p)
     numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
@@ -1807,8 +1831,8 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000)
-            set_ai_cache(person_id, "akashic", interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
@@ -1838,7 +1862,8 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
-            return {"interpretation": cached["content"], "cached": True, "generated_at": cached["generated_at"]}
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     profile = compute_numerology(p["name"], p["year"], p["month"], p["day"])
 
@@ -1869,7 +1894,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
             set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
@@ -2154,7 +2179,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     m = resolve_love_match(data, p)
 
@@ -2233,7 +2258,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
             set_ai_cache(data.person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
@@ -2324,7 +2349,7 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=3000)
             set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
@@ -2375,7 +2400,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
         if cached:
             summary, body = split_summary(cached["content"])
             return {"interpretation": body, "summary": summary,
-                    "date": now.strftime("%d.%m.%Y"), "cached": True}
+                    "date": now.strftime("%d.%m.%Y"), "cached": True, "cache_key": cache_key}
 
     transit_data = compute_transits(p, now)
 
@@ -2441,7 +2466,8 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
             raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(person_id, cache_key, raw)
             summary, body = split_summary(raw)
-            return {"interpretation": body, "summary": summary, "date": date_bg, "cached": False}
+            return {"interpretation": body, "summary": summary, "date": date_bg,
+                    "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}", "date": date_bg}
         except Exception as e:
@@ -2537,7 +2563,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     period = api_period_influence(data, user)
     days = period.get("days", [])
@@ -2580,7 +2606,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
             set_ai_cache(data.person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
@@ -2678,10 +2704,12 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
     if not p:
         raise HTTPException(404, "Person not found")
 
+    cache_key = "natal"
     if not refresh:
-        cached = get_ai_cache(person_id, "natal")
+        cached = get_ai_cache(person_id, cache_key)
         if cached:
-            return {"interpretation": cached["content"], "cached": True, "generated_at": cached["generated_at"]}
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     chart_data = compute_natal(p)
 
@@ -2751,14 +2779,154 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
-            set_ai_cache(person_id, "natal", interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
         except Exception as e:
             return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
 
     return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
+# --- PDF export and email delivery ---
+
+# Every reading the user can export. The label becomes the PDF's title, and the
+# cache key is either fixed or a prefix the client completes (date, period, sign).
+READING_TITLES = {
+    "natal":      "Тълкуване на наталната карта",
+    "profile":    "Личен портрет",
+    "akashic":    "Акашови записи",
+    "numerology": "Нумерологичен анализ",
+    "horoscope":  "Дневен хороскоп",
+    "period":     "Анализ на период",
+    "love":       "Любовен хороскоп",
+    "love-full":  "Любовен хороскоп",
+}
+
+def reading_title(cache_key: str) -> str:
+    """Human title for a cache key, which may carry a ':suffix' (date, period, sign)."""
+    base = (cache_key or "").split(":", 1)[0]
+    return READING_TITLES.get(base, "Разчитане")
+
+def reading_subtitle(cache_key: str) -> str:
+    """Turn the cache key's suffix into a readable line under the title."""
+    base, _, rest = (cache_key or "").partition(":")
+    if not rest:
+        return ""
+    if base == "horoscope":
+        return f"за {bg_date(rest)}"
+    if base == "period":
+        start, _, end = rest.partition(":")
+        return f"за периода {bg_date(start)} – {bg_date(end)}" if end else ""
+    if base == "numerology":
+        return f"за {rest} г."
+    if base == "love":
+        return f"съвместимост с {SIGNS.get(rest, rest)}"
+    if base == "love-full":
+        return "съвместимост по пълни рождени данни"
+    return ""
+
+def bg_date(iso: str) -> str:
+    """YYYY-MM-DD -> DD.MM.YYYY, leaving anything unexpected untouched."""
+    try:
+        return datetime.datetime.strptime(iso, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except Exception:
+        return iso
+
+def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
+    """Render a cached reading as a PDF. Returns (bytes, filename)."""
+    cached = get_ai_cache(person["id"], cache_key)
+    if not cached:
+        raise HTTPException(404, "Това разчитане още не е генерирано. Отвори го в приложението и опитай пак.")
+
+    summary, body = split_summary(cached["content"])
+
+    # The summary block feeds the little cards; without one, fall back to the
+    # chart's own headline positions so the cover page is never empty.
+    facts = []
+    if isinstance(summary, dict):
+        for k, v in list(summary.items())[:4]:
+            if v:
+                facts.append((str(k), str(v)))
+    if not facts:
+        try:
+            by_name = {o["name"]: o for o in compute_natal(person)["objects"].values()}
+            for label, name in (("Слънце", "Sun"), ("Луна", "Moon"), ("Асцендент", "Asc")):
+                if name in by_name:
+                    facts.append((label, by_name[name]["sign"]))
+        except Exception:
+            pass
+
+    birth = f"{person['day']}.{person['month']}.{person['year']} г., " \
+            f"{person['hour']:02d}:{person['minute']:02d} ч."
+    subtitle = reading_subtitle(cache_key)
+    subtitle = f"{subtitle} · {birth}" if subtitle else birth
+
+    logo = BASE_DIR / "static" / "logo-header.png"
+    pdf = build_reading_pdf(
+        title=reading_title(cache_key),
+        person_name=person["name"],
+        subtitle=subtitle,
+        facts=facts,
+        body=body,
+        logo_path=str(logo) if logo.exists() else None,
+    )
+
+    safe = re.sub(r"[^0-9A-Za-zА-Яа-я]+", "-", person["name"]).strip("-") or "razchitane"
+    # Only the first key segment goes in the filename; suffixes like a partner's
+    # full birth data would make it unreadable.
+    base, _, rest = cache_key.partition(":")
+    slug = base if base in ("love-full", "natal", "profile", "akashic") else \
+        re.sub(r"[^0-9A-Za-z-]+", "-", cache_key).strip("-")
+    return pdf, f"MiraSkop-{safe}-{slug}.pdf"
+
+@app.get("/api/persons/{person_id}/reading.pdf")
+def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(get_current_user)):
+    """Download one cached reading as a PDF."""
+    user_id, _ = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Person not found")
+
+    pdf, filename = build_person_pdf(person, key)
+    # The filename holds Cyrillic, so it goes out RFC 5987-encoded.
+    quoted = urllib.parse.quote(filename)
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
+    )
+
+class EmailReadingRequest(BaseModel):
+    key: str
+    to: Optional[str] = None
+
+@app.post("/api/persons/{person_id}/email-reading")
+def api_email_reading(person_id: int, data: EmailReadingRequest,
+                      user: Tuple[int, str] = Depends(get_current_user)):
+    """Email one cached reading as a PDF attachment."""
+    user_id, email = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Person not found")
+
+    to = (data.to or email or "").strip()
+    if "@" not in to:
+        raise HTTPException(400, "Въведи валиден имейл адрес.")
+
+    pdf, filename = build_person_pdf(person, data.key)
+    title = reading_title(data.key)
+    name = first_name(person["name"]) or person["name"]
+
+    send_email(
+        to,
+        f"{title} — {person['name']}",
+        f"Здравей!\n\n"
+        f"Прикачено е разчитането „{title}“ за {name}, изготвено от МираСкоп.\n"
+        f"Позициите в него са изчислени със Swiss Ephemeris.\n\n"
+        f"Приятно четене!\n— МираСкоп",
+        attachment=(filename, pdf, "application/pdf"),
+    )
+    return {"ok": True, "to": to}
 
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)

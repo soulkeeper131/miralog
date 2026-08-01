@@ -613,9 +613,11 @@
 
         .cache-bar {
             display: flex; justify-content: space-between; align-items: center;
+            gap: 8px; flex-wrap: wrap;
             margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft);
         }
         .cache-label { font-size: 0.75rem; color: var(--text-dim); }
+        .cache-actions { display: flex; gap: 6px; flex-wrap: wrap; }
         .btn-refresh {
             padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border);
             background: transparent; color: var(--accent-light);
@@ -1414,6 +1416,16 @@
             return token ? { 'Authorization': 'Bearer ' + token } : {};
         }
 
+        function currentUserEmail() {
+            // The signed-in address lives in the JWT payload; used to prefill the email prompt.
+            try {
+                const payload = JSON.parse(atob(getToken().split('.')[1]));
+                return payload.email || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
         function showTab(name) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -1512,10 +1524,63 @@
 
         function cachedBadge(data, onRefresh) {
             const label = data.cached ? '📦 Кеширано разчитане' : '✨ Ново разчитане';
+            // Only readings the server actually stored can be exported.
+            const key = data.cache_key || '';
+            const exportBtns = key ? `
+                <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>
+                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>` : '';
             return `<div class="cache-bar">
                 <span class="cache-label">${label}</span>
-                <button class="btn-refresh" onclick="${onRefresh}">↻ Регенерирай</button>
+                <div class="cache-actions">
+                    <button class="btn-refresh" onclick="${onRefresh}">↻ Регенерирай</button>
+                    ${exportBtns}
+                </div>
             </div>`;
+        }
+
+        async function downloadReadingPdf(key) {
+            try {
+                const resp = await fetch(
+                    '/api/persons/{{ person.id }}/reading.pdf?key=' + encodeURIComponent(key),
+                    { headers: authHeaders() });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || ('Грешка ' + resp.status));
+                }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'MiraSkop-' + key.replace(/[:.]/g, '-') + '.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                alert('PDF-ът не можа да се изтегли: ' + e.message);
+            }
+        }
+
+        function openEmailModal(key) {
+            const to = prompt('На кой имейл да изпратя разчитането?', currentUserEmail());
+            if (to === null) return;
+            sendReadingEmail(key, to.trim());
+        }
+
+        async function sendReadingEmail(key, to) {
+            if (!to || to.indexOf('@') < 0) { alert('Въведи валиден имейл адрес.'); return; }
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/email-reading', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: key, to: to }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
+                alert('Готово — разчитането е изпратено на ' + data.to + '.');
+            } catch (e) {
+                alert('Имейлът не можа да се изпрати: ' + e.message);
+            }
         }
 
         function profilePoint(label, pt) {
