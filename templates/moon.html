@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Лунен календар — МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-soft: #1e1e36;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-soft: #aaa;
+            --text-meaning: #b8b0d0;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
+        }
+        :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-soft: #efe3f4;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-soft: #7a6d8a;
+            --text-meaning: #5c4d70;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
+        }
+        body {
+            font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+            background: var(--bg); color: var(--text); min-height: 100dvh;
+            padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .theme-toggle {
+            position: fixed; top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px; height: 44px; border-radius: 50%;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+            z-index: 200;
+        }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        .container {
+            max-width: 900px; margin: 0 auto; padding: 20px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        .page-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .page-mark { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+        .back-link {
+            color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
+            display: inline-flex; align-items: center; min-height: 44px;
+            transition: color 0.15s ease;
+        }
+        .back-link:hover { color: var(--accent-light); }
+
+        h1 {
+            font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em;
+            line-height: 1.25; color: var(--text-heading); font-size: 1.9rem; margin-bottom: 4px;
+        }
+        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px; }
+
+        .section {
+            background: var(--bg-card); border-radius: 16px; padding: 22px;
+            margin-bottom: 16px; box-shadow: var(--shadow-card);
+        }
+        .section h2 {
+            color: var(--accent-light); font-size: 1.15rem; font-weight: 600;
+            letter-spacing: -0.01em; margin-bottom: 14px;
+        }
+
+        /* month navigation */
+        .month-nav {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; margin-bottom: 18px;
+        }
+        .month-label {
+            font-family: var(--font-display); font-size: 1.5rem; font-weight: 700;
+            color: var(--text-heading); letter-spacing: -0.01em; text-align: center; flex: 1;
+        }
+        .nav-btn {
+            width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text-heading);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: border-color .15s ease, background-color .15s ease, transform .15s ease;
+        }
+        .nav-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .nav-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        /* today's highlight */
+        .today-card {
+            background: var(--surface-thistle); border: 1px solid var(--border-soft);
+            border-radius: 16px; padding: 20px; margin-bottom: 18px;
+        }
+        .today-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+        .today-glyph {
+            font-size: 1.7rem; line-height: 1; color: var(--accent-light);
+            background: var(--bg-card); border-radius: 50%;
+            width: 52px; height: 52px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .today-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600;
+        }
+        .today-phase {
+            font-family: var(--font-display); font-size: 1.5rem; font-weight: 700;
+            color: var(--text-heading); line-height: 1.2;
+        }
+        .today-sign { color: var(--text-muted); font-size: 0.86rem; }
+        .today-note {
+            font-size: 0.88rem; line-height: 1.6; color: var(--text-meaning); margin-bottom: 14px;
+        }
+
+        .advice-cols {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 12px; align-items: stretch;
+        }
+        .advice-col {
+            border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
+        }
+        .col-do { background: var(--surface-icy); }
+        .col-avoid { background: var(--surface-pink); }
+        .advice-head { font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; }
+        .col-do .advice-head { color: var(--on-icy); }
+        .col-avoid .advice-head { color: var(--on-pink); }
+        .advice-col ul { list-style: none; padding: 0; margin: 0; }
+        .advice-col li {
+            font-size: 0.86rem; line-height: 1.5; color: var(--text);
+            padding: 3px 0 3px 14px; position: relative;
+        }
+        .advice-col li::before {
+            content: "·"; position: absolute; left: 3px; top: 2px;
+            color: var(--text-dim); font-weight: 700;
+        }
+
+        /* month grid */
+        .weekdays {
+            display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px;
+        }
+        .weekday {
+            text-align: center; font-size: 0.7rem; text-transform: uppercase;
+            letter-spacing: .05em; color: var(--text-dim); font-weight: 600; padding: 4px 0;
+        }
+        .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .day-cell {
+            border-radius: 12px; padding: 8px 6px; min-height: 76px; cursor: pointer;
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+            transition: border-color .15s ease, transform .15s ease, background-color .15s ease;
+        }
+        .day-cell:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .day-cell:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .day-cell.empty { background: transparent; border-color: transparent; cursor: default; }
+        .day-cell.empty:hover { transform: none; border-color: transparent; }
+        .day-cell.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+        .day-cell.selected { background: var(--surface-thistle); border-color: var(--accent); }
+        .day-num { font-size: 0.82rem; font-weight: 600; color: var(--text-heading); }
+        .day-moon { font-size: 1.15rem; line-height: 1.1; }
+        .day-sign { font-size: 0.92rem; color: var(--accent-light); line-height: 1; }
+        .day-change {
+            width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+            margin-top: 1px;
+        }
+
+        .legend {
+            display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 16px;
+            font-size: 0.78rem; color: var(--text-muted);
+        }
+        .legend span { display: inline-flex; align-items: center; gap: 5px; }
+        .legend .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        .crystal-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
+        }
+        .crystal-loader .orb-wrap { position: relative; width: 56px; height: 56px; }
+        .crystal-loader .orb {
+            position: absolute; inset: 0; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
+            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: orb-pulse 1.8s ease-in-out infinite;
+        }
+        .crystal-loader .spark { position: absolute; inset: 0; animation: orb-spin 2.4s linear infinite; }
+        .crystal-loader .spark::before {
+            content: "✦"; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
+        }
+        @keyframes orb-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes orb-spin { to { transform: rotate(360deg); } }
+        .error {
+            background: var(--danger-bg); border: 1px solid var(--danger);
+            border-radius: 8px; padding: 12px; color: var(--danger-text);
+        }
+
+        @media (max-width: 600px) {
+            .day-cell { min-height: 62px; padding: 6px 3px; }
+            .day-num { font-size: 0.75rem; }
+            .day-moon { font-size: 1rem; }
+            .month-label { font-size: 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <div class="container">
+        <div class="page-nav">
+            <img class="page-mark" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="#" id="backLink" class="back-link">← Табло</a>
+        </div>
+
+        <h1>Лунен календар</h1>
+        <div class="subtitle">Фазата и знакът на Луната за всеки ден — и какво носи всеки от тях.</div>
+
+        <div class="section">
+            <div class="month-nav">
+                <button class="nav-btn" onclick="shiftMonth(-1)" title="Предишен месец">‹</button>
+                <div class="month-label" id="monthLabel">—</div>
+                <button class="nav-btn" onclick="shiftMonth(1)" title="Следващ месец">›</button>
+            </div>
+            <div id="selected-day"></div>
+            <div id="calendar"></div>
+        </div>
+    </div>
+
+    <script>
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token') || localStorage.getItem('miralog_token');
+        }
+        function authHeaders() {
+            const token = getToken();
+            return token ? { 'Authorization': 'Bearer ' + token } : {};
+        }
+        if (!getToken()) window.location.replace('/login');
+        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken());
+
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        function crystalLoader(text) {
+            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        const MONTHS = ['януари','февруари','март','април','май','юни',
+                        'юли','август','септември','октомври','ноември','декември'];
+        const WEEKDAYS = ['пн','вт','ср','чт','пт','сб','нд'];
+        // Simple glyphs standing in for the eight phases of the cycle.
+        const PHASE_ICON = {
+            'New': '🌑', 'Waxing Crescent': '🌒', 'First Quarter': '🌓',
+            'Waxing Gibbous': '🌔', 'Full': '🌕', 'Disseminating': '🌖',
+            'Third Quarter': '🌗', 'Balsamic': '🌘',
+        };
+
+        const now = new Date();
+        let viewYear = now.getFullYear();
+        let viewMonth = now.getMonth() + 1;
+        let currentDays = [];
+
+        function shiftMonth(delta) {
+            viewMonth += delta;
+            if (viewMonth < 1) { viewMonth = 12; viewYear--; }
+            if (viewMonth > 12) { viewMonth = 1; viewYear++; }
+            loadCalendar();
+        }
+
+        function renderDay(d) {
+            const box = document.getElementById('selected-day');
+            const doList = (d.do || []).map(x => `<li>${escapeHtml(x)}</li>`).join('');
+            const avoidList = (d.avoid || []).map(x => `<li>${escapeHtml(x)}</li>`).join('');
+            const [y, m, day] = d.date.split('-').map(Number);
+
+            box.innerHTML = `<div class="today-card">
+                <div class="today-head">
+                    <span class="today-glyph">${PHASE_ICON[d.phase] || '🌙'}</span>
+                    <div>
+                        <div class="today-label">${day} ${MONTHS[m - 1]}${d.is_today ? ' · днес' : ''}</div>
+                        <div class="today-phase">${escapeHtml(d.phase_bg || '')}</div>
+                        <div class="today-sign">${d.moon_symbol || ''} Луна в ${escapeHtml(d.moon_sign_bg || '')}</div>
+                    </div>
+                </div>
+                ${d.phase_meaning ? `<p class="today-note">${escapeHtml(d.phase_meaning)}</p>` : ''}
+                ${d.moon_sign_advice ? `<p class="today-note">${escapeHtml(d.moon_sign_advice)}</p>` : ''}
+                ${d.note ? `<p class="today-note"><strong>${escapeHtml(d.note)}</strong></p>` : ''}
+                <div class="advice-cols">
+                    ${doList ? `<div class="advice-col col-do"><div class="advice-head">✓ Добре е да</div><ul>${doList}</ul></div>` : ''}
+                    ${avoidList ? `<div class="advice-col col-avoid"><div class="advice-head">✕ Избягвай</div><ul>${avoidList}</ul></div>` : ''}
+                </div>
+            </div>`;
+        }
+
+        function selectDay(idx) {
+            const d = currentDays[idx];
+            if (!d) return;
+            document.querySelectorAll('.day-cell').forEach(c => c.classList.remove('selected'));
+            const cell = document.querySelector(`.day-cell[data-idx="${idx}"]`);
+            if (cell) cell.classList.add('selected');
+            renderDay(d);
+        }
+
+        async function loadCalendar() {
+            const el = document.getElementById('calendar');
+            document.getElementById('monthLabel').textContent = `${MONTHS[viewMonth - 1]} ${viewYear}`;
+            el.innerHTML = crystalLoader('Изчисляване на лунните фази...');
+            document.getElementById('selected-day').innerHTML = '';
+            try {
+                const resp = await fetch(`/api/lunar-calendar?year=${viewYear}&month=${viewMonth}`, { headers: authHeaders() });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                currentDays = data.days || [];
+
+                let html = '<div class="weekdays">' +
+                    WEEKDAYS.map(w => `<div class="weekday">${w}</div>`).join('') + '</div><div class="month-grid">';
+
+                // Pad so the first day lands under its weekday column.
+                const lead = currentDays.length ? currentDays[0].weekday : 0;
+                for (let i = 0; i < lead; i++) html += '<div class="day-cell empty"></div>';
+
+                currentDays.forEach((d, idx) => {
+                    html += `<button class="day-cell${d.is_today ? ' today' : ''}" data-idx="${idx}" onclick="selectDay(${idx})">
+                        <span class="day-num">${d.day}</span>
+                        <span class="day-moon">${PHASE_ICON[d.phase] || '🌙'}</span>
+                        <span class="day-sign">${d.moon_symbol || ''}</span>
+                        ${d.phase_changed ? '<span class="day-change"></span>' : ''}
+                    </button>`;
+                });
+                html += '</div>';
+                html += `<div class="legend">
+                    <span><span class="dot"></span> смяна на фазата</span>
+                    <span>🌑 новолуние · 🌕 пълнолуние</span>
+                    <span>Знакът под фазата е зодията, през която минава Луната.</span>
+                </div>`;
+
+                el.innerHTML = html;
+
+                // Open today when viewing the current month, otherwise the first day.
+                const todayIdx = currentDays.findIndex(d => d.is_today);
+                selectDay(todayIdx >= 0 ? todayIdx : 0);
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        loadCalendar();
+    </script>
+</body>
+</html>

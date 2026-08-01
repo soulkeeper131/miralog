@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Админ панел — МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-soft: #1e1e36;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-soft: #aaa;
+            --text-meaning: #b8b0d0;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+            --ok: #34d399;
+            --ok-bg: #10281f;
+            --ok-text: #6ee7b7;
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
+        }
+        :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-soft: #efe3f4;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-soft: #7a6d8a;
+            --text-meaning: #5c4d70;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+            --ok: #0f9d63;
+            --ok-bg: #eefaf4;
+            --ok-text: #0b7a4d;
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
+        }
+        body {
+            font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+            background: var(--bg); color: var(--text); min-height: 100dvh;
+            padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .theme-toggle {
+            position: fixed; top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px; height: 44px; border-radius: 50%;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+            z-index: 200;
+        }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        .container {
+            max-width: 1100px; margin: 0 auto; padding: 20px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        .page-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .page-mark { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+        .back-link {
+            color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
+            display: inline-flex; align-items: center; min-height: 44px;
+            transition: color 0.15s ease;
+        }
+        .back-link:hover { color: var(--accent-light); }
+        .back-link:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 8px; }
+
+        h1 {
+            font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em;
+            line-height: 1.25; color: var(--text-heading); font-size: 1.9rem; margin-bottom: 4px;
+        }
+        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px; }
+
+        .section {
+            background: var(--bg-card); border-radius: 16px; padding: 22px;
+            margin-bottom: 16px; box-shadow: var(--shadow-card);
+        }
+        .section h2 {
+            font-family: var(--font-display); font-weight: 700; letter-spacing: -0.01em;
+            color: var(--accent-light); font-size: 1.3rem; margin-bottom: 14px;
+        }
+        .section h3 {
+            color: var(--text-heading); font-size: 0.95rem; font-weight: 600;
+            margin-bottom: 10px; letter-spacing: -0.01em;
+        }
+
+        /* tabs */
+        .tabs {
+            display: flex; gap: 5px; margin-bottom: 20px;
+            flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+            padding-bottom: 2px;
+            scrollbar-width: none; -ms-overflow-style: none;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x proximity;
+        }
+        .tabs::-webkit-scrollbar { display: none; }
+        .tab {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 8px 13px; border-radius: 11px; cursor: pointer; min-height: 44px;
+            flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start;
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
+            font-family: var(--font-body); font-size: 0.82rem; font-weight: 500;
+            letter-spacing: -0.005em;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+            user-select: none;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            border-color: var(--accent); color: white; font-weight: 600;
+            box-shadow: var(--shadow-raised);
+        }
+        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); transform: translateY(-1px); }
+        .tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* stat cards */
+        .stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px; margin-top: 12px; align-items: stretch;
+        }
+        .stat {
+            background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 14px;
+            padding: 14px 12px; text-align: center;
+            display: flex; flex-direction: column; height: 100%;
+            transition: border-color 0.15s ease, transform 0.15s ease;
+        }
+        /* rotating pastel surfaces so the stat cards stay visually distinct */
+        .stat:nth-child(4n+1) { background: var(--surface-thistle); }
+        .stat:nth-child(4n+2) { background: var(--surface-icy); }
+        .stat:nth-child(4n+3) { background: var(--surface-petal); }
+        .stat:nth-child(4n+4) { background: var(--surface-sky); }
+        .stat:hover { border-color: var(--accent-light); transform: translateY(-1px); }
+        .stat-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        .stat-value {
+            font-family: var(--font-display); color: var(--text-heading);
+            font-size: 1.7rem; font-weight: 700; line-height: 1.2; margin-top: 5px;
+        }
+        .stat-meaning { color: var(--text-muted); font-size: 0.75rem; line-height: 1.5; margin-top: auto; padding-top: 7px; }
+
+        /* buttons */
+        .btn {
+            padding: 10px 18px; border-radius: 12px; border: none; background: var(--accent);
+            color: white; font-family: var(--font-body); font-size: 0.9rem; font-weight: 600;
+            letter-spacing: 0.01em; cursor: pointer; min-height: 44px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-raised); }
+        .btn:active { transform: translateY(0); box-shadow: none; }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-ghost {
+            background: var(--bg-input); color: var(--text-heading); border: 1px solid var(--border);
+        }
+        .btn-ghost:hover { background: var(--bg-input); border-color: var(--accent); color: var(--accent-light); box-shadow: none; }
+        .btn-danger { background: var(--danger); }
+        .btn-danger:hover { background: var(--danger); filter: brightness(0.92); box-shadow: none; }
+        .btn-sm { padding: 7px 12px; font-size: 0.8rem; min-height: 44px; }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+        /* forms */
+        .form-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;
+        }
+        .form-group { margin-bottom: 14px; }
+        .form-group:last-child { margin-bottom: 0; }
+        label {
+            display: block; margin-bottom: 5px; color: var(--accent-light);
+            font-size: 0.85rem; font-weight: 500;
+        }
+        input[type="text"], input[type="email"], input[type="password"], input[type="number"],
+        input[type="date"], input[type="search"], select, textarea {
+            width: 100%; padding: 10px 12px; border-radius: 12px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-family: var(--font-body); font-size: 15px; min-height: 44px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+        }
+        textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
+        input:hover, select:hover, textarea:hover { border-color: var(--accent-light); }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        .hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 5px; line-height: 1.5; }
+        .check {
+            display: flex; align-items: center; gap: 9px; min-height: 44px;
+            color: var(--text); font-size: 0.88rem; cursor: pointer;
+        }
+        .check input[type="checkbox"] {
+            width: 18px; height: 18px; min-height: 18px; flex-shrink: 0;
+            accent-color: var(--accent); cursor: pointer;
+        }
+        .check input[type="checkbox"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        /* search bar */
+        .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+        .toolbar input[type="search"] { flex: 1 1 220px; }
+
+        /* tables */
+        .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 640px; }
+        th {
+            text-align: left; padding: 10px 12px; color: var(--text-dim);
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+            border-bottom: 1px solid var(--border); white-space: nowrap;
+        }
+        td { padding: 11px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tbody tr { transition: background-color 0.15s ease; }
+        tbody tr:hover { background: var(--surface-thistle); }
+        td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        td.actions { white-space: nowrap; text-align: right; }
+
+        /* badges */
+        .badge {
+            display: inline-block; padding: 3px 9px; border-radius: 999px;
+            font-size: 0.72rem; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap;
+            background: var(--surface-thistle); color: var(--on-thistle);
+        }
+        .badge-plan { background: var(--surface-icy); color: var(--on-icy); }
+        .badge-admin { background: var(--surface-pink); color: var(--on-pink); }
+        .badge-user { background: var(--surface-sky); color: var(--on-sky); }
+        .badge-blocked { background: var(--danger-bg); color: var(--danger-text); }
+        .badge-ok { background: var(--ok-bg); color: var(--ok-text); }
+
+        /* list rows */
+        .rows { display: flex; flex-direction: column; }
+        .row-item {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 11px 0; border-bottom: 1px solid var(--border-soft); flex-wrap: wrap;
+        }
+        .row-item:last-child { border-bottom: none; }
+        .row-main { color: var(--text); font-size: 0.88rem; }
+        .row-meta { color: var(--text-muted); font-size: 0.8rem; }
+        .empty { color: var(--text-dim); font-size: 0.86rem; padding: 14px 0; }
+
+        /* plan cards */
+        .plan-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;
+        }
+        .plan-card {
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            border-radius: 16px; padding: 18px;
+        }
+        .plan-card.inactive { opacity: 0.72; }
+        .plan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+        .plan-name { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; color: var(--text-heading); }
+        .plan-price { color: var(--accent-light); font-weight: 600; font-size: 0.95rem; white-space: nowrap; }
+        .feature-list {
+            display: grid; grid-template-columns: 1fr; gap: 2px;
+            max-height: 260px; overflow-y: auto; margin-top: 4px;
+            padding: 8px; border: 1px solid var(--border-soft); border-radius: 12px;
+            background: var(--bg-card);
+        }
+        .feature-item { display: flex; align-items: flex-start; gap: 9px; padding: 6px 4px; cursor: pointer; }
+        .feature-item input[type="checkbox"] {
+            width: 18px; height: 18px; min-height: 18px; margin-top: 2px;
+            flex-shrink: 0; accent-color: var(--accent); cursor: pointer;
+        }
+        .feature-name { font-size: 0.85rem; color: var(--text); }
+        .feature-note { font-size: 0.75rem; color: var(--text-dim); line-height: 1.4; }
+
+        /* notices */
+        .error {
+            background: var(--danger-bg); border: 1px solid var(--danger);
+            border-radius: 8px; padding: 12px; color: var(--danger-text); font-size: 0.88rem;
+        }
+        .notice-stack {
+            position: fixed; left: 50%; transform: translateX(-50%);
+            top: max(14px, env(safe-area-inset-top));
+            z-index: 400; display: flex; flex-direction: column; gap: 8px;
+            width: min(440px, calc(100vw - 32px));
+        }
+        .notice {
+            border-radius: 12px; padding: 12px 16px; font-size: 0.88rem; font-weight: 500;
+            box-shadow: var(--shadow-card); animation: notice-in 0.2s ease;
+        }
+        .notice-ok { background: var(--ok-bg); border: 1px solid var(--ok); color: var(--ok-text); }
+        .notice-err { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger-text); }
+        @keyframes notice-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+        /* loader */
+        .crystal-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
+        }
+        .crystal-loader .orb-wrap { position: relative; width: 56px; height: 56px; }
+        .crystal-loader .orb {
+            position: absolute; inset: 0; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
+            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: orb-pulse 1.8s ease-in-out infinite;
+        }
+        .crystal-loader .spark { position: absolute; inset: 0; animation: orb-spin 2.4s linear infinite; }
+        .crystal-loader .spark::before {
+            content: "✦"; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
+        }
+        @keyframes orb-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes orb-spin { to { transform: rotate(360deg); } }
+
+        /* modal */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 300;
+            background: rgba(6, 4, 16, 0.62); backdrop-filter: blur(3px);
+            display: flex; align-items: flex-start; justify-content: center;
+            padding: 24px 16px; overflow-y: auto;
+        }
+        .modal-overlay[hidden] { display: none; }
+        .modal {
+            background: var(--bg-card); border-radius: 16px; padding: 22px;
+            box-shadow: var(--shadow-card); width: min(560px, 100%);
+            margin: auto 0; animation: notice-in 0.18s ease;
+        }
+        .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+        .modal-title { font-family: var(--font-display); font-size: 1.45rem; font-weight: 700; color: var(--text-heading); line-height: 1.25; }
+        .modal-sub { color: var(--text-muted); font-size: 0.82rem; }
+        .modal-close {
+            width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text-muted);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }
+        .modal-close:hover { border-color: var(--accent); color: var(--accent-light); }
+        .modal-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        @media (max-width: 600px) {
+            .container { padding: 16px; }
+            h1 { font-size: 1.6rem; }
+            .tabs { gap: 4px; margin-bottom: 16px; }
+            .tab { padding: 8px 12px; font-size: 0.8rem; }
+            .section { padding: 16px; }
+            .stat-value { font-size: 1.45rem; }
+            .btn-row .btn { flex: 1 1 auto; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <div class="notice-stack" id="noticeStack"></div>
+
+    <div class="container">
+        <div class="page-nav">
+            <img class="page-mark" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="#" id="backLink" class="back-link">← Табло</a>
+        </div>
+
+        <h1>Админ панел</h1>
+        <div class="subtitle">Управление на потребители, пакети и настройки.</div>
+
+        <div id="gate"></div>
+
+        <div id="panel" hidden>
+            <div class="tabs" role="tablist">
+                <div class="tab active" role="tab" tabindex="0" data-tab="overview">Обзор</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="users">Потребители</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="plans">Пакети</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="payments">Плащания</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="settings">Настройки</div>
+            </div>
+
+            <div class="tab-content active" id="tab-overview">
+                <div id="overviewBody"></div>
+            </div>
+
+            <div class="tab-content" id="tab-users">
+                <div class="section">
+                    <h2>Потребители</h2>
+                    <div class="toolbar">
+                        <input type="search" id="userSearch" placeholder="Търсене по имейл…" autocomplete="off">
+                        <button class="btn btn-ghost btn-sm" id="userSearchBtn">Търси</button>
+                        <button class="btn btn-sm" id="userNewBtn">+ Нов потребител</button>
+                    </div>
+                    <div id="usersBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-plans">
+                <div class="section">
+                    <h2>Пакети</h2>
+                    <div class="btn-row" style="margin-top:0;margin-bottom:16px;">
+                        <button class="btn" id="newPlanBtn">+ Нов пакет</button>
+                    </div>
+                    <div id="plansBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-payments">
+                <div class="section">
+                    <h2>Отбележи плащане</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="payUser">Потребител</label>
+                            <select id="payUser"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="payPlan">Пакет</label>
+                            <select id="payPlan"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="payAmount">Сума (€)</label>
+                            <input type="number" id="payAmount" min="0" step="0.01" value="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="payMethod">Метод</label>
+                            <input type="text" id="payMethod" placeholder="банка / карта / в брой">
+                        </div>
+                        <div class="form-group">
+                            <label for="payMonths">Удължи с (месеца)</label>
+                            <input type="number" id="payMonths" min="0" max="24" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="payNote">Бележка</label>
+                            <input type="text" id="payNote" placeholder="незадължително">
+                        </div>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn" id="paySaveBtn">Запази плащането</button>
+                    </div>
+                </div>
+                <div class="section">
+                    <h2>Всички плащания</h2>
+                    <div id="paymentsBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-settings">
+                <div id="settingsBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-head">
+                <div>
+                    <div class="modal-title" id="modalTitle"></div>
+                    <div class="modal-sub" id="modalSub"></div>
+                </div>
+                <button class="modal-close" id="modalCloseBtn" title="Затвори" aria-label="Затвори">✕</button>
+            </div>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        /* ---------- auth ---------- */
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token') || localStorage.getItem('miralog_token');
+        }
+        function authHeaders() {
+            const token = getToken();
+            return token ? { 'Authorization': 'Bearer ' + token } : {};
+        }
+        function jsonHeaders() {
+            return Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
+        }
+        if (!getToken()) window.location.replace('/login');
+        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken() || '');
+
+        /* ---------- theme ---------- */
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        /* ---------- helpers ---------- */
+        function crystalLoader(text) {
+            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text === null || text === undefined ? '' : String(text);
+            return div.innerHTML;
+        }
+        function money(cents, currency) {
+            const value = (Number(cents) || 0) / 100;
+            const symbol = (currency || 'EUR') === 'EUR' ? '€' : escapeHtml(currency);
+            return value.toFixed(2) + ' ' + symbol;
+        }
+        const MONTHS_BG = ['януари','февруари','март','април','май','юни',
+                           'юли','август','септември','октомври','ноември','декември'];
+        function fmtDate(value) {
+            if (!value) return '—';
+            const raw = String(value).slice(0, 10);
+            const parts = raw.split('-');
+            if (parts.length !== 3) return escapeHtml(value);
+            const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+            if (!y || !m || !d || m < 1 || m > 12) return escapeHtml(value);
+            return d + ' ' + MONTHS_BG[m - 1] + ' ' + y;
+        }
+        function notify(message, kind) {
+            const stack = document.getElementById('noticeStack');
+            const el = document.createElement('div');
+            el.className = 'notice ' + (kind === 'err' ? 'notice-err' : 'notice-ok');
+            el.textContent = message;
+            stack.appendChild(el);
+            setTimeout(function() { el.remove(); }, 3000);
+        }
+        function notifyError(err) {
+            notify(err && err.message ? err.message : 'Нещо се обърка.', 'err');
+        }
+
+        let forbidden = false;
+        async function api(path, options) {
+            const resp = await fetch(path, options || { headers: authHeaders() });
+            if (resp.status === 401) { window.location.replace('/login'); throw new Error('Няма достъп.'); }
+            if (resp.status === 403) { showGate(); throw new Error('Нужни са администраторски права.'); }
+            let data = null;
+            try { data = await resp.json(); } catch (e) { data = null; }
+            if (!resp.ok) throw new Error((data && data.detail) || ('HTTP ' + resp.status));
+            return data;
+        }
+        function showGate() {
+            if (forbidden) return;
+            forbidden = true;
+            document.getElementById('panel').hidden = true;
+            document.getElementById('gate').innerHTML =
+                '<div class="section"><div class="error">Нужни са администраторски права.</div>' +
+                '<div class="btn-row"><a class="btn" href="/dashboard?token=' +
+                escapeHtml(getToken() || '') + '">Към таблото</a></div></div>';
+        }
+
+        /* ---------- tabs ---------- */
+        const LOADERS = {
+            overview: loadOverview,
+            users: loadUsers,
+            plans: loadPlans,
+            payments: loadPayments,
+            settings: loadSettings,
+        };
+        const loaded = {};
+        function showTab(name, tabEl) {
+            document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+            document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+            if (tabEl) tabEl.classList.add('active');
+            const content = document.getElementById('tab-' + name);
+            if (content) content.classList.add('active');
+            if (!loaded[name] && LOADERS[name]) {
+                loaded[name] = true;
+                LOADERS[name]();
+            }
+        }
+        document.querySelectorAll('.tab').forEach(function(tabEl) {
+            tabEl.addEventListener('click', function() { showTab(tabEl.dataset.tab, tabEl); });
+            tabEl.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTab(tabEl.dataset.tab, tabEl); }
+            });
+        });
+
+        /* ---------- modal ---------- */
+        const overlay = document.getElementById('modalOverlay');
+        function openModal(title, sub, bodyHtml) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalSub').textContent = sub || '';
+            document.getElementById('modalBody').innerHTML = bodyHtml;
+            overlay.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+        function closeModal() {
+            overlay.hidden = true;
+            document.getElementById('modalBody').innerHTML = '';
+            document.body.style.overflow = '';
+        }
+        document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeModal(); });
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && !overlay.hidden) closeModal(); });
+
+        /* ---------- shared state ---------- */
+        let allPlans = [];
+        let allFeatures = [];
+        let allUsers = [];
+
+        function planLabel(key) {
+            const p = allPlans.find(function(x) { return x.key === key; });
+            return p ? p.name : (key || 'demo');
+        }
+
+        /* ---------- overview ---------- */
+        async function loadOverview() {
+            const el = document.getElementById('overviewBody');
+            el.innerHTML = crystalLoader('Събиране на числата…');
+            try {
+                const d = await api('/api/admin/overview');
+                let html = '<div class="section"><h2>Обзор</h2><div class="stats">';
+                html += statCard('Потребители', d.users, 'Регистрирани акаунти');
+                html += statCard('Блокирани', d.blocked, 'Без достъп до платформата');
+                html += statCard('Карти', d.persons, 'Създадени натални карти');
+                html += statCard('Приход общо', money(d.revenue_cents, 'EUR'), 'Всички отбелязани плащания');
+                html += statCard('Този месец', money(d.revenue_month_cents, 'EUR'), 'От началото на месеца');
+                html += '</div></div>';
+
+                html += '<div class="section"><h2>Разбивка по пакети</h2><div class="rows">';
+                const byPlan = d.by_plan || [];
+                if (!byPlan.length) {
+                    html += '<div class="empty">Няма данни.</div>';
+                } else {
+                    byPlan.forEach(function(p) {
+                        html += '<div class="row-item"><span class="badge badge-plan">' +
+                            escapeHtml(p.plan_key) + '</span>' +
+                            '<span class="row-meta">' + escapeHtml(p.c) + ' потребител(и)</span></div>';
+                    });
+                }
+                html += '</div></div>';
+
+                html += '<div class="section"><h2>Изтичащи до 14 дни</h2><div class="rows">';
+                const expiring = d.expiring || [];
+                if (!expiring.length) {
+                    html += '<div class="empty">Няма абонаменти, които изтичат скоро.</div>';
+                } else {
+                    expiring.forEach(function(u) {
+                        html += '<div class="row-item"><div><div class="row-main">' + escapeHtml(u.email) + '</div>' +
+                            '<div class="row-meta"><span class="badge badge-plan">' +
+                            escapeHtml(u.plan_key || 'demo') + '</span></div></div>' +
+                            '<span class="row-meta">до ' + fmtDate(u.plan_expires) + '</span></div>';
+                    });
+                }
+                html += '</div></div>';
+
+                html += '<div class="section"><h2>Последни плащания</h2>';
+                const recent = d.recent_payments || [];
+                if (!recent.length) {
+                    html += '<div class="empty">Още няма отбелязани плащания.</div>';
+                } else {
+                    html += '<div class="table-wrap"><table><thead><tr>' +
+                        '<th>Дата</th><th>Имейл</th><th>Пакет</th><th>Сума</th>' +
+                        '</tr></thead><tbody>';
+                    recent.forEach(function(p) {
+                        html += '<tr><td>' + fmtDate(p.paid_at) + '</td>' +
+                            '<td>' + escapeHtml(p.email) + '</td>' +
+                            '<td><span class="badge badge-plan">' + escapeHtml(p.plan_key || '—') + '</span></td>' +
+                            '<td class="num">' + money(p.amount_cents, p.currency) + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                }
+                html += '</div>';
+                el.innerHTML = html;
+            } catch (e) {
+                if (!forbidden) el.innerHTML = '<div class="section"><div class="error">' + escapeHtml(e.message) + '</div></div>';
+            }
+        }
+        function statCard(label, value, meaning) {
+            return '<div class="stat"><div class="stat-label">' + escapeHtml(label) + '</div>' +
+                '<div class="stat-value">' + escapeHtml(value) + '</div>' +
+                '<div class="stat-meaning">' + escapeHtml(meaning) + '</div></div>';
+        }
+
+        /* ---------- users ---------- */
+        async function ensurePlans() {
+            if (allPlans.length) return;
+            const d = await api('/api/admin/plans');
+            allPlans = d.plans || [];
+            allFeatures = d.all_features || [];
+        }
+
+        async function loadUsers(query) {
+            const el = document.getElementById('usersBody');
+            el.innerHTML = crystalLoader('Зареждане на потребителите…');
+            try {
+                await ensurePlans();
+                const q = query === undefined ? document.getElementById('userSearch').value.trim() : query;
+                const url = '/api/admin/users' + (q ? '?q=' + encodeURIComponent(q) : '');
+                const d = await api(url);
+                allUsers = d.users || [];
+                if (!allUsers.length) {
+                    el.innerHTML = '<div class="empty">Няма намерени потребители.</div>';
+                    return;
+                }
+                let html = '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>Имейл</th><th>Роля</th><th>Пакет</th><th>Изтича</th>' +
+                    '<th>Карти</th><th>Платено</th><th>Статус</th><th></th>' +
+                    '</tr></thead><tbody>';
+                allUsers.forEach(function(u) {
+                    html += '<tr><td>' + escapeHtml(u.email) + '</td>' +
+                        '<td><span class="badge ' + (u.role === 'admin' ? 'badge-admin' : 'badge-user') + '">' +
+                            escapeHtml(u.role || 'user') + '</span></td>' +
+                        '<td><span class="badge badge-plan">' + escapeHtml(u.plan_key || 'demo') + '</span></td>' +
+                        '<td>' + (u.plan_expires ? fmtDate(u.plan_expires) : 'безсрочно') + '</td>' +
+                        '<td class="num">' + escapeHtml(u.persons) + '</td>' +
+                        '<td class="num">' + money(u.paid_cents, 'EUR') + '</td>' +
+                        '<td>' + (u.is_blocked
+                            ? '<span class="badge badge-blocked">блокиран</span>'
+                            : '<span class="badge badge-ok">активен</span>') + '</td>' +
+                        '<td class="actions"><button class="btn btn-ghost btn-sm" data-edit-user="' +
+                            escapeHtml(u.id) + '">Редактирай</button></td></tr>';
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+                el.querySelectorAll('[data-edit-user]').forEach(function(btn) {
+                    btn.addEventListener('click', function() { openUserModal(Number(btn.dataset.editUser)); });
+                });
+            } catch (e) {
+                if (!forbidden) el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        document.getElementById('userSearchBtn').addEventListener('click', function() { loadUsers(); });
+        document.getElementById('userNewBtn').addEventListener('click', function() { openNewUserModal(); });
+        document.getElementById('userSearch').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); loadUsers(); }
+        });
+
+        function openNewUserModal() {
+            const planOptions = allPlans.map(function(p) {
+                return '<option value="' + escapeHtml(p.key) + '"' +
+                    (p.key === 'demo' ? ' selected' : '') + '>' +
+                    escapeHtml(p.name) + ' (' + escapeHtml(p.key) + ')</option>';
+            }).join('');
+            const body =
+                '<div class="form-grid">' +
+                    '<div class="form-group"><label for="nuEmail">Имейл</label>' +
+                        '<input type="email" id="nuEmail" autocomplete="off" placeholder="ime@example.com"></div>' +
+                    '<div class="form-group"><label for="nuPassword">Парола</label>' +
+                        '<input type="password" id="nuPassword" autocomplete="new-password" placeholder="поне 6 символа"></div>' +
+                    '<div class="form-group"><label for="nuPlan">Пакет</label>' +
+                        '<select id="nuPlan">' + planOptions + '</select></div>' +
+                    '<div class="form-group"><label for="nuExpires">Изтича на</label>' +
+                        '<input type="date" id="nuExpires">' +
+                        '<div class="hint">Празно = безсрочно.</div></div>' +
+                    '<div class="form-group"><label for="nuRole">Роля</label>' +
+                        '<select id="nuRole">' +
+                            '<option value="user" selected>Потребител</option>' +
+                            '<option value="admin">Администратор</option>' +
+                        '</select></div>' +
+                '</div>' +
+                '<div class="form-group"><label for="nuNote">Бележка</label>' +
+                    '<textarea id="nuNote" placeholder="вътрешна бележка"></textarea></div>' +
+                '<div class="btn-row"><button class="btn" id="nuCreate">Създай</button></div>';
+            openModal('Нов потребител', 'Акаунтът се създава веднага и потребителят може да влезе с тази парола.', body);
+
+            document.getElementById('nuCreate').addEventListener('click', async function() {
+                const payload = {
+                    email: document.getElementById('nuEmail').value.trim(),
+                    password: document.getElementById('nuPassword').value,
+                    plan_key: document.getElementById('nuPlan').value,
+                    plan_expires: document.getElementById('nuExpires').value || null,
+                    role: document.getElementById('nuRole').value,
+                    note: document.getElementById('nuNote').value,
+                };
+                try {
+                    await api('/api/admin/users', {
+                        method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload),
+                    });
+                    closeModal();
+                    notify('Потребителят е създаден.', 'ok');
+                    loaded.overview = false;
+                    loadUsers();
+                } catch (e) {
+                    notifyError(e);
+                }
+            });
+            document.getElementById('nuEmail').focus();
+        }
+
+        function openUserModal(userId) {
+            const u = allUsers.find(function(x) { return x.id === userId; });
+            if (!u) return;
+            const planOptions = allPlans.map(function(p) {
+                return '<option value="' + escapeHtml(p.key) + '"' +
+                    ((u.plan_key || 'demo') === p.key ? ' selected' : '') + '>' +
+                    escapeHtml(p.name) + ' (' + escapeHtml(p.key) + ')</option>';
+            }).join('');
+            const body =
+                '<div class="form-grid">' +
+                    '<div class="form-group"><label for="euPlan">Пакет</label>' +
+                        '<select id="euPlan">' + planOptions + '</select></div>' +
+                    '<div class="form-group"><label for="euExpires">Изтича на</label>' +
+                        '<input type="date" id="euExpires" value="' +
+                        escapeHtml(u.plan_expires ? String(u.plan_expires).slice(0, 10) : '') + '">' +
+                        '<div class="hint">Празно = безсрочно.</div></div>' +
+                    '<div class="form-group"><label for="euRole">Роля</label>' +
+                        '<select id="euRole">' +
+                            '<option value="user"' + (u.role !== 'admin' ? ' selected' : '') + '>Потребител</option>' +
+                            '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>Администратор</option>' +
+                        '</select></div>' +
+                    '<div class="form-group"><label for="euPassword">Нова парола</label>' +
+                        '<input type="password" id="euPassword" autocomplete="new-password" placeholder="празно = без промяна">' +
+                        '<div class="hint">Поне 6 символа.</div></div>' +
+                '</div>' +
+                '<div class="form-group"><label class="check" for="euBlocked">' +
+                    '<input type="checkbox" id="euBlocked"' + (u.is_blocked ? ' checked' : '') + '> Блокиран акаунт</label></div>' +
+                '<div class="form-group"><label for="euNote">Бележка</label>' +
+                    '<textarea id="euNote" placeholder="вътрешна бележка">' + escapeHtml(u.note || '') + '</textarea></div>' +
+                '<div class="btn-row">' +
+                    '<button class="btn" id="euSave">Запази</button>' +
+                    '<button class="btn btn-ghost" id="euPay">Отбележи плащане</button>' +
+                    '<button class="btn btn-danger" id="euDelete">Изтрий потребителя</button>' +
+                '</div>';
+            openModal('Редакция на потребител', u.email, body);
+
+            document.getElementById('euSave').addEventListener('click', async function() {
+                const payload = {
+                    plan_key: document.getElementById('euPlan').value,
+                    plan_expires: document.getElementById('euExpires').value || '',
+                    role: document.getElementById('euRole').value,
+                    is_blocked: document.getElementById('euBlocked').checked,
+                    note: document.getElementById('euNote').value,
+                };
+                const pwd = document.getElementById('euPassword').value;
+                if (pwd.trim()) payload.password = pwd;
+                try {
+                    await api('/api/admin/users/' + u.id, {
+                        method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(payload),
+                    });
+                    closeModal();
+                    notify('Промените са запазени.');
+                    loadUsers();
+                    loaded.overview = false;
+                } catch (e) { notifyError(e); }
+            });
+
+            document.getElementById('euDelete').addEventListener('click', async function() {
+                if (!confirm('Да изтрия ли ' + u.email + ' заедно с всичките му карти? Действието е необратимо.')) return;
+                try {
+                    await api('/api/admin/users/' + u.id, { method: 'DELETE', headers: authHeaders() });
+                    closeModal();
+                    notify('Потребителят е изтрит.');
+                    loadUsers();
+                    loaded.overview = false;
+                } catch (e) { notifyError(e); }
+            });
+
+            document.getElementById('euPay').addEventListener('click', function() {
+                closeModal();
+                const tabEl = document.querySelector('.tab[data-tab="payments"]');
+                showTab('payments', tabEl);
+                setTimeout(function() {
+                    const sel = document.getElementById('payUser');
+                    if (sel) sel.value = String(u.id);
+                    const planSel = document.getElementById('payPlan');
+                    if (planSel && u.plan_key) planSel.value = u.plan_key;
+                }, 60);
+            });
+        }
+
+        /* ---------- plans ---------- */
+        async function loadPlans() {
+            const el = document.getElementById('plansBody');
+            el.innerHTML = crystalLoader('Зареждане на пакетите…');
+            try {
+                const d = await api('/api/admin/plans');
+                allPlans = d.plans || [];
+                allFeatures = d.all_features || [];
+                if (!allPlans.length) {
+                    el.innerHTML = '<div class="empty">Още няма пакети.</div>';
+                    return;
+                }
+                el.innerHTML = '<div class="plan-grid">' +
+                    allPlans.map(function(p) { return planCardHtml(p); }).join('') + '</div>';
+                bindPlanCards(el);
+            } catch (e) {
+                if (!forbidden) el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        function planCardHtml(p) {
+            const id = 'plan_' + p.key.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const features = p.features || [];
+            const featureHtml = allFeatures.map(function(f) {
+                return '<label class="feature-item"><input type="checkbox" data-feature="' + escapeHtml(f.key) + '"' +
+                    (features.indexOf(f.key) >= 0 ? ' checked' : '') + '>' +
+                    '<span><span class="feature-name">' + escapeHtml(f.name) + '</span><br>' +
+                    '<span class="feature-note">' + escapeHtml(f.note || '') + '</span></span></label>';
+            }).join('');
+            return '<div class="plan-card' + (p.is_active ? '' : ' inactive') + '" data-plan-key="' + escapeHtml(p.key) + '" id="' + id + '">' +
+                '<div class="plan-head"><div><div class="plan-name">' + escapeHtml(p.name) + '</div>' +
+                    '<span class="badge badge-plan">' + escapeHtml(p.key) + '</span></div>' +
+                    '<div class="plan-price">' + money(p.price_cents, p.currency) + '</div></div>' +
+                '<div class="row-meta" style="margin-bottom:12px;">' + escapeHtml(p.users) + ' потребител(и) на този пакет</div>' +
+                '<div class="form-grid">' +
+                    '<div class="form-group"><label>Име</label><input type="text" data-f="name" value="' + escapeHtml(p.name) + '"></div>' +
+                    '<div class="form-group"><label>Цена (€)</label><input type="number" min="0" step="0.01" data-f="price" value="' +
+                        ((Number(p.price_cents) || 0) / 100).toFixed(2) + '"></div>' +
+                    '<div class="form-group"><label>Валута</label><input type="text" data-f="currency" value="' + escapeHtml(p.currency || 'EUR') + '"></div>' +
+                    '<div class="form-group"><label>Период</label>' +
+                        '<select data-f="period">' +
+                            '<option value="month"' + (p.period === 'month' ? ' selected' : '') + '>месец</option>' +
+                            '<option value="year"' + (p.period === 'year' ? ' selected' : '') + '>година</option>' +
+                            '<option value="lifetime"' + (p.period === 'lifetime' ? ' selected' : '') + '>безсрочно</option>' +
+                        '</select></div>' +
+                    '<div class="form-group"><label>Макс. карти</label><input type="number" min="0" step="1" data-f="max_persons" value="' +
+                        escapeHtml(p.max_persons) + '"></div>' +
+                    '<div class="form-group"><label>Подредба</label><input type="number" step="1" data-f="sort_order" value="' +
+                        escapeHtml(p.sort_order) + '"></div>' +
+                '</div>' +
+                '<div class="form-group"><label class="check"><input type="checkbox" data-f="is_active"' +
+                    (p.is_active ? ' checked' : '') + '> Активен пакет</label></div>' +
+                '<div class="form-group"><label>Функции</label><div class="feature-list">' + featureHtml + '</div></div>' +
+                '<div class="btn-row">' +
+                    '<button class="btn btn-sm" data-save-plan>Запази</button>' +
+                    '<button class="btn btn-danger btn-sm" data-delete-plan>Изтрий</button>' +
+                '</div></div>';
+        }
+
+        function readPlanCard(card) {
+            function val(name) {
+                const node = card.querySelector('[data-f="' + name + '"]');
+                return node ? node.value : '';
+            }
+            const activeNode = card.querySelector('[data-f="is_active"]');
+            const features = [];
+            card.querySelectorAll('[data-feature]').forEach(function(cb) {
+                if (cb.checked) features.push(cb.dataset.feature);
+            });
+            return {
+                key: card.dataset.planKey,
+                name: val('name').trim(),
+                price_cents: Math.round((parseFloat(val('price')) || 0) * 100),
+                currency: (val('currency') || 'EUR').trim().toUpperCase(),
+                period: val('period') || 'month',
+                max_persons: parseInt(val('max_persons'), 10) || 0,
+                features: features,
+                is_active: !!(activeNode && activeNode.checked),
+                sort_order: parseInt(val('sort_order'), 10) || 0,
+            };
+        }
+
+        function bindPlanCards(scope) {
+            scope.querySelectorAll('[data-save-plan]').forEach(function(btn) {
+                btn.addEventListener('click', async function() {
+                    const card = btn.closest('.plan-card');
+                    const payload = readPlanCard(card);
+                    if (!payload.key || !payload.name) { notify('Ключът и името са задължителни.', 'err'); return; }
+                    try {
+                        await api('/api/admin/plans/' + encodeURIComponent(payload.key), {
+                            method: 'PUT', headers: jsonHeaders(), body: JSON.stringify(payload),
+                        });
+                        notify('Пакетът е запазен.');
+                        loadPlans();
+                        loaded.overview = false;
+                        loaded.users = false;
+                    } catch (e) { notifyError(e); }
+                });
+            });
+            scope.querySelectorAll('[data-delete-plan]').forEach(function(btn) {
+                btn.addEventListener('click', async function() {
+                    const card = btn.closest('.plan-card');
+                    const key = card.dataset.planKey;
+                    if (!confirm('Да изтрия ли пакета „' + key + '“?')) return;
+                    try {
+                        await api('/api/admin/plans/' + encodeURIComponent(key), {
+                            method: 'DELETE', headers: authHeaders(),
+                        });
+                        notify('Пакетът е изтрит.');
+                        loadPlans();
+                    } catch (e) { notifyError(e); }
+                });
+            });
+        }
+
+        document.getElementById('newPlanBtn').addEventListener('click', async function() {
+            try { await ensurePlans(); } catch (e) { notifyError(e); return; }
+            const featureHtml = allFeatures.map(function(f) {
+                return '<label class="feature-item"><input type="checkbox" data-feature="' + escapeHtml(f.key) + '">' +
+                    '<span><span class="feature-name">' + escapeHtml(f.name) + '</span><br>' +
+                    '<span class="feature-note">' + escapeHtml(f.note || '') + '</span></span></label>';
+            }).join('');
+            const body =
+                '<div class="form-grid">' +
+                    '<div class="form-group"><label for="npKey">Ключ</label>' +
+                        '<input type="text" id="npKey" placeholder="напр. pro"><div class="hint">Латиница, без интервали.</div></div>' +
+                    '<div class="form-group"><label for="npName">Име</label><input type="text" id="npName" placeholder="напр. Про"></div>' +
+                    '<div class="form-group"><label for="npPrice">Цена (€)</label><input type="number" id="npPrice" min="0" step="0.01" value="0.00"></div>' +
+                    '<div class="form-group"><label for="npCurrency">Валута</label><input type="text" id="npCurrency" value="EUR"></div>' +
+                    '<div class="form-group"><label for="npPeriod">Период</label>' +
+                        '<select id="npPeriod"><option value="month">месец</option><option value="year">година</option>' +
+                        '<option value="lifetime">безсрочно</option></select></div>' +
+                    '<div class="form-group"><label for="npMax">Макс. карти</label><input type="number" id="npMax" min="0" step="1" value="1"></div>' +
+                    '<div class="form-group"><label for="npSort">Подредба</label><input type="number" id="npSort" step="1" value="0"></div>' +
+                '</div>' +
+                '<div class="form-group"><label class="check" for="npActive">' +
+                    '<input type="checkbox" id="npActive" checked> Активен пакет</label></div>' +
+                '<div class="form-group"><label>Функции</label><div class="feature-list" id="npFeatures">' + featureHtml + '</div></div>' +
+                '<div class="btn-row"><button class="btn" id="npSave">Създай пакета</button></div>';
+            openModal('Нов пакет', 'Добави пакет и избери какво отключва.', body);
+
+            document.getElementById('npSave').addEventListener('click', async function() {
+                const key = document.getElementById('npKey').value.trim();
+                const name = document.getElementById('npName').value.trim();
+                if (!key || !name) { notify('Ключът и името са задължителни.', 'err'); return; }
+                const features = [];
+                document.querySelectorAll('#npFeatures [data-feature]').forEach(function(cb) {
+                    if (cb.checked) features.push(cb.dataset.feature);
+                });
+                const payload = {
+                    key: key,
+                    name: name,
+                    price_cents: Math.round((parseFloat(document.getElementById('npPrice').value) || 0) * 100),
+                    currency: (document.getElementById('npCurrency').value || 'EUR').trim().toUpperCase(),
+                    period: document.getElementById('npPeriod').value,
+                    max_persons: parseInt(document.getElementById('npMax').value, 10) || 0,
+                    features: features,
+                    is_active: document.getElementById('npActive').checked,
+                    sort_order: parseInt(document.getElementById('npSort').value, 10) || 0,
+                };
+                try {
+                    await api('/api/admin/plans/' + encodeURIComponent(key), {
+                        method: 'PUT', headers: jsonHeaders(), body: JSON.stringify(payload),
+                    });
+                    closeModal();
+                    notify('Пакетът е създаден.');
+                    loadPlans();
+                } catch (e) { notifyError(e); }
+            });
+        });
+
+        /* ---------- payments ---------- */
+        async function loadPayments() {
+            const el = document.getElementById('paymentsBody');
+            el.innerHTML = crystalLoader('Зареждане на плащанията…');
+            try {
+                await ensurePlans();
+                if (!allUsers.length) {
+                    const du = await api('/api/admin/users');
+                    allUsers = du.users || [];
+                }
+                fillPaymentSelects();
+                const d = await api('/api/admin/payments');
+                const payments = d.payments || [];
+                if (!payments.length) {
+                    el.innerHTML = '<div class="empty">Още няма отбелязани плащания.</div>';
+                    return;
+                }
+                let html = '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>Дата</th><th>Имейл</th><th>Пакет</th><th>Сума</th><th>Метод</th><th>Бележка</th><th></th>' +
+                    '</tr></thead><tbody>';
+                payments.forEach(function(p) {
+                    html += '<tr><td>' + fmtDate(p.paid_at) + '</td>' +
+                        '<td>' + escapeHtml(p.email) + '</td>' +
+                        '<td><span class="badge badge-plan">' + escapeHtml(p.plan_key || '—') + '</span></td>' +
+                        '<td class="num">' + money(p.amount_cents, p.currency) + '</td>' +
+                        '<td>' + escapeHtml(p.method || '—') + '</td>' +
+                        '<td>' + escapeHtml(p.note || '—') + '</td>' +
+                        '<td class="actions"><button class="btn btn-danger btn-sm" data-del-payment="' +
+                            escapeHtml(p.id) + '">Изтрий</button></td></tr>';
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+                el.querySelectorAll('[data-del-payment]').forEach(function(btn) {
+                    btn.addEventListener('click', async function() {
+                        if (!confirm('Да изтрия ли това плащане?')) return;
+                        try {
+                            await api('/api/admin/payments/' + btn.dataset.delPayment, {
+                                method: 'DELETE', headers: authHeaders(),
+                            });
+                            notify('Плащането е изтрито.');
+                            loadPayments();
+                            loaded.overview = false;
+                        } catch (e) { notifyError(e); }
+                    });
+                });
+            } catch (e) {
+                if (!forbidden) el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        function fillPaymentSelects() {
+            const userSel = document.getElementById('payUser');
+            const planSel = document.getElementById('payPlan');
+            const keepUser = userSel.value;
+            const keepPlan = planSel.value;
+            userSel.innerHTML = allUsers.map(function(u) {
+                return '<option value="' + escapeHtml(u.id) + '">' + escapeHtml(u.email) + '</option>';
+            }).join('');
+            planSel.innerHTML = '<option value="">— без промяна на пакета —</option>' +
+                allPlans.map(function(p) {
+                    return '<option value="' + escapeHtml(p.key) + '">' + escapeHtml(p.name) +
+                        ' (' + money(p.price_cents, p.currency) + ')</option>';
+                }).join('');
+            if (keepUser) userSel.value = keepUser;
+            if (keepPlan) planSel.value = keepPlan;
+        }
+
+        document.getElementById('paySaveBtn').addEventListener('click', async function() {
+            const userId = parseInt(document.getElementById('payUser').value, 10);
+            if (!userId) { notify('Избери потребител.', 'err'); return; }
+            const payload = {
+                user_id: userId,
+                plan_key: document.getElementById('payPlan').value || null,
+                amount_cents: Math.round((parseFloat(document.getElementById('payAmount').value) || 0) * 100),
+                currency: 'EUR',
+                method: document.getElementById('payMethod').value.trim() || null,
+                note: document.getElementById('payNote').value.trim() || null,
+                extend_months: parseInt(document.getElementById('payMonths').value, 10) || 0,
+            };
+            try {
+                await api('/api/admin/payments', {
+                    method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload),
+                });
+                notify('Плащането е отбелязано.');
+                document.getElementById('payAmount').value = '0.00';
+                document.getElementById('payMethod').value = '';
+                document.getElementById('payNote').value = '';
+                document.getElementById('payMonths').value = '0';
+                allUsers = [];
+                loadPayments();
+                loaded.overview = false;
+                loaded.users = false;
+            } catch (e) { notifyError(e); }
+        });
+
+        /* ---------- settings ---------- */
+        async function loadSettings() {
+            const el = document.getElementById('settingsBody');
+            el.innerHTML = crystalLoader('Зареждане на настройките…');
+            try {
+                const d = await api('/api/admin/settings');
+                const ai = d.ai || {};
+                const smtp = d.smtp || {};
+                const tpl = d.templates || {};
+                const providers = ['anthropic', 'deepseek', 'openai'];
+
+                let html = '<div class="section"><h2>AI</h2>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="aiProvider">Доставчик</label><select id="aiProvider">' +
+                            providers.map(function(p) {
+                                return '<option value="' + p + '"' + (ai.provider === p ? ' selected' : '') + '>' + p + '</option>';
+                            }).join('') +
+                        '</select></div>' +
+                        '<div class="form-group"><label for="aiKey">API ключ</label>' +
+                            '<input type="password" id="aiKey" autocomplete="off" placeholder="' +
+                            (ai.key_set ? escapeHtml(ai.key_masked || 'зададен') : 'не е зададен') + '">' +
+                            '<div class="hint">Празно = ключът остава непроменен.</div></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveAiBtn">Запази AI настройките</button></div></div>';
+
+                html += '<div class="section"><h2>SMTP</h2>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="smtpHost">Хост</label>' +
+                            '<input type="text" id="smtpHost" value="' + escapeHtml(smtp.host || '') + '"></div>' +
+                        '<div class="form-group"><label for="smtpPort">Порт</label>' +
+                            '<input type="number" id="smtpPort" value="' + escapeHtml(smtp.port || '587') + '"></div>' +
+                        '<div class="form-group"><label for="smtpUser">Потребител</label>' +
+                            '<input type="text" id="smtpUser" autocomplete="off" value="' + escapeHtml(smtp.user || '') + '"></div>' +
+                        '<div class="form-group"><label for="smtpPassword">Парола</label>' +
+                            '<input type="password" id="smtpPassword" autocomplete="new-password" placeholder="' +
+                            (smtp.password_set ? 'зададена' : 'не е зададена') + '">' +
+                            '<div class="hint">Празно = паролата остава непроменена.</div></div>' +
+                        '<div class="form-group"><label for="smtpFrom">„От“ адрес</label>' +
+                            '<input type="text" id="smtpFrom" value="' + escapeHtml(smtp.from || '') + '"></div>' +
+                    '</div>' +
+                    '<div class="form-group"><label class="check" for="smtpTls">' +
+                        '<input type="checkbox" id="smtpTls"' + (smtp.use_tls ? ' checked' : '') + '> Използвай TLS</label></div>' +
+                    '<div class="btn-row"><button class="btn" id="saveSmtpBtn">Запази SMTP</button></div>' +
+                    '<h3 style="margin-top:20px;">Тестов имейл</h3>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="testTo">Изпрати до</label>' +
+                            '<input type="email" id="testTo" placeholder="адрес@пример.бг"></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn btn-ghost" id="testEmailBtn">Изпрати тест</button></div></div>';
+
+                html += '<div class="section"><h2>Шаблони за имейли</h2>' +
+                    '<div class="hint" style="margin-bottom:14px;">Налични плейсхолдъри: {name}, {link}, {expires}</div>' +
+                    tplBlock('Добре дошъл', 'welcome', tpl.welcome_subject, tpl.welcome_body) +
+                    tplBlock('Изтичащ абонамент', 'expiring', tpl.expiring_subject, tpl.expiring_body) +
+                    tplBlock('Изтекъл абонамент', 'expired', tpl.expired_subject, tpl.expired_body) +
+                    '<div class="btn-row"><button class="btn" id="saveTplBtn">Запази шаблоните</button></div></div>';
+
+                el.innerHTML = html;
+                bindSettings();
+            } catch (e) {
+                if (!forbidden) el.innerHTML = '<div class="section"><div class="error">' + escapeHtml(e.message) + '</div></div>';
+            }
+        }
+
+        function tplBlock(title, key, subject, body) {
+            return '<h3 style="margin-top:18px;">' + escapeHtml(title) + '</h3>' +
+                '<div class="form-group"><label for="tpl_' + key + '_subject">Тема</label>' +
+                    '<input type="text" id="tpl_' + key + '_subject" value="' + escapeHtml(subject || '') + '"></div>' +
+                '<div class="form-group"><label for="tpl_' + key + '_body">Текст</label>' +
+                    '<textarea id="tpl_' + key + '_body">' + escapeHtml(body || '') + '</textarea></div>';
+        }
+
+        function bindSettings() {
+            document.getElementById('saveAiBtn').addEventListener('click', async function() {
+                const payload = { ai: { provider: document.getElementById('aiProvider').value } };
+                const key = document.getElementById('aiKey').value.trim();
+                if (key) payload.ai.key = key;
+                await saveSettings(payload, 'AI настройките са запазени.');
+                document.getElementById('aiKey').value = '';
+            });
+
+            document.getElementById('saveSmtpBtn').addEventListener('click', async function() {
+                const payload = {
+                    smtp: {
+                        host: document.getElementById('smtpHost').value.trim(),
+                        port: document.getElementById('smtpPort').value.trim(),
+                        user: document.getElementById('smtpUser').value.trim(),
+                        from: document.getElementById('smtpFrom').value.trim(),
+                        use_tls: document.getElementById('smtpTls').checked,
+                    },
+                };
+                const pwd = document.getElementById('smtpPassword').value.trim();
+                if (pwd) payload.smtp.password = pwd;
+                await saveSettings(payload, 'SMTP настройките са запазени.');
+                document.getElementById('smtpPassword').value = '';
+            });
+
+            document.getElementById('saveTplBtn').addEventListener('click', async function() {
+                const templates = {};
+                ['welcome', 'expiring', 'expired'].forEach(function(key) {
+                    templates[key + '_subject'] = document.getElementById('tpl_' + key + '_subject').value;
+                    templates[key + '_body'] = document.getElementById('tpl_' + key + '_body').value;
+                });
+                await saveSettings({ templates: templates }, 'Шаблоните са запазени.');
+            });
+
+            document.getElementById('testEmailBtn').addEventListener('click', async function() {
+                const to = document.getElementById('testTo').value.trim();
+                if (!to) { notify('Въведи имейл адрес.', 'err'); return; }
+                const btn = this;
+                btn.disabled = true;
+                try {
+                    await api('/api/admin/settings/test-email', {
+                        method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ to: to }),
+                    });
+                    notify('Тестовият имейл е изпратен.');
+                } catch (e) { notifyError(e); } finally { btn.disabled = false; }
+            });
+        }
+
+        async function saveSettings(payload, okMessage) {
+            try {
+                await api('/api/admin/settings', {
+                    method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload),
+                });
+                notify(okMessage);
+            } catch (e) { notifyError(e); }
+        }
+
+        /* ---------- boot ---------- */
+        (async function boot() {
+            try {
+                await api('/api/admin/overview');
+                document.getElementById('panel').hidden = false;
+                loaded.overview = true;
+                loadOverview();
+            } catch (e) {
+                if (!forbidden) {
+                    document.getElementById('gate').innerHTML =
+                        '<div class="section"><div class="error">' + escapeHtml(e.message) + '</div></div>';
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

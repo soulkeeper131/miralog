@@ -29,10 +29,12 @@ from translations import (
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
     sign_symbol, sign_element, sign_modality,
     sign_aspect, element_pair_meaning, modality_pair_meaning,
+    moon_phase_advice, moon_sign_advice,
     ELEMENTS_BG, MODALITIES_BG, ELEMENT_MEANINGS, MODALITY_MEANINGS,
     SIGNS, ZODIAC_ORDER,
 )
 from numerology import compute_numerology
+from bg_text import clean_bg
 
 # --- App Setup ---
 DB_PATH = Path(__file__).parent / "data" / "persons.db"
@@ -119,6 +121,69 @@ def init_db():
                 PRIMARY KEY (person_id, cache_key)
             )
         """)
+
+        # --- Accounts, plans and billing ---
+        # A plan is a named bundle of features; a user points at one and has an
+        # expiry date. Everything below is administered by hand for now.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plans (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                period TEXT NOT NULL DEFAULT 'month',
+                max_persons INTEGER NOT NULL DEFAULT 1,
+                features TEXT NOT NULL DEFAULT '[]',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                plan_key TEXT,
+                amount_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                method TEXT,
+                note TEXT,
+                paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                recorded_by INTEGER REFERENCES users(id)
+            )
+        """)
+
+        # Columns added to users after the first release.
+        user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        for col, ddl in [
+            ("role", "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"),
+            ("plan_key", "ALTER TABLE users ADD COLUMN plan_key TEXT DEFAULT 'demo'"),
+            ("plan_expires", "ALTER TABLE users ADD COLUMN plan_expires TIMESTAMP"),
+            ("is_blocked", "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0"),
+            ("note", "ALTER TABLE users ADD COLUMN note TEXT"),
+            ("last_login", "ALTER TABLE users ADD COLUMN last_login TIMESTAMP"),
+        ]:
+            if col not in user_cols:
+                conn.execute(ddl)
+
+        # Seed the two plans the landing page advertises.
+        if conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0:
+            conn.executemany(
+                "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, sort_order)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    ("demo", "Демо", 0, "EUR", "month", 1,
+                     json.dumps(["chart", "planets", "aspects", "numerology"]), 0),
+                    ("full", "Пълен достъп", 500, "EUR", "month", 50,
+                     json.dumps(["chart", "planets", "aspects", "numerology", "profile",
+                                 "horoscope", "period", "synastry", "love", "akashic", "moon"]), 1),
+                ]
+            )
+
+        # The first account created is the administrator.
+        conn.execute(
+            "UPDATE users SET role = 'admin', plan_key = 'full' WHERE email = ?",
+            (ADMIN_EMAIL,)
+        )
         conn.commit()
 
 @asynccontextmanager
@@ -220,6 +285,67 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
         return user_id, email
     except JWTError:
         raise HTTPException(401, "Invalid or expired token")
+
+def get_user_by_id(user_id: int) -> Optional[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+def get_plan(plan_key: Optional[str]) -> Optional[dict]:
+    if not plan_key:
+        return None
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM plans WHERE key = ?", (plan_key,)).fetchone()
+        if not row:
+            return None
+        plan = dict(row)
+        try:
+            plan["features"] = json.loads(plan["features"])
+        except Exception:
+            plan["features"] = []
+        return plan
+
+def plan_is_active(user: dict) -> bool:
+    """A paid plan lapses on its expiry date; demo never expires."""
+    if not user.get("plan_expires"):
+        return True
+    try:
+        expires = datetime.datetime.fromisoformat(str(user["plan_expires"]))
+    except ValueError:
+        return True
+    return expires.date() >= datetime.date.today()
+
+def effective_plan(user: dict) -> dict:
+    """The plan actually in force — falls back to demo once a paid one expires."""
+    plan = get_plan(user.get("plan_key")) if plan_is_active(user) else None
+    return plan or get_plan("demo") or {
+        "key": "demo", "name": "Демо", "max_persons": 1,
+        "features": ["chart", "planets", "aspects", "numerology"],
+    }
+
+def require_admin(user: Tuple[int, str] = Depends(get_current_user)) -> dict:
+    """Dependency for the admin area."""
+    row = get_user_by_id(user[0])
+    if not row or row.get("role") != "admin":
+        raise HTTPException(403, "Нужни са администраторски права.")
+    return row
+
+def require_feature(feature: str):
+    """Dependency factory gating a feature behind the user's plan."""
+    def _check(user: Tuple[int, str] = Depends(get_current_user)) -> Tuple[int, str]:
+        row = get_user_by_id(user[0])
+        if not row:
+            raise HTTPException(401, "Невалиден акаунт.")
+        if row.get("is_blocked"):
+            raise HTTPException(403, "Акаунтът е блокиран.")
+        if row.get("role") == "admin":
+            return user
+        if feature not in effective_plan(row).get("features", []):
+            raise HTTPException(402, "Тази функция изисква пълен достъп. Виж плановете.")
+        return user
+    return _check
 
 # --- DB Helpers ---
 def get_user_by_email(email: str) -> Optional[dict]:
@@ -582,9 +708,452 @@ def api_register(data: AuthRequest):
 
 @app.get("/api/auth/me")
 def api_me(user: Tuple[int, str] = Depends(get_current_user)):
-    """Get current authenticated user from token."""
+    """Current account, with the plan and features the UI should honour."""
     user_id, email = user
-    return {"id": user_id, "email": email}
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    plan = effective_plan(row)
+    is_admin = row.get("role") == "admin"
+    return {
+        "id": user_id,
+        "email": email,
+        "role": row.get("role", "user"),
+        "is_admin": is_admin,
+        "is_blocked": bool(row.get("is_blocked")),
+        "plan": {
+            "key": plan.get("key"),
+            "name": plan.get("name"),
+            "max_persons": plan.get("max_persons"),
+            # Admins are never gated by plan.
+            "features": [f["key"] for f in FEATURE_CATALOGUE] if is_admin else plan.get("features", []),
+            "expires": row.get("plan_expires"),
+            "active": plan_is_active(row),
+        },
+    }
+
+# Everything a plan can unlock. Keys are what require_feature() checks against.
+FEATURE_CATALOGUE = [
+    {"key": "chart", "name": "Натална карта", "note": "Колелото и позициите"},
+    {"key": "planets", "name": "Планети", "note": "Списък с обяснения"},
+    {"key": "aspects", "name": "Аспекти", "note": "Аспектите в картата"},
+    {"key": "numerology", "name": "Нумерология", "note": "Числата (без AI разчитане)"},
+    {"key": "profile", "name": "За мен", "note": "Личен портрет с AI"},
+    {"key": "horoscope", "name": "Дневен хороскоп", "note": "Разчитане на деня"},
+    {"key": "period", "name": "Период", "note": "Транзити за диапазон от дати"},
+    {"key": "synastry", "name": "Съвместимост", "note": "Синастрия между двама"},
+    {"key": "love", "name": "Любовен хороскоп", "note": "Съвместимост по зодия"},
+    {"key": "akashic", "name": "Акашови записи", "note": "Кармично разчитане"},
+    {"key": "moon", "name": "Лунен календар", "note": "Фазите и какво носят"},
+]
+
+# Default wording for the automated emails; admins can edit these.
+EMAIL_TEMPLATES = {
+    "welcome_subject": "Добре дошъл в МираСкоп",
+    "welcome_body": (
+        "Здравей, {name}!\n\n"
+        "Акаунтът ти в МираСкоп е готов. Влез и създай първата си натална карта.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+    ),
+    "expiring_subject": "Абонаментът ти изтича скоро",
+    "expiring_body": (
+        "Здравей, {name}!\n\n"
+        "Абонаментът ти за МираСкоп изтича на {expires}. "
+        "След това акаунтът остава активен, но с демо достъп.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+    ),
+    "expired_subject": "Абонаментът ти изтече",
+    "expired_body": (
+        "Здравей, {name}!\n\n"
+        "Абонаментът ти изтече и акаунтът мина на демо достъп. "
+        "Картите и разчитанията ти остават запазени.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+    ),
+}
+
+# --- Admin API (ADMIN ONLY) ---
+class AdminUserCreate(BaseModel):
+    email: str
+    password: str
+    plan_key: Optional[str] = "demo"
+    plan_expires: Optional[str] = None  # ISO date
+    role: str = "user"
+    note: Optional[str] = None
+
+class AdminUserUpdate(BaseModel):
+    plan_key: Optional[str] = None
+    plan_expires: Optional[str] = None  # ISO date, or "" to clear
+    role: Optional[str] = None
+    is_blocked: Optional[bool] = None
+    note: Optional[str] = None
+    password: Optional[str] = None      # set a new password
+
+class AdminPlanUpsert(BaseModel):
+    key: str
+    name: str
+    price_cents: int = 0
+    currency: str = "EUR"
+    period: str = "month"
+    max_persons: int = 1
+    features: list = []
+    is_active: bool = True
+    sort_order: int = 0
+
+class AdminPaymentCreate(BaseModel):
+    user_id: int
+    plan_key: Optional[str] = None
+    amount_cents: int
+    currency: str = "EUR"
+    method: Optional[str] = None
+    note: Optional[str] = None
+    extend_months: int = 0  # also push the user's expiry out by this many months
+
+@app.get("/api/admin/overview")
+def api_admin_overview(admin: dict = Depends(require_admin)):
+    """Headline numbers for the admin dashboard."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        users = conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
+        blocked = conn.execute("SELECT COUNT(*) c FROM users WHERE is_blocked = 1").fetchone()["c"]
+        persons = conn.execute("SELECT COUNT(*) c FROM persons").fetchone()["c"]
+        by_plan = [dict(r) for r in conn.execute(
+            "SELECT COALESCE(plan_key, 'demo') AS plan_key, COUNT(*) AS c FROM users GROUP BY 1"
+        )]
+        revenue = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments"
+        ).fetchone()["s"]
+        month_start = datetime.date.today().replace(day=1).isoformat()
+        revenue_month = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments WHERE paid_at >= ?",
+            (month_start,)
+        ).fetchone()["s"]
+        expiring = [dict(r) for r in conn.execute(
+            "SELECT id, email, plan_key, plan_expires FROM users "
+            "WHERE plan_expires IS NOT NULL AND date(plan_expires) <= date('now', '+14 day') "
+            "ORDER BY plan_expires LIMIT 20"
+        )]
+        recent = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.amount_cents, p.currency, p.paid_at, p.plan_key, u.email "
+            "FROM payments p JOIN users u ON u.id = p.user_id "
+            "ORDER BY p.paid_at DESC LIMIT 10"
+        )]
+    return {
+        "users": users, "blocked": blocked, "persons": persons,
+        "by_plan": by_plan,
+        "revenue_cents": revenue, "revenue_month_cents": revenue_month,
+        "expiring": expiring, "recent_payments": recent,
+    }
+
+@app.get("/api/admin/users")
+def api_admin_users(q: Optional[str] = None, admin: dict = Depends(require_admin)):
+    """All accounts, with their plan and usage."""
+    sql = ("SELECT u.id, u.email, u.role, u.plan_key, u.plan_expires, u.is_blocked, u.note, "
+           "u.created_at, u.last_login, "
+           "(SELECT COUNT(*) FROM persons p WHERE p.user_id = u.id) AS persons, "
+           "(SELECT COALESCE(SUM(amount_cents),0) FROM payments pm WHERE pm.user_id = u.id) AS paid_cents "
+           "FROM users u")
+    params: list = []
+    if q:
+        sql += " WHERE u.email LIKE ?"
+        params.append(f"%{q}%")
+    sql += " ORDER BY u.created_at DESC"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, params)]
+    return {"users": rows}
+
+@app.post("/api/admin/users")
+def api_admin_create_user(data: AdminUserCreate, admin: dict = Depends(require_admin)):
+    """Create an account by hand, with its plan set straight away."""
+    email = (data.email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
+    if len((data.password or "").strip()) < 6:
+        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    if get_user_by_email(email):
+        raise HTTPException(409, "Вече съществува акаунт с този имейл.")
+    if data.role not in ("user", "admin"):
+        raise HTTPException(400, "Ролята трябва да е 'user' или 'admin'.")
+    if data.plan_key and not get_plan(data.plan_key):
+        raise HTTPException(400, "Няма такъв пакет.")
+
+    expires = (data.plan_expires or "").strip() or None
+    if expires:
+        try:
+            datetime.date.fromisoformat(expires)
+        except ValueError:
+            raise HTTPException(400, "Датата трябва да е във формат ГГГГ-ММ-ДД.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO users (email, password_hash, role, plan_key, plan_expires, note)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (email, hash_password(data.password.strip()), data.role,
+             data.plan_key or "demo", expires, (data.note or "").strip() or None)
+        )
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid, "email": email}
+
+@app.patch("/api/admin/users/{user_id}")
+def api_admin_update_user(user_id: int, data: AdminUserUpdate, admin: dict = Depends(require_admin)):
+    """Change a user's plan, role, block state, note or password."""
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "Потребителят не е намерен.")
+
+    sets, params = [], []
+    if data.plan_key is not None:
+        if not get_plan(data.plan_key):
+            raise HTTPException(400, "Няма такъв пакет.")
+        sets.append("plan_key = ?"); params.append(data.plan_key)
+    if data.plan_expires is not None:
+        value = data.plan_expires.strip() or None
+        if value:
+            try:
+                datetime.date.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(400, "Датата трябва да е във формат ГГГГ-ММ-ДД.")
+        sets.append("plan_expires = ?"); params.append(value)
+    if data.role is not None:
+        if data.role not in ("user", "admin"):
+            raise HTTPException(400, "Ролята трябва да е 'user' или 'admin'.")
+        # Don't let the last administrator demote themselves out of the panel.
+        if target["role"] == "admin" and data.role != "admin":
+            with sqlite3.connect(DB_PATH) as conn:
+                admins = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
+            if admins <= 1:
+                raise HTTPException(400, "Това е единственият администратор.")
+        sets.append("role = ?"); params.append(data.role)
+    if data.is_blocked is not None:
+        if target["id"] == admin["id"] and data.is_blocked:
+            raise HTTPException(400, "Не можеш да блокираш собствения си акаунт.")
+        sets.append("is_blocked = ?"); params.append(1 if data.is_blocked else 0)
+    if data.note is not None:
+        sets.append("note = ?"); params.append(data.note.strip() or None)
+    if data.password is not None and data.password.strip():
+        if len(data.password.strip()) < 6:
+            raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+        sets.append("password_hash = ?"); params.append(hash_password(data.password.strip()))
+
+    if not sets:
+        return {"ok": True, "changed": False}
+
+    params.append(user_id)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+    return {"ok": True, "changed": True}
+
+@app.delete("/api/admin/users/{user_id}")
+def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
+    """Remove an account together with everything it owns."""
+    if user_id == admin["id"]:
+        raise HTTPException(400, "Не можеш да изтриеш собствения си акаунт.")
+    if not get_user_by_id(user_id):
+        raise HTTPException(404, "Потребителят не е намерен.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM ai_cache WHERE person_id IN (SELECT id FROM persons WHERE user_id = ?)",
+            (user_id,))
+        conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/plans")
+def api_admin_plans(admin: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = []
+        for r in conn.execute("SELECT * FROM plans ORDER BY sort_order, key"):
+            p = dict(r)
+            try:
+                p["features"] = json.loads(p["features"])
+            except Exception:
+                p["features"] = []
+            p["users"] = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE COALESCE(plan_key,'demo') = ?", (p["key"],)
+            ).fetchone()[0]
+            rows.append(p)
+    return {"plans": rows, "all_features": FEATURE_CATALOGUE}
+
+@app.put("/api/admin/plans/{plan_key}")
+def api_admin_upsert_plan(plan_key: str, data: AdminPlanUpsert, admin: dict = Depends(require_admin)):
+    """Create or update a plan and what it unlocks."""
+    unknown = [f for f in data.features if f not in {f["key"] for f in FEATURE_CATALOGUE}]
+    if unknown:
+        raise HTTPException(400, f"Непознати функции: {', '.join(unknown)}")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, is_active, sort_order)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET name=excluded.name, price_cents=excluded.price_cents,"
+            " currency=excluded.currency, period=excluded.period, max_persons=excluded.max_persons,"
+            " features=excluded.features, is_active=excluded.is_active, sort_order=excluded.sort_order",
+            (plan_key, data.name, data.price_cents, data.currency, data.period,
+             data.max_persons, json.dumps(data.features), 1 if data.is_active else 0, data.sort_order)
+        )
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/plans/{plan_key}")
+def api_admin_delete_plan(plan_key: str, admin: dict = Depends(require_admin)):
+    if plan_key == "demo":
+        raise HTTPException(400, "Демо пакетът не може да се изтрие — той е резервният.")
+    with sqlite3.connect(DB_PATH) as conn:
+        in_use = conn.execute("SELECT COUNT(*) FROM users WHERE plan_key = ?", (plan_key,)).fetchone()[0]
+        if in_use:
+            raise HTTPException(400, f"Пакетът се ползва от {in_use} потребител(и).")
+        conn.execute("DELETE FROM plans WHERE key = ?", (plan_key,))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/payments")
+def api_admin_payments(user_id: Optional[int] = None, admin: dict = Depends(require_admin)):
+    sql = ("SELECT p.*, u.email FROM payments p JOIN users u ON u.id = p.user_id")
+    params: list = []
+    if user_id:
+        sql += " WHERE p.user_id = ?"
+        params.append(user_id)
+    sql += " ORDER BY p.paid_at DESC LIMIT 200"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, params)]
+    return {"payments": rows}
+
+@app.post("/api/admin/payments")
+def api_admin_record_payment(data: AdminPaymentCreate, admin: dict = Depends(require_admin)):
+    """Log a payment, optionally extending the user's plan at the same time."""
+    target = get_user_by_id(data.user_id)
+    if not target:
+        raise HTTPException(404, "Потребителят не е намерен.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO payments (user_id, plan_key, amount_cents, currency, method, note, recorded_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (data.user_id, data.plan_key, data.amount_cents, data.currency,
+             data.method, data.note, admin["id"])
+        )
+        if data.extend_months > 0:
+            # Extend from the current expiry if it is still ahead, otherwise from today.
+            base = datetime.date.today()
+            if target.get("plan_expires"):
+                try:
+                    current = datetime.date.fromisoformat(str(target["plan_expires"])[:10])
+                    base = max(base, current)
+                except ValueError:
+                    pass
+            month = base.month - 1 + data.extend_months
+            new_date = base.replace(
+                year=base.year + month // 12,
+                month=month % 12 + 1,
+                day=min(base.day, [31, 29 if (base.year + month // 12) % 4 == 0 else 28,
+                                   31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month % 12]),
+            )
+            sets = ["plan_expires = ?"]
+            params: list = [new_date.isoformat()]
+            if data.plan_key:
+                sets.append("plan_key = ?"); params.append(data.plan_key)
+            params.append(data.user_id)
+            conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/payments/{payment_id}")
+def api_admin_delete_payment(payment_id: int, admin: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/settings")
+def api_admin_settings(admin: dict = Depends(require_admin)):
+    """App-wide settings: AI key status, SMTP and email templates."""
+    ai_key = get_setting("ai_api_key")
+    smtp_pass = get_setting("smtp_password")
+    return {
+        "ai": {
+            "provider": get_setting("ai_provider") or "deepseek",
+            "key_set": bool(ai_key),
+            "key_masked": ("•" * 8 + ai_key[-4:]) if ai_key and len(ai_key) > 4 else None,
+        },
+        "smtp": {
+            "host": get_setting("smtp_host") or "",
+            "port": get_setting("smtp_port") or "587",
+            "user": get_setting("smtp_user") or "",
+            "from": get_setting("smtp_from") or "",
+            "use_tls": (get_setting("smtp_use_tls") or "1") == "1",
+            "password_set": bool(smtp_pass),
+        },
+        "templates": {
+            key: get_setting(f"tpl_{key}") or default
+            for key, default in EMAIL_TEMPLATES.items()
+        },
+    }
+
+@app.post("/api/admin/settings")
+def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin)):
+    """Save whichever settings were supplied; blank values leave secrets alone."""
+    ai = payload.get("ai") or {}
+    if ai.get("provider"):
+        set_setting("ai_provider", ai["provider"])
+    if (ai.get("key") or "").strip():
+        set_setting("ai_api_key", ai["key"].strip())
+
+    smtp = payload.get("smtp") or {}
+    for field, key in [("host", "smtp_host"), ("port", "smtp_port"),
+                       ("user", "smtp_user"), ("from", "smtp_from")]:
+        if field in smtp:
+            set_setting(key, str(smtp[field] or "").strip())
+    if "use_tls" in smtp:
+        set_setting("smtp_use_tls", "1" if smtp["use_tls"] else "0")
+    if (smtp.get("password") or "").strip():
+        set_setting("smtp_password", smtp["password"].strip())
+
+    for key, value in (payload.get("templates") or {}).items():
+        if key in EMAIL_TEMPLATES:
+            set_setting(f"tpl_{key}", value)
+
+    return {"ok": True}
+
+@app.post("/api/admin/settings/test-email")
+def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
+    """Send a test message through the configured SMTP server."""
+    to = (payload.get("to") or "").strip()
+    if "@" not in to:
+        raise HTTPException(400, "Въведи валиден имейл адрес.")
+
+    host = get_setting("smtp_host")
+    if not host:
+        raise HTTPException(400, "SMTP сървърът не е конфигуриран.")
+
+    import smtplib
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "Тестов имейл от МираСкоп"
+    msg["From"] = get_setting("smtp_from") or get_setting("smtp_user") or "noreply@miraskop.bg"
+    msg["To"] = to
+    msg.set_content("Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
+
+    try:
+        port = int(get_setting("smtp_port") or 587)
+        if (get_setting("smtp_use_tls") or "1") == "1":
+            with smtplib.SMTP(host, port, timeout=20) as s:
+                s.starttls()
+                if get_setting("smtp_user"):
+                    s.login(get_setting("smtp_user"), get_setting("smtp_password") or "")
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP_SSL(host, port, timeout=20) as s:
+                if get_setting("smtp_user"):
+                    s.login(get_setting("smtp_user"), get_setting("smtp_password") or "")
+                s.send_message(msg)
+    except Exception as e:
+        raise HTTPException(502, f"Изпращането се провали: {e}")
+    return {"ok": True}
 
 # --- Settings API Routes (AUTH REQUIRED) ---
 @app.get("/api/settings")
@@ -690,7 +1259,18 @@ def api_geocode(q: str, user: Tuple[int, str] = Depends(get_current_user)):
 @app.get("/api/persons")
 def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
-    return {"persons": get_all_persons(user_id)}
+    persons = get_all_persons(user_id)
+    row = get_user_by_id(user_id)
+    is_admin = bool(row and row.get("role") == "admin")
+    limit = None if is_admin else (effective_plan(row).get("max_persons") if row else None)
+    return {
+        "persons": persons,
+        "quota": {
+            "used": len(persons),
+            "limit": limit,  # null means unlimited
+            "can_add": is_admin or not limit or len(persons) < limit,
+        },
+    }
 
 @app.get("/api/persons/{person_id}")
 def api_get_person(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
@@ -714,6 +1294,27 @@ def api_create_person(
     user: Tuple[int, str] = Depends(get_current_user),
 ):
     user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if row.get("is_blocked"):
+        raise HTTPException(403, "Акаунтът е блокиран.")
+
+    # Plans cap how many people an account may keep; admins are exempt.
+    if row.get("role") != "admin":
+        plan = effective_plan(row)
+        limit = plan.get("max_persons") or 0
+        with sqlite3.connect(DB_PATH) as conn:
+            used = conn.execute(
+                "SELECT COUNT(*) FROM persons WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+        if limit and used >= limit:
+            raise HTTPException(
+                402,
+                f"Пакетът „{plan.get('name')}“ позволява до {limit} "
+                f"{'карта' if limit == 1 else 'карти'}. Изтрий някоя или премини на по-голям пакет."
+            )
+
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -1278,6 +1879,59 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
 
 
 LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
+
+@app.get("/api/lunar-calendar")
+def api_lunar_calendar(year: Optional[int] = None, month: Optional[int] = None,
+                       user: Tuple[int, str] = Depends(get_current_user)):
+    """Moon phase and sign for every day of a month, with what each favours.
+
+    Computed from ephemeris data, so it holds for any month, past or future.
+    """
+    tz = ZoneInfo("Europe/Sofia")
+    today = datetime.datetime.now(tz).date()
+    year = year or today.year
+    month = month or today.month
+    if not (1 <= month <= 12):
+        raise HTTPException(400, "Невалиден месец.")
+    if not (1900 <= year <= 2100):
+        raise HTTPException(400, "Невалидна година.")
+
+    import calendar as _cal
+    days_in_month = _cal.monthrange(year, month)[1]
+
+    # Sofia is used as the reference location; the Moon's sign barely moves
+    # across European longitudes, and the phase does not depend on place at all.
+    lat, lon = 42.6977, 23.3219
+
+    days = []
+    prev_phase = None
+    for day in range(1, days_in_month + 1):
+        dt = datetime.datetime(year, month, day, 12, 0, tzinfo=tz)
+        chart = charts.Natal(charts.Subject(dt, lat, lon))
+        phase = chart.moon_phase.formatted if getattr(chart, "moon_phase", None) else None
+        moon = next((o for o in chart.objects.values() if o.name == "Moon"), None)
+        sign = moon.sign.name if moon else None
+        advice = moon_phase_advice(phase) or {}
+        days.append({
+            "date": f"{year}-{month:02d}-{day:02d}",
+            "day": day,
+            "weekday": dt.weekday(),
+            "is_today": dt.date() == today,
+            "phase": phase,
+            "phase_bg": tr_moon_phase(phase),
+            "phase_changed": phase != prev_phase,
+            "phase_meaning": meaning_moon_phase(phase),
+            "moon_sign": sign,
+            "moon_sign_bg": tr_sign(sign),
+            "moon_symbol": sign_symbol(sign),
+            "moon_sign_advice": moon_sign_advice(sign),
+            "do": advice.get("do", []),
+            "avoid": advice.get("avoid", []),
+            "note": advice.get("note", ""),
+        })
+        prev_phase = phase
+
+    return {"year": year, "month": month, "days": days}
 
 @app.get("/api/zodiac-signs")
 def api_zodiac_signs(user: Tuple[int, str] = Depends(get_current_user)):
@@ -1984,7 +2638,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
             )
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
-                return result["content"][0]["text"]
+                return clean_bg(result["content"][0]["text"])
 
         if provider == "deepseek":
             url = "https://api.deepseek.com/v1/chat/completions"
@@ -2008,7 +2662,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
         )
         with urllib.request.urlopen(req, timeout=180) as resp:
             result = json.loads(resp.read())
-            return result["choices"][0]["message"]["content"]
+            return clean_bg(result["choices"][0]["message"]["content"])
     except urllib.error.HTTPError as e:
         raise AIError(_explain_http_error(provider, e)) from e
     except TimeoutError:
@@ -2160,6 +2814,16 @@ async def settings_page(request: Request):
 async def synastry_page(request: Request):
     """Synastry page — client-side JS handles auth check via localStorage token."""
     return HTMLResponse(templates.get_template("synastry.html").render({"request": request}))
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    """Admin panel — the API behind it enforces the admin role."""
+    return HTMLResponse(templates.get_template("admin.html").render({"request": request}))
+
+@app.get("/moon", response_class=HTMLResponse)
+async def moon_page(request: Request):
+    """Lunar calendar — client-side JS handles auth check via localStorage token."""
+    return HTMLResponse(templates.get_template("moon.html").render({"request": request}))
 
 @app.get("/healthz")
 def health():
