@@ -163,6 +163,7 @@ def init_db():
             ("is_blocked", "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0"),
             ("note", "ALTER TABLE users ADD COLUMN note TEXT"),
             ("last_login", "ALTER TABLE users ADD COLUMN last_login TIMESTAMP"),
+            ("display_name", "ALTER TABLE users ADD COLUMN display_name TEXT"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
@@ -255,10 +256,6 @@ class PeriodRequest(BaseModel):
 class AuthRequest(BaseModel):
     email: str
     password: str
-
-class SettingsUpdate(BaseModel):
-    ai_api_key: Optional[str] = None
-    ai_provider: Optional[str] = None
 
 # --- Auth Helpers ---
 def hash_password(password: str) -> str:
@@ -773,6 +770,42 @@ EMAIL_TEMPLATES = {
     ),
 }
 
+# Search-engine settings the admin can edit; these are the defaults the public
+# pages fall back to when nothing has been saved yet.
+SEO_DEFAULTS = {
+    "seo_site_url": "",
+    "seo_title": "МираСкоп — твоята натална карта, разчетена на разбираем език",
+    "seo_description": (
+        "Точна натална карта по Swiss Ephemeris, разчетена на български: кой си, "
+        "какво ти предстои днес, кармичните ти теми и нумерологията ти."
+    ),
+    "seo_keywords": "натална карта, хороскоп, астрология, зодия, нумерология, лунен календар",
+    "seo_og_image": "/static/logo-header.png",
+    "seo_robots": "index,follow",
+    "seo_verification": "",
+}
+
+def seo_settings() -> dict:
+    """Current SEO values, falling back to the defaults for anything unset."""
+    return {key: (get_setting(key) or default) for key, default in SEO_DEFAULTS.items()}
+
+def seo_context(request: Request, *, path: str = "/") -> dict:
+    """Everything the public templates need to render their meta tags."""
+    seo = seo_settings()
+    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    image = seo["seo_og_image"] or ""
+    if image.startswith("/"):
+        image = base + image
+    return {
+        "seo_title": seo["seo_title"],
+        "seo_description": seo["seo_description"],
+        "seo_keywords": seo["seo_keywords"],
+        "seo_robots": seo["seo_robots"],
+        "seo_verification": seo["seo_verification"],
+        "seo_image": image,
+        "seo_url": base + path,
+    }
+
 # --- Admin API (ADMIN ONLY) ---
 class AdminUserCreate(BaseModel):
     email: str
@@ -1093,6 +1126,7 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             key: get_setting(f"tpl_{key}") or default
             for key, default in EMAIL_TEMPLATES.items()
         },
+        "seo": seo_settings(),
     }
 
 @app.post("/api/admin/settings")
@@ -1117,6 +1151,10 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     for key, value in (payload.get("templates") or {}).items():
         if key in EMAIL_TEMPLATES:
             set_setting(f"tpl_{key}", value)
+
+    for key, value in (payload.get("seo") or {}).items():
+        if key in SEO_DEFAULTS:
+            set_setting(key, str(value or "").strip())
 
     return {"ok": True}
 
@@ -1178,21 +1216,94 @@ def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 # --- Settings API Routes (AUTH REQUIRED) ---
-@app.get("/api/settings")
-def api_get_settings(user: Tuple[int, str] = Depends(get_current_user)):
-    """Return current settings. The API key is masked, never sent back in full."""
-    key = get_setting("ai_api_key")
-    provider = get_setting("ai_provider") or "deepseek"
-    masked = ("•" * 8 + key[-4:]) if key and len(key) > 4 else ("•" * 8 if key else None)
-    return {"ai_provider": provider, "ai_api_key_set": bool(key), "ai_api_key_masked": masked}
+# --- Account settings (the signed-in user's own profile) ---
+# The AI provider and key are installation-wide and live in the admin panel;
+# nothing here may touch them.
 
-@app.post("/api/settings")
-def api_update_settings(data: SettingsUpdate, user: Tuple[int, str] = Depends(get_current_user)):
-    """Update settings. Only non-empty fields are changed."""
-    if data.ai_api_key is not None and data.ai_api_key.strip():
-        set_setting("ai_api_key", data.ai_api_key.strip())
-    if data.ai_provider is not None and data.ai_provider.strip():
-        set_setting("ai_provider", data.ai_provider.strip())
+class AccountUpdate(BaseModel):
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.get("/api/account")
+def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
+    """The signed-in user's own profile and plan."""
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    plan = effective_plan(row)
+    return {
+        "id": user_id,
+        "email": row.get("email") or email,
+        "display_name": row.get("display_name") or "",
+        "role": row.get("role", "user"),
+        "is_admin": row.get("role") == "admin",
+        "created_at": row.get("created_at"),
+        "plan": {
+            "key": plan.get("key"),
+            "name": plan.get("name"),
+            "max_persons": plan.get("max_persons"),
+            "expires": row.get("plan_expires"),
+            "active": plan_is_active(row),
+        },
+    }
+
+@app.post("/api/account")
+def api_update_account(data: AccountUpdate, user: Tuple[int, str] = Depends(get_current_user)):
+    """Update the user's own name and email. Only supplied fields change."""
+    user_id, _ = user
+
+    fields, values = [], []
+    if data.display_name is not None:
+        fields.append("display_name = ?")
+        values.append(data.display_name.strip()[:80])
+
+    new_email = None
+    if data.email is not None and data.email.strip():
+        new_email = data.email.strip().lower()
+        if "@" not in new_email or "." not in new_email.split("@")[-1]:
+            raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
+        existing = get_user_by_email(new_email)
+        if existing and existing["id"] != user_id:
+            raise HTTPException(409, "Вече съществува акаунт с този имейл.")
+        fields.append("email = ?")
+        values.append(new_email)
+
+    if not fields:
+        return {"ok": True}
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", (*values, user_id))
+        conn.commit()
+
+    # Changing the email invalidates the old token's claim, so issue a fresh one.
+    row = get_user_by_id(user_id)
+    result = {"ok": True, "email": row.get("email"), "display_name": row.get("display_name") or ""}
+    if new_email:
+        result["token"] = create_token(user_id, row["email"])
+    return result
+
+@app.post("/api/account/password")
+def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(get_current_user)):
+    """Change the user's own password, verifying the current one first."""
+    user_id, _ = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if not verify_password(data.current_password or "", row["password_hash"]):
+        raise HTTPException(403, "Текущата парола не е вярна.")
+    if len(data.new_password or "") < 6:
+        raise HTTPException(400, "Новата парола трябва да е поне 6 символа.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                     (hash_password(data.new_password), user_id))
+        conn.commit()
+    # The old token stays valid; it carries no password claim.
     return {"ok": True}
 
 # --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
@@ -2932,7 +3043,49 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
-    return HTMLResponse(templates.get_template("landing.html").render({"request": request}))
+    return HTMLResponse(templates.get_template("landing.html").render(
+        {"request": request, **seo_context(request, path="/")}))
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt(request: Request):
+    """Crawler rules. The private app pages are never worth indexing."""
+    seo = seo_settings()
+    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    if "noindex" in (seo["seo_robots"] or ""):
+        body = "User-agent: *\nDisallow: /\n"
+    else:
+        body = (
+            "User-agent: *\n"
+            "Allow: /$\n"
+            "Disallow: /dashboard\n"
+            "Disallow: /chart/\n"
+            "Disallow: /settings\n"
+            "Disallow: /admin\n"
+            "Disallow: /synastry\n"
+            "Disallow: /api/\n"
+            f"\nSitemap: {base}/sitemap.xml\n"
+        )
+    return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
+
+@app.get("/sitemap.xml")
+def sitemap_xml(request: Request):
+    """Only the publicly reachable pages belong in the sitemap."""
+    seo = seo_settings()
+    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    today = datetime.date.today().isoformat()
+    urls = "".join(
+        f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
+        f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
+        for path, freq, prio in [
+            ("/", "weekly", "1.0"),
+            ("/register", "monthly", "0.6"),
+            ("/login", "monthly", "0.3"),
+        ]
+    )
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f"{urls}</urlset>")
+    return Response(content=xml, media_type="application/xml")
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):

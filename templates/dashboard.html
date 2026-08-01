@@ -451,6 +451,7 @@
             </div>
             <div class="topbar-right">
                 <a class="btn btn-cancel" id="synastryLink" href="#"><span class="btn-ico" aria-hidden="true">💞</span>Съвместимост</a>
+                <a class="btn btn-cancel" id="adminLink" href="#" hidden><span class="btn-ico" aria-hidden="true">🛠</span>Админ</a>
                 <a class="btn btn-cancel" id="settingsLink" href="#"><span class="btn-ico" aria-hidden="true">⚙</span>Настройки</a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <button class="btn btn-danger" onclick="logout()">Изход</button>
@@ -587,6 +588,20 @@
         document.getElementById('userEmail').textContent = email;
         document.getElementById('settingsLink').href = '/settings?token=' + encodeURIComponent(getToken());
         document.getElementById('synastryLink').href = '/synastry?token=' + encodeURIComponent(getToken());
+
+        // The admin link only appears for accounts that actually hold the role.
+        (async function revealAdminLink() {
+            try {
+                const resp = await fetch('/api/auth/me', { headers: authHeaders() });
+                if (!resp.ok) return;
+                const me = await resp.json();
+                if (me.is_admin) {
+                    const link = document.getElementById('adminLink');
+                    link.href = '/admin?token=' + encodeURIComponent(getToken());
+                    link.hidden = false;
+                }
+            } catch (e) { /* the panel stays hidden; nothing else depends on this */ }
+        })();
 
         // --- API helpers ---
         function showError(msg) {

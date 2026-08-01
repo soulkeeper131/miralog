@@ -1228,6 +1228,44 @@
                     '</div>' +
                     '<div class="btn-row"><button class="btn btn-ghost" id="testEmailBtn">Изпрати тест</button></div></div>';
 
+                const seo = d.seo || {};
+                html += '<div class="section"><h2>SEO</h2>' +
+                    '<div class="hint" style="margin-bottom:14px;">' +
+                        'Отнася се за публичната начална страница. Оттук се пълнят и ' +
+                        '<a href="/robots.txt" target="_blank" rel="noopener">robots.txt</a> и ' +
+                        '<a href="/sitemap.xml" target="_blank" rel="noopener">sitemap.xml</a>.</div>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="seoSiteUrl">Адрес на сайта</label>' +
+                            '<input type="url" id="seoSiteUrl" placeholder="https://miraskop.bg" value="' +
+                            escapeHtml(seo.seo_site_url || '') + '">' +
+                            '<div class="hint">Използва се за canonical, sitemap и споделяне. Празно = адресът на заявката.</div></div>' +
+                        '<div class="form-group"><label for="seoRobots">Индексиране</label>' +
+                            '<select id="seoRobots">' +
+                                '<option value="index,follow"' + (seo.seo_robots === 'noindex,nofollow' ? '' : ' selected') + '>Разреши индексиране</option>' +
+                                '<option value="noindex,nofollow"' + (seo.seo_robots === 'noindex,nofollow' ? ' selected' : '') + '>Скрий от търсачките</option>' +
+                            '</select></div>' +
+                    '</div>' +
+                    '<div class="form-group"><label for="seoTitle">Заглавие</label>' +
+                        '<input type="text" id="seoTitle" maxlength="70" value="' + escapeHtml(seo.seo_title || '') + '">' +
+                        '<div class="hint">До 60 знака се показват изцяло в Google.</div></div>' +
+                    '<div class="form-group"><label for="seoDescription">Описание</label>' +
+                        '<textarea id="seoDescription" maxlength="200">' + escapeHtml(seo.seo_description || '') + '</textarea>' +
+                        '<div class="hint">Между 120 и 160 знака работи най-добре.</div></div>' +
+                    '<div class="form-group"><label for="seoKeywords">Ключови думи</label>' +
+                        '<input type="text" id="seoKeywords" value="' + escapeHtml(seo.seo_keywords || '') + '">' +
+                        '<div class="hint">Разделени със запетая.</div></div>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="seoOgImage">Изображение при споделяне</label>' +
+                            '<input type="text" id="seoOgImage" value="' + escapeHtml(seo.seo_og_image || '') + '">' +
+                            '<div class="hint">Път или пълен адрес. Препоръчително 1200×630 px.</div></div>' +
+                        '<div class="form-group"><label for="seoVerification">Google Search Console код</label>' +
+                            '<input type="text" id="seoVerification" autocomplete="off" value="' +
+                            escapeHtml(seo.seo_verification || '') + '">' +
+                            '<div class="hint">Само стойността от мета тага за потвърждение.</div></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveSeoBtn">Запази SEO</button>' +
+                        '<a class="btn btn-ghost" href="/" target="_blank" rel="noopener">Виж страницата</a></div></div>';
+
                 html += '<div class="section"><h2>Шаблони за имейли</h2>' +
                     '<div class="hint" style="margin-bottom:14px;">Налични плейсхолдъри: {name}, {link}, {expires}</div>' +
                     tplBlock('Добре дошъл', 'welcome', tpl.welcome_subject, tpl.welcome_body) +
@@ -1273,6 +1311,20 @@
                 if (pwd) payload.smtp.password = pwd;
                 await saveSettings(payload, 'SMTP настройките са запазени.');
                 document.getElementById('smtpPassword').value = '';
+            });
+
+            document.getElementById('saveSeoBtn').addEventListener('click', async function() {
+                await saveSettings({
+                    seo: {
+                        seo_site_url: document.getElementById('seoSiteUrl').value.trim(),
+                        seo_title: document.getElementById('seoTitle').value.trim(),
+                        seo_description: document.getElementById('seoDescription').value.trim(),
+                        seo_keywords: document.getElementById('seoKeywords').value.trim(),
+                        seo_og_image: document.getElementById('seoOgImage').value.trim(),
+                        seo_robots: document.getElementById('seoRobots').value,
+                        seo_verification: document.getElementById('seoVerification').value.trim(),
+                    },
+                }, 'SEO настройките са запазени.');
             });
 
             document.getElementById('saveTplBtn').addEventListener('click', async function() {
