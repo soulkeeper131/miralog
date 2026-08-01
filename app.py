@@ -150,7 +150,31 @@ class SynastryRequest(BaseModel):
 
 class LoveMatchRequest(BaseModel):
     person_id: int
-    partner_sign: str  # English sign name, e.g. "Taurus"
+    # Sign-only mode: all we know is the partner's sun sign.
+    partner_sign: Optional[str] = None  # English sign name, e.g. "Taurus"
+    # Full-chart mode: real birth data, so the reading can use their whole chart.
+    partner_name: Optional[str] = None
+    partner_year: Optional[int] = None
+    partner_month: Optional[int] = None
+    partner_day: Optional[int] = None
+    partner_hour: Optional[int] = 12
+    partner_minute: Optional[int] = 0
+    partner_lat: Optional[float] = None
+    partner_lon: Optional[float] = None
+    partner_timezone: Optional[str] = "Europe/Sofia"
+
+    def has_full_chart(self) -> bool:
+        return None not in (self.partner_year, self.partner_month, self.partner_day,
+                            self.partner_lat, self.partner_lon)
+
+    def as_person(self) -> dict:
+        return {
+            "name": (self.partner_name or "Партньор").strip() or "Партньор",
+            "year": self.partner_year, "month": self.partner_month, "day": self.partner_day,
+            "hour": self.partner_hour or 0, "minute": self.partner_minute or 0,
+            "lat": self.partner_lat, "lon": self.partner_lon,
+            "timezone": self.partner_timezone or "Europe/Sofia",
+        }
 
 class TransitsRequest(BaseModel):
     person_id: int
@@ -1329,48 +1353,189 @@ def build_love_match(person: dict, partner_sign: str) -> dict:
         "points": pairs,
     }
 
+def build_love_match_full(person: dict, partner: dict) -> dict:
+    """Compatibility when the partner's full birth data is known.
+
+    Compares the two charts placement by placement and reports the real
+    cross-aspects between their love-relevant points, not just sign to sign.
+    """
+    my_chart = compute_natal(person)
+    their_chart = compute_natal(partner)
+    mine = {o["name"]: o for o in my_chart["objects"].values()}
+    theirs = {o["name"]: o for o in their_chart["objects"].values()}
+
+    labels = {
+        "Sun": "Слънце (същност)",
+        "Moon": "Луна (емоции)",
+        "Venus": "Венера (любов)",
+        "Mars": "Марс (страст)",
+        "Asc": "Асцендент (първо впечатление)",
+    }
+
+    def deg(obj):
+        """Absolute ecliptic longitude, parsed from the formatted value."""
+        try:
+            parts = obj["longitude"].replace("°", " ").replace("'", " ").replace('"', " ").split()
+            return float(parts[0]) + float(parts[1]) / 60 + float(parts[2]) / 3600
+        except Exception:
+            return None
+
+    # Cross-aspects: every love point of one chart against every love point of the other.
+    orbs = {0: ("Съвпад", 8), 60: ("Секстил", 5), 90: ("Квадрат", 6),
+            120: ("Тригон", 7), 180: ("Опозиция", 8)}
+    cross = []
+    for a_name in LOVE_POINTS:
+        a = mine.get(a_name)
+        if not a:
+            continue
+        a_deg = deg(a)
+        if a_deg is None:
+            continue
+        for b_name in LOVE_POINTS:
+            b = theirs.get(b_name)
+            if not b:
+                continue
+            b_deg = deg(b)
+            if b_deg is None:
+                continue
+            sep = abs(a_deg - b_deg) % 360
+            if sep > 180:
+                sep = 360 - sep
+            for angle, (asp_bg, max_orb) in orbs.items():
+                orb = abs(sep - angle)
+                if orb <= max_orb:
+                    cross.append({
+                        "mine_bg": a["name_bg"], "mine_sign_bg": a["sign_bg"],
+                        "mine_symbol": a["sign_symbol"],
+                        "theirs_bg": b["name_bg"], "theirs_sign_bg": b["sign_bg"],
+                        "theirs_symbol": b["sign_symbol"],
+                        "aspect": asp_bg, "orb": round(orb, 1),
+                        "meaning": meaning_aspect(
+                            {"Съвпад": "Conjunction", "Секстил": "Sextile", "Квадрат": "Square",
+                             "Тригон": "Trine", "Опозиция": "Opposition"}[asp_bg]),
+                    })
+                    break
+    cross.sort(key=lambda c: c["orb"])
+
+    my_sun = mine.get("Sun")
+    their_sun = theirs.get("Sun")
+    my_venus, their_venus = mine.get("Venus"), theirs.get("Venus")
+    el_a = sign_element(my_sun["sign"]) if my_sun else None
+    el_b = sign_element(their_sun["sign"]) if their_sun else None
+    mo_a = sign_modality(my_sun["sign"]) if my_sun else None
+    mo_b = sign_modality(their_sun["sign"]) if their_sun else None
+
+    return {
+        "mode": "full",
+        "partner": {
+            "name": partner["name"],
+            "sign_bg": their_sun["sign_bg"] if their_sun else None,
+            "symbol": their_sun["sign_symbol"] if their_sun else "✦",
+            "moon_bg": theirs["Moon"]["sign_bg"] if theirs.get("Moon") else None,
+            "venus_bg": their_venus["sign_bg"] if their_venus else None,
+            "asc_bg": theirs["Asc"]["sign_bg"] if theirs.get("Asc") else None,
+            "element_bg": ELEMENTS_BG.get(el_b),
+            "modality_bg": MODALITIES_BG.get(mo_b),
+        },
+        "you": {
+            "sun_bg": my_sun["sign_bg"] if my_sun else None,
+            "sun_symbol": my_sun["sign_symbol"] if my_sun else "✦",
+            "venus_bg": my_venus["sign_bg"] if my_venus else None,
+            "venus_symbol": my_venus["sign_symbol"] if my_venus else "✦",
+            "element_bg": ELEMENTS_BG.get(el_a),
+            "modality_bg": MODALITIES_BG.get(mo_a),
+        },
+        "sun_aspect": (lambda a: {"name": a[0], "meaning": a[1]} if a else None)(
+            sign_aspect(my_sun["sign"], their_sun["sign"]) if my_sun and their_sun else None),
+        "elements": element_pair_meaning(el_a, el_b),
+        "modalities": modality_pair_meaning(mo_a, mo_b),
+        "cross_aspects": cross[:14],
+        "partner_points": [
+            {"label": labels[n], "name_bg": theirs[n]["name_bg"],
+             "sign_bg": theirs[n]["sign_bg"], "sign_symbol": theirs[n]["sign_symbol"],
+             "house_bg": theirs[n]["house_bg"]}
+            for n in LOVE_POINTS if theirs.get(n)
+        ],
+    }
+
+def resolve_love_match(data: "LoveMatchRequest", person: dict) -> dict:
+    """Pick full-chart or sign-only compatibility based on what was supplied."""
+    if data.has_full_chart():
+        return build_love_match_full(person, data.as_person())
+    if data.partner_sign not in ZODIAC_ORDER:
+        raise HTTPException(400, "Изберете зодия или въведете пълни данни за партньора.")
+    m = build_love_match(person, data.partner_sign)
+    m["mode"] = "sign"
+    return m
+
 @app.post("/api/love-match")
 def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(get_current_user)):
-    """Sign-level love compatibility (computed, no AI)."""
+    """Love compatibility — full charts when birth data is given, otherwise sign to sign."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
-    if data.partner_sign not in ZODIAC_ORDER:
-        raise HTTPException(400, "Невалиден зодиакален знак.")
-    return build_love_match(p, data.partner_sign)
+    return resolve_love_match(data, p)
 
 @app.post("/api/love-match/interpretation")
 def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
                                   user: Tuple[int, str] = Depends(get_current_user)):
-    """AI love reading for the person against a partner's sun sign."""
+    """AI love reading — uses the partner's full chart when available."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
         raise HTTPException(404, "Person not found")
-    if data.partner_sign not in ZODIAC_ORDER:
-        raise HTTPException(400, "Невалиден зодиакален знак.")
 
-    cache_key = f"love:{data.partner_sign}"
+    full = data.has_full_chart()
+    if full:
+        cache_key = (f"love-full:{data.partner_year}-{data.partner_month}-{data.partner_day}"
+                     f"-{data.partner_hour}-{data.partner_minute}"
+                     f"-{round(data.partner_lat or 0, 3)}-{round(data.partner_lon or 0, 3)}")
+    else:
+        if data.partner_sign not in ZODIAC_ORDER:
+            raise HTTPException(400, "Изберете зодия или въведете пълни данни за партньора.")
+        cache_key = f"love:{data.partner_sign}"
+
     if not refresh:
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"]}
 
-    m = build_love_match(p, data.partner_sign)
+    m = resolve_love_match(data, p)
 
-    points_txt = "\n".join(
-        f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
-        f" ({pt['aspect_meaning']})"
-        for pt in m["points"] if pt["aspect"]
-    )
+    if full:
+        partner_txt = "\n".join(
+            f"- {pt['label']}: {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}"
+            for pt in m["partner_points"]
+        )
+        cross_txt = "\n".join(
+            f"- твоят {c['mine_bg']} ({c['mine_sign_bg']}) {c['aspect']} неговата/нейната "
+            f"{c['theirs_bg']} ({c['theirs_sign_bg']}), орб {c['orb']}° — {c['meaning']}"
+            for c in m["cross_aspects"]
+        ) or "няма аспекти в рамките на орба"
+        context = f"""=== ТВОЯТА КАРТА (точно изчислена) ===
+Слънце: {m['you']['sun_bg']} · Венера: {m['you']['venus_bg']}
+Стихия: {m['you']['element_bg']} · Качество: {m['you']['modality_bg']}
 
-    prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между конкретен човек и партньор от даден зодиакален знак.
+=== КАРТАТА НА ПАРТНЬОРА ({m['partner']['name']}) — точно изчислена ===
+{partner_txt}
+Стихия: {m['partner']['element_bg']} · Качество: {m['partner']['modality_bg']}
 
-Малко име (обръщай се само с него): {first_name(p['name'])}
+=== РЕАЛНИ АСПЕКТИ МЕЖДУ ДВЕТЕ КАРТИ (по-малък орб = по-силен) ===
+{cross_txt}
 
-=== ТВОЯТА КАРТА (точно изчислена) ===
+Стихии: {m['elements']}
+Качества: {m['modalities']}
+
+Имаш пълните рождени данни и на двамата, затова говори конкретно за техните карти — не общо за зодиите."""
+    else:
+        points_txt = "\n".join(
+            f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
+            f" ({pt['aspect_meaning']})"
+            for pt in m["points"] if pt["aspect"]
+        )
+        context = f"""=== ТВОЯТА КАРТА (точно изчислена) ===
 Слънце: {m['you']['sun_bg']} · Венера: {m['you']['venus_bg']}
 Стихия: {m['you']['element_bg']} · Качество: {m['you']['modality_bg']}
 
@@ -1385,7 +1550,13 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 Стихии: {m['elements']}
 Качества: {m['modalities']}
 
-ВАЖНО: знаем само зодията на партньора, не и точния му час на раждане. Затова говори за тенденции на ниво знак, а не за неговата пълна карта. Ако някъде е нужно повече, кажи честно, че за по-точен прочит трябват и неговите час и място на раждане.
+ВАЖНО: знаем само зодията на партньора, не и точния му час на раждане. Затова говори за тенденции на ниво знак, а не за неговата пълна карта. Ако някъде е нужно повече, кажи честно, че за по-точен прочит трябват и неговите час и място на раждане."""
+
+    prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между двама души.
+
+Малко име (обръщай се само с него): {first_name(p['name'])}
+
+{context}
 
 === ЗАДАЧА ===
 Напиши любовен хороскоп в следната структура:

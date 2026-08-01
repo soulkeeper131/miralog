@@ -714,6 +714,61 @@
         .day-entry .day-aspect { font-size: 0.85rem; color: var(--text-soft); padding: 2px 0; }
 
         /* --- love horoscope --- */
+        .mode-switch {
+            display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 18px;
+            background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 12px;
+        }
+        .mode-btn {
+            padding: 8px 16px; border-radius: 9px; border: none; cursor: pointer;
+            background: transparent; color: var(--text-muted);
+            font-family: var(--font-body); font-size: 0.85rem; font-weight: 500;
+            min-height: 40px; transition: background-color .15s ease, color .15s ease;
+        }
+        .mode-btn:hover { color: var(--accent-light); }
+        .mode-btn.active {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            color: #fff; font-weight: 600;
+        }
+        .mode-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        #mode-full-panel .form-group { margin-bottom: 14px; }
+        #mode-full-panel label {
+            display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem;
+        }
+        #mode-full-panel input {
+            width: 100%; padding: 10px 12px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-family: var(--font-body); font-size: 16px; min-height: 44px;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        #mode-full-panel input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        #mode-full-panel .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        #mode-full-panel .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        #mode-full-panel .hint { font-size: 0.72rem; color: var(--text-dim); margin-top: 3px; }
+
+        .place-group { position: relative; }
+        .place-results {
+            display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 20;
+            margin-top: 4px; max-height: 240px; overflow-y: auto;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; box-shadow: var(--shadow-card);
+        }
+        .place-results.open { display: block; }
+        .place-item {
+            padding: 10px 14px; cursor: pointer; font-size: 0.85rem; line-height: 1.45;
+            border-bottom: 1px solid var(--border-soft); transition: background-color .12s ease;
+        }
+        .place-item:last-child { border-bottom: none; }
+        .place-item:hover { background: var(--surface-thistle); }
+        .place-item .pl-name { color: var(--text-heading); font-weight: 600; }
+        .place-item .pl-detail { color: var(--text-muted); font-size: 0.78rem; }
+        .place-status { padding: 12px 14px; font-size: 0.82rem; color: var(--text-muted); text-align: center; }
+
+        .love-orb {
+            font-size: 0.72rem; color: var(--text-dim);
+            background: var(--surface-sky); padding: 2px 7px; border-radius: 99px; margin-left: 4px;
+        }
+
         .sign-grid {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
             gap: 10px;
@@ -1130,11 +1185,71 @@
 
         <div id="tab-love" class="tab-content">
             <div class="section">
-                <h2>Избери зодията на партньора</h2>
-                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
-                    Достатъчна е само зодията. Ако знаеш и точния час и място на раждане, направи пълна синастрия от <a href="/synastry" style="color:var(--accent-light);">Съвместимост</a>.
-                </p>
-                <div id="sign-picker" class="sign-grid"></div>
+                <h2>Партньорът</h2>
+                <div class="mode-switch">
+                    <button class="mode-btn active" id="modeSign" onclick="setLoveMode('sign')">Знам само зодията</button>
+                    <button class="mode-btn" id="modeFull" onclick="setLoveMode('full')">Знам рождените данни</button>
+                </div>
+
+                <div id="mode-sign-panel">
+                    <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                        Избери зодията и виж съвместимостта. С пълни рождени данни разчитането е доста по-точно.
+                    </p>
+                    <div id="sign-picker" class="sign-grid"></div>
+                </div>
+
+                <div id="mode-full-panel" style="display:none;">
+                    <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                        С дата, час и място сравняваме двете карти реално — планета по планета.
+                    </p>
+                    <div id="partnerError" class="error" style="display:none; margin-bottom:14px;"></div>
+                    <div class="form-group">
+                        <label>Име</label>
+                        <input type="text" id="pName" placeholder="Име на партньора">
+                    </div>
+                    <div class="row-3">
+                        <div class="form-group">
+                            <label>Година</label>
+                            <input type="number" id="pYear" placeholder="1990" min="1800" max="2100">
+                        </div>
+                        <div class="form-group">
+                            <label>Месец</label>
+                            <input type="number" id="pMonth" placeholder="5" min="1" max="12">
+                        </div>
+                        <div class="form-group">
+                            <label>Ден</label>
+                            <input type="number" id="pDay" placeholder="12" min="1" max="31">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Час</label>
+                            <input type="number" id="pHour" value="12" min="0" max="23">
+                        </div>
+                        <div class="form-group">
+                            <label>Минути</label>
+                            <input type="number" id="pMinute" value="0" min="0" max="59">
+                        </div>
+                    </div>
+                    <div class="form-group place-group">
+                        <label>Място на раждане</label>
+                        <input type="text" id="pPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
+                        <div id="pPlaceResults" class="place-results"></div>
+                        <div class="hint">Потърси населено място — координатите и часовата зона се попълват сами.</div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Геогр. ширина</label>
+                            <input type="number" id="pLat" step="any" placeholder="42.6977">
+                        </div>
+                        <div class="form-group">
+                            <label>Геогр. дължина</label>
+                            <input type="number" id="pLon" step="any" placeholder="23.3219">
+                        </div>
+                    </div>
+                    <input type="hidden" id="pTimezone" value="Europe/Sofia">
+                    <button class="btn" onclick="submitPartnerChart()">Изчисли съвместимост</button>
+                </div>
             </div>
             <div id="love-result" style="display:none;">
                 <div class="section">
@@ -1744,6 +1859,100 @@
 
         // --- love horoscope ---
         let selectedSign = null;
+        // Whichever payload was last submitted — sign-only or full birth data.
+        let lovePayload = null;
+        let partnerPlaceTimer = null;
+
+        function setLoveMode(mode) {
+            document.getElementById('modeSign').classList.toggle('active', mode === 'sign');
+            document.getElementById('modeFull').classList.toggle('active', mode === 'full');
+            document.getElementById('mode-sign-panel').style.display = mode === 'sign' ? '' : 'none';
+            document.getElementById('mode-full-panel').style.display = mode === 'full' ? '' : 'none';
+        }
+
+        function closePartnerPlaces() {
+            const box = document.getElementById('pPlaceResults');
+            box.classList.remove('open');
+            box.innerHTML = '';
+        }
+
+        function pickPartnerPlace(lat, lon, tz, label) {
+            document.getElementById('pLat').value = lat;
+            document.getElementById('pLon').value = lon;
+            if (tz) document.getElementById('pTimezone').value = tz;
+            document.getElementById('pPlace').value = label;
+            closePartnerPlaces();
+        }
+
+        async function searchPartnerPlace(query) {
+            const box = document.getElementById('pPlaceResults');
+            box.innerHTML = '<div class="place-status">Търсене...</div>';
+            box.classList.add('open');
+            try {
+                const resp = await fetch('/api/geocode?q=' + encodeURIComponent(query), { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                const results = data.results || [];
+                if (!results.length) {
+                    box.innerHTML = '<div class="place-status">Няма намерени места.</div>';
+                    return;
+                }
+                box.innerHTML = results.map(r => {
+                    const name = escapeHtmlText(r.place || r.label);
+                    return `<div class="place-item" onclick="pickPartnerPlace(${r.lat}, ${r.lon}, '${escapeHtmlText(r.timezone || '')}', '${name.replace(/'/g, "\\'")}')">
+                        <div class="pl-name">${name}</div>
+                        <div class="pl-detail">${escapeHtmlText(r.label)}</div>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                box.innerHTML = '<div class="place-status">Грешка при търсене: ' + escapeHtmlText(e.message) + '</div>';
+            }
+        }
+
+        function submitPartnerChart() {
+            const err = document.getElementById('partnerError');
+            const val = id => document.getElementById(id).value.trim();
+            const year = val('pYear'), month = val('pMonth'), day = val('pDay');
+            const lat = val('pLat'), lon = val('pLon');
+
+            if (!year || !month || !day) {
+                err.textContent = 'Моля, попълни дата на раждане (година, месец, ден).';
+                err.style.display = 'block';
+                return;
+            }
+            if (!lat || !lon) {
+                err.textContent = 'Моля, потърси мястото на раждане или въведи координати.';
+                err.style.display = 'block';
+                return;
+            }
+            err.style.display = 'none';
+
+            lovePayload = {
+                person_id: {{ person.id }},
+                partner_name: val('pName') || 'Партньор',
+                partner_year: Number(year), partner_month: Number(month), partner_day: Number(day),
+                partner_hour: Number(val('pHour') || 12), partner_minute: Number(val('pMinute') || 0),
+                partner_lat: Number(lat), partner_lon: Number(lon),
+                partner_timezone: document.getElementById('pTimezone').value || 'Europe/Sofia',
+            };
+            document.getElementById('love-result').style.display = 'block';
+            loadLoveMatch();
+        }
+
+        // Debounced so we stay within Nominatim's one-request-per-second policy.
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('pPlace');
+            if (!input) return;
+            input.addEventListener('input', () => {
+                const q = input.value.trim();
+                clearTimeout(partnerPlaceTimer);
+                if (q.length < 2) { closePartnerPlaces(); return; }
+                partnerPlaceTimer = setTimeout(() => searchPartnerPlace(q), 600);
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#mode-full-panel .place-group')) closePartnerPlaces();
+            });
+        });
 
         async function loadSignPicker() {
             const el = document.getElementById('sign-picker');
@@ -1765,6 +1974,7 @@
 
         function pickSign(sign) {
             selectedSign = sign;
+            lovePayload = { person_id: {{ person.id }}, partner_sign: sign };
             document.querySelectorAll('.sign-btn').forEach(b => {
                 b.classList.toggle('active', b.dataset.sign === sign);
             });
@@ -1786,7 +1996,7 @@
                 const resp = await fetch('/api/love-match', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ person_id: {{ person.id }}, partner_sign: selectedSign })
+                    body: JSON.stringify(lovePayload)
                 });
                 if (!resp.ok) {
                     const d = await resp.json().catch(() => ({}));
@@ -1806,28 +2016,67 @@
                     </div>
                     <div class="love-side">
                         <span class="love-glyph">${d.partner.symbol}</span>
-                        <div class="love-side-label">Партньор</div>
-                        <div class="love-side-sign">${d.partner.sign_bg}</div>
+                        <div class="love-side-label">${d.mode === 'full' ? escapeHtmlText(d.partner.name || 'Партньор') : 'Партньор'}</div>
+                        <div class="love-side-sign">${d.partner.sign_bg || ''}</div>
                         <div class="love-side-meta">${d.partner.element_bg} · ${d.partner.modality_bg}</div>
                     </div>
                 </div>`;
 
-                html += '<div class="love-cards">';
-                d.points.forEach(pt => {
-                    if (!pt.aspect) return;
-                    html += `<div class="love-card ${aspectClass(pt.aspect)}">
-                        <div class="love-card-top">
-                            <span class="love-card-glyph">${pt.sign_symbol}</span>
-                            <div>
-                                <div class="love-card-label">${pt.label}</div>
-                                <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                if (d.mode === 'full') {
+                    // Their own placements, then the real cross-aspects between the charts.
+                    if (d.partner_points && d.partner_points.length) {
+                        html += '<h3 class="prof-h3">Картата на партньора</h3><div class="love-cards">';
+                        d.partner_points.forEach(pt => {
+                            html += `<div class="love-card">
+                                <div class="love-card-top">
+                                    <span class="love-card-glyph">${pt.sign_symbol}</span>
+                                    <div>
+                                        <div class="love-card-label">${pt.label}</div>
+                                        <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                                        <div class="love-side-meta">${pt.house_bg}</div>
+                                    </div>
+                                </div>
+                            </div>`;
+                        });
+                        html += '</div>';
+                    }
+                    if (d.cross_aspects && d.cross_aspects.length) {
+                        html += '<h3 class="prof-h3">Аспекти между двете карти</h3><div class="love-cards">';
+                        d.cross_aspects.forEach(c => {
+                            html += `<div class="love-card ${aspectClass(c.aspect)}">
+                                <div class="love-card-top">
+                                    <span class="love-card-glyph">${c.mine_symbol}</span>
+                                    <div>
+                                        <div class="love-card-label">твоят ${c.mine_bg} · неговият ${c.theirs_bg}</div>
+                                        <div class="love-card-sign">${c.mine_sign_bg} — ${c.theirs_sign_bg}</div>
+                                    </div>
+                                    <span class="love-badge">${c.aspect}</span>
+                                </div>
+                                <p class="love-card-meaning">${c.meaning} <span class="love-orb">орб ${c.orb}°</span></p>
+                            </div>`;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<p style="color:var(--text-muted); margin-bottom:16px;">Няма аспекти в рамките на орба между любовните точки на двете карти.</p>';
+                    }
+                } else {
+                    html += '<div class="love-cards">';
+                    (d.points || []).forEach(pt => {
+                        if (!pt.aspect) return;
+                        html += `<div class="love-card ${aspectClass(pt.aspect)}">
+                            <div class="love-card-top">
+                                <span class="love-card-glyph">${pt.sign_symbol}</span>
+                                <div>
+                                    <div class="love-card-label">${pt.label}</div>
+                                    <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                                </div>
+                                <span class="love-badge">${pt.aspect}</span>
                             </div>
-                            <span class="love-badge">${pt.aspect}</span>
-                        </div>
-                        <p class="love-card-meaning">${pt.aspect_meaning}</p>
-                    </div>`;
-                });
-                html += '</div>';
+                            <p class="love-card-meaning">${pt.aspect_meaning}</p>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
 
                 if (d.elements || d.modalities) {
                     html += '<div class="love-strips">';
@@ -1853,7 +2102,7 @@
                 const resp = await fetch(url, {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ person_id: {{ person.id }}, partner_sign: selectedSign })
+                    body: JSON.stringify(lovePayload)
                 });
                 const data = await resp.json();
                 if (data.interpretation) {
