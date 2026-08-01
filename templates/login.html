@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Вход — МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -11,9 +13,17 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
             --bg: #0a0a1a;
             --bg-card: #1a1a2e;
             --bg-input: #16162a;
@@ -30,8 +40,28 @@
             --danger-bg: #2d1b1b;
             --danger-text: #fca5a5;
             --success: #22c55e;
+            /* --- pastel palette (raw tones, identical in both themes) --- */
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
             --bg: #faf7fb;
             --bg-card: #ffffff;
             --bg-input: #f7f1f9;
@@ -48,9 +78,24 @@
             --danger-bg: #fff0f5;
             --danger-text: #c2255c;
             --success: #16a34a;
+            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
         }
         body {
-            font-family: -apple-system, system-ui, sans-serif;
+            font-family: var(--font-body);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
             background: var(--bg);
             color: var(--text-heading);
             min-height: 100dvh;
@@ -78,9 +123,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.2s, border-color 0.2s;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
             z-index: 200;
         }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+        .theme-toggle:active { transform: translateY(0); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .container {
             width: 100%;
             max-width: 420px;
@@ -88,29 +136,41 @@
             padding-top: max(24px, env(safe-area-inset-top));
             padding-bottom: max(24px, env(safe-area-inset-bottom));
         }
-        .logo {
-            text-align: center;
-            margin-bottom: 8px;
-            font-size: 2.5rem;
+        .logo-img {
+            display: block;
+            margin: 0 auto 12px;
+            width: 112px;
+            height: 112px;
+            border-radius: 50%;
+            object-fit: cover;
+            /* soft pastel halo ringing the mark, then the lifted shadow */
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 8px var(--surface-thistle), var(--shadow-raised);
         }
         h1 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1.25;
             color: var(--text-heading);
-            font-size: 1.8rem;
+            font-size: 2rem;
             text-align: center;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
         }
         .subtitle {
             text-align: center;
             color: var(--text-muted);
             margin-bottom: 28px;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
         }
         .card {
-            background: var(--bg-card);
+            /* soft pastel wash layered over the approved --bg-card */
+            background: linear-gradient(var(--surface-thistle), var(--surface-icy)), var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 28px;
-            transition: background-color 0.2s, border-color 0.2s;
+            box-shadow: var(--shadow-card);
+            transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
         .form-group {
             margin-bottom: 18px;
@@ -119,42 +179,49 @@
             display: block;
             margin-bottom: 6px;
             color: var(--accent-light);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             font-weight: 500;
         }
         input {
             width: 100%;
             padding: 12px 14px;
-            border-radius: 10px;
+            border-radius: 12px;
             border: 1px solid var(--border);
             background: var(--bg-input);
             color: var(--text);
+            font-family: var(--font-body);
             font-size: 16px;
             min-height: 44px;
             min-width: 44px;
-            transition: border-color 0.2s;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
         }
+        input:hover { border-color: var(--accent-light); }
         input:focus {
             outline: none;
             border-color: var(--accent);
+            box-shadow: var(--focus-ring);
         }
         .btn {
             width: 100%;
             padding: 12px;
-            border-radius: 10px;
+            border-radius: 12px;
             border: none;
             background: var(--accent);
             color: white;
-            font-size: 1rem;
+            font-family: var(--font-body);
+            font-size: 1.05rem;
             font-weight: 600;
+            letter-spacing: 0.01em;
             cursor: pointer;
             min-height: 44px;
             min-width: 44px;
-            transition: background 0.2s;
+            transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
             margin-top: 4px;
         }
-        .btn:hover { background: var(--accent-hover); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-raised); }
+        .btn:active { transform: translateY(0); box-shadow: none; }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .error-msg {
             background: var(--danger-bg);
@@ -171,7 +238,7 @@
         .footer {
             text-align: center;
             margin-top: 20px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: var(--text-muted);
         }
         .footer a {
@@ -201,7 +268,7 @@
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <div class="logo">🔮</div>
+        <img class="logo-img" src="/static/logo-header.png" alt="МираСкоп">
         <h1>МираСкоп</h1>
         <p class="subtitle">Влезте в своя астрологичен профил</p>
 

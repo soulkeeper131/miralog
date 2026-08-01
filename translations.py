@@ -11,6 +11,44 @@ SIGNS = {
     "Pisces": "Риби",
 }
 
+SIGN_SYMBOLS = {
+    "Aries": "♈", "Taurus": "♉", "Gemini": "♊", "Cancer": "♋",
+    "Leo": "♌", "Virgo": "♍", "Libra": "♎", "Scorpio": "♏",
+    "Sagittarius": "♐", "Capricorn": "♑", "Aquarius": "♒",
+    "Pisces": "♓",
+}
+
+# Element (fire/earth/air/water) and modality (cardinal/fixed/mutable) per sign —
+# used to profile the overall temperament of a chart.
+SIGN_ELEMENTS = {
+    "Aries": "fire", "Leo": "fire", "Sagittarius": "fire",
+    "Taurus": "earth", "Virgo": "earth", "Capricorn": "earth",
+    "Gemini": "air", "Libra": "air", "Aquarius": "air",
+    "Cancer": "water", "Scorpio": "water", "Pisces": "water",
+}
+
+SIGN_MODALITIES = {
+    "Aries": "cardinal", "Cancer": "cardinal", "Libra": "cardinal", "Capricorn": "cardinal",
+    "Taurus": "fixed", "Leo": "fixed", "Scorpio": "fixed", "Aquarius": "fixed",
+    "Gemini": "mutable", "Virgo": "mutable", "Sagittarius": "mutable", "Pisces": "mutable",
+}
+
+ELEMENTS_BG = {"fire": "Огън", "earth": "Земя", "air": "Въздух", "water": "Вода"}
+MODALITIES_BG = {"cardinal": "Кардинални", "fixed": "Фиксирани", "mutable": "Променливи"}
+
+ELEMENT_MEANINGS = {
+    "fire": "Ентусиазъм, инициатива и действие. Води със сърце и вдъхновение.",
+    "earth": "Практичност, стабилност и търпение. Гради с ръце и с реални резултати.",
+    "air": "Мисъл, комуникация и идеи. Свързва се със света чрез разбиране.",
+    "water": "Емоция, интуиция и дълбочина. Усеща света, преди да го разбере.",
+}
+
+MODALITY_MEANINGS = {
+    "cardinal": "Започва нещата — инициатор, който поставя начала и повежда.",
+    "fixed": "Задържа нещата — упорит, довършва започнатото и не се отказва лесно.",
+    "mutable": "Променя нещата — гъвкав, приспособява се и свързва различни светове.",
+}
+
 OBJECTS = {
     "Asc": "Асцендент", "Desc": "Десцендент", "MC": "Медиум Коели", "IC": "Имум Коели",
     "ARMC": "ARMC",
@@ -69,6 +107,83 @@ HOUSE_NAMES = {
 
 def tr_sign(value):
     return SIGNS.get(value, value) if value else value
+
+
+def sign_symbol(value):
+    """Zodiac glyph for a sign name, e.g. 'Capricorn' -> '♑'."""
+    return SIGN_SYMBOLS.get(value, "✦") if value else "✦"
+
+
+def sign_element(value):
+    """Element key for a sign, e.g. 'Capricorn' -> 'earth'."""
+    return SIGN_ELEMENTS.get(value)
+
+
+def sign_modality(value):
+    """Modality key for a sign, e.g. 'Capricorn' -> 'cardinal'."""
+    return SIGN_MODALITIES.get(value)
+
+
+# Signs in zodiacal order — the distance between two of them is what gives the
+# classical aspect between the signs (conjunction, sextile, square, trine, opposition).
+ZODIAC_ORDER = [
+    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+]
+
+SIGN_ASPECTS = {
+    0: ("Съвпад", "Един и същ знак — разбирате се без думи, но си споделяте и едни и същи слепи петна."),
+    1: ("Полусекстил", "Съседни знаци — различни езици, които с усилие се научават един друг."),
+    2: ("Секстил", "Приятелски аспект — лесна симпатия и общи интереси, без напрежение."),
+    3: ("Квадрат", "Напрегнат аспект — привличате се и се дразните; расте се чрез търкане."),
+    4: ("Тригон", "Най-хармоничният аспект — една стихия, естествено разбирателство."),
+    5: ("Квинконс", "Несъответствие — виждате света толкова различно, че трябва съзнателен превод."),
+    6: ("Опозиция", "Огледални противоположности — силно привличане и постоянен баланс."),
+}
+
+ELEMENT_PAIRS = {
+    ("fire", "fire"): "Двоен огън — много страст и много искри, буквално.",
+    ("fire", "air"): "Огън и въздух — въздухът раздухва огъня; лека, вдъхновяваща комбинация.",
+    ("fire", "earth"): "Огън и земя — единият бърза, другият стъпва здраво; учат се на търпение.",
+    ("fire", "water"): "Огън и вода — силни емоции срещу силна воля; или пара, или гасене.",
+    ("earth", "earth"): "Двойна земя — стабилност и сигурност, но внимавайте да не затънете в рутина.",
+    ("earth", "water"): "Земя и вода — най-плодородната комбинация; водата храни, земята дава форма.",
+    ("earth", "air"): "Земя и въздух — идеите срещу практиката; допълват се, ако се изслушват.",
+    ("air", "air"): "Двоен въздух — безкрайни разговори и идеи, но емоциите остават недоизказани.",
+    ("air", "water"): "Въздух и вода — разумът среща чувството; трябва превод и от двете страни.",
+    ("water", "water"): "Двойна вода — дълбока емоционална връзка, с риск да се удавите един в друг.",
+}
+
+MODALITY_PAIRS = {
+    ("cardinal", "cardinal"): "И двамата започвате неща — много инициатива, но и борба кой води.",
+    ("cardinal", "fixed"): "Единият започва, другият задържа — добър екип, ако няма инат.",
+    ("cardinal", "mutable"): "Единият води, другият се приспособява — гладко, стига да не се губи посоката.",
+    ("fixed", "fixed"): "И двамата държите на своето — стабилно, но промяната идва трудно.",
+    ("fixed", "mutable"): "Единият държи курса, другият внася гъвкавост — балансирано съчетание.",
+    ("mutable", "mutable"): "И двамата сте гъвкави — лесно, но понякога никой не поема руля.",
+}
+
+
+def sign_distance(sign_a, sign_b):
+    """Shortest distance between two signs in the zodiac, in sign-steps (0-6)."""
+    if sign_a not in ZODIAC_ORDER or sign_b not in ZODIAC_ORDER:
+        return None
+    raw = abs(ZODIAC_ORDER.index(sign_a) - ZODIAC_ORDER.index(sign_b))
+    return min(raw, 12 - raw)
+
+
+def sign_aspect(sign_a, sign_b):
+    """Classical aspect between two signs, as (name, meaning)."""
+    d = sign_distance(sign_a, sign_b)
+    return SIGN_ASPECTS.get(d) if d is not None else None
+
+
+def element_pair_meaning(el_a, el_b):
+    return ELEMENT_PAIRS.get((el_a, el_b)) or ELEMENT_PAIRS.get((el_b, el_a), "")
+
+
+def modality_pair_meaning(mo_a, mo_b):
+    return MODALITY_PAIRS.get((mo_a, mo_b)) or MODALITY_PAIRS.get((mo_b, mo_a), "")
 
 
 def tr_object(value):

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ person.name }} — Натална карта | МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -11,9 +13,18 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --shadow-inner-card: 0 2px 10px rgba(0,0,0,0.28);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
             --bg: #0a0a1a;
             --bg-card: #1a1a2e;
             --bg-input: #16162a;
@@ -32,8 +43,29 @@
             --danger: #ef4444;
             --danger-bg: #2d1b1b;
             --danger-text: #fca5a5;
+            /* --- pastel palette (raw tones, identical in both themes) --- */
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --shadow-inner-card: 0 1px 3px rgba(45,36,56,0.06);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
             --bg: #faf7fb;
             --bg-card: #ffffff;
             --bg-input: #f7f1f9;
@@ -52,8 +84,19 @@
             --danger: #c2255c;
             --danger-bg: #fff0f5;
             --danger-text: #c2255c;
+            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
         }
-        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
+        body { font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; background: var(--bg); color: var(--text); min-height: 100dvh; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); transition: background-color 0.2s, color 0.2s; }
         .theme-toggle {
             position: fixed;
             top: max(16px, env(safe-area-inset-top));
@@ -69,33 +112,74 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.2s, border-color 0.2s;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
             z-index: 200;
         }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+        .theme-toggle:active { transform: translateY(0); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; margin-bottom: 16px; min-height: 44px; min-width: 44px; }
+        .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; min-height: 44px; transition: color 0.15s ease; }
         .back-link:hover { color: var(--accent-light); }
 
-        .chart-header { background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-        .chart-header h1 { color: var(--text-heading); font-size: 1.8rem; }
-        .chart-meta { color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; }
-
-        .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
-        .tab {
-            padding: 8px 16px; border-radius: 8px; cursor: pointer; min-height: 44px; min-width: 44px;
-            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
-            font-size: 0.9rem; transition: all .2s; user-select: none;
+        /* shared page mark: small logo sitting beside the back-link */
+        .page-nav {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
         }
-        .tab.active { background: var(--accent); border-color: var(--accent); color: white; }
-        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); }
+        .page-logo {
+            width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+            flex-shrink: 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 3px var(--surface-thistle);
+        }
+
+        .chart-header {
+            background: var(--bg-card); border-radius: 16px; padding: 20px; margin-bottom: 20px;
+            box-shadow: var(--shadow-card);
+        }
+        .chart-header h1 {
+            font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; line-height: 1.25;
+            color: var(--text-heading); font-size: 2rem;
+        }
+        .chart-meta { color: var(--text-muted); font-size: 0.85rem; margin-top: 8px; }
+
+        .tabs {
+            display: flex; gap: 5px; margin-bottom: 20px;
+            flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+            padding-bottom: 2px;
+            scrollbar-width: none; -ms-overflow-style: none;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x proximity;
+        }
+        .tabs::-webkit-scrollbar { display: none; }
+        .tab {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 8px 13px; border-radius: 11px; cursor: pointer; min-height: 44px;
+            flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start;
+            background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
+            font-family: var(--font-body); font-size: 0.82rem; font-weight: 500;
+            letter-spacing: -0.005em;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+            user-select: none;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            border-color: var(--accent); color: white; font-weight: 600;
+            box-shadow: var(--shadow-raised);
+        }
+        .tab:hover:not(.active) { border-color: var(--accent); color: var(--accent-light); transform: translateY(-1px); }
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
         .section {
-            background: var(--bg-card); border-radius: 12px; padding: 20px; margin-bottom: 16px;
+            background: var(--bg-card); border-radius: 16px; padding: 20px; margin-bottom: 16px;
+            box-shadow: var(--shadow-card);
         }
-        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 12px; }
+        .section h2 {
+            color: var(--accent-light); font-size: 1.05rem; font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 12px;
+        }
 
         /* ── Planets card grid ── */
         .planet-cards {
@@ -105,12 +189,13 @@
         }
         .planet-card {
             background: var(--bg-input);
-            border-radius: 10px;
+            border-radius: 14px;
             padding: 16px 18px;
             border: 1px solid var(--border-soft);
-            transition: border-color 0.2s;
+            box-shadow: var(--shadow-inner-card);
+            transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .planet-card:hover { border-color: var(--accent); }
+        .planet-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
         .planet-card-header {
             display: flex;
             align-items: center;
@@ -129,8 +214,10 @@
             min-width: 0;
         }
         .planet-title-name {
-            font-weight: 700;
+            font-weight: 600;
             font-size: 1.05rem;
+            letter-spacing: -0.01em;
+            line-height: 1.25;
             color: var(--text-heading);
         }
         .planet-title-type {
@@ -141,8 +228,8 @@
         }
         .planet-badge {
             display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
+            padding: 3px 9px;
+            border-radius: 999px;
             font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.03em;
@@ -150,16 +237,16 @@
             flex-shrink: 0;
         }
         .planet-badge.retro {
-            background: var(--danger-bg);
-            color: var(--danger-text);
+            background: var(--surface-pink);
+            color: var(--on-pink);
         }
         .planet-badge.direct {
-            background: rgba(34,197,94,0.12);
-            color: #22c55e;
+            background: var(--surface-icy);
+            color: var(--on-icy);
         }
         .planet-badge.stationary {
-            background: rgba(251,191,36,0.12);
-            color: #fbbf24;
+            background: var(--surface-petal);
+            color: var(--on-thistle);
         }
         .planet-detail {
             margin-bottom: 7px;
@@ -200,9 +287,17 @@
         .planet-meaning .meaning-line .ml-icon {
             position: absolute;
             left: 0;
-            top: 6px;
+            top: 4px;
             font-size: 0.85rem;
-            opacity: 0.7;
+            opacity: 0.9;
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: var(--surface-thistle);
+            line-height: 1;
         }
         .planet-meaning .meaning-line strong {
             color: var(--text-heading);
@@ -222,12 +317,13 @@
         }
         .aspect-card {
             background: var(--bg-input);
-            border-radius: 10px;
+            border-radius: 14px;
             padding: 16px 18px;
             border: 1px solid var(--border-soft);
-            transition: border-color 0.2s;
+            box-shadow: var(--shadow-inner-card);
+            transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .aspect-card:hover { border-color: var(--accent); }
+        .aspect-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
         .aspect-card-header {
             display: flex;
             align-items: center;
@@ -246,8 +342,10 @@
             min-width: 0;
         }
         .aspect-title-name {
-            font-weight: 700;
+            font-weight: 600;
             font-size: 1.05rem;
+            letter-spacing: -0.01em;
+            line-height: 1.25;
             color: var(--text-heading);
         }
         .aspect-title-sub {
@@ -258,18 +356,19 @@
         }
         .aspect-badge {
             display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
+            padding: 3px 9px;
+            border-radius: 999px;
             font-size: 0.7rem;
             font-weight: 600;
             letter-spacing: 0.03em;
             text-transform: uppercase;
             flex-shrink: 0;
         }
-        .aspect-badge.major { background: rgba(245,158,11,0.12); color: #f59e0b; }
-        .aspect-badge.harmony { background: rgba(34,197,94,0.12); color: #22c55e; }
-        .aspect-badge.challenge { background: rgba(239,68,68,0.12); color: #ef4444; }
-        .aspect-badge.minor { background: rgba(99,102,241,0.12); color: #6366f1; }
+        /* semantics preserved: major=important, harmony=pleasant, challenge=tense, minor=neutral */
+        .aspect-badge.major { background: var(--surface-thistle); color: var(--on-thistle); }
+        .aspect-badge.harmony { background: var(--surface-icy); color: var(--on-icy); }
+        .aspect-badge.challenge { background: var(--surface-pink); color: var(--on-pink); }
+        .aspect-badge.minor { background: var(--surface-sky); color: var(--on-sky); }
         .aspect-detail {
             margin-bottom: 7px;
             font-size: 0.88rem;
@@ -337,72 +436,460 @@
             .aspect-title-name { font-size: 0.95rem; }
             .aspect-detail { font-size: 0.83rem; }
             .aspect-meaning { font-size: 0.8rem; }
+        }
 
+        /* AI-generated prose: comfortable measure (~68ch) and generous leading */
         .interpretation {
-            white-space: pre-wrap; line-height: 1.8; font-size: 0.95rem;
+            line-height: 1.8; font-size: 0.97rem;
             color: var(--text-softer);
+            max-width: 68ch;
+            text-align: left;
+        }
+        .interpretation p { margin: 0 0 1.05em; }
+        .interpretation p:last-child { margin-bottom: 0; }
+        .interpretation strong { color: var(--text-heading); font-weight: 600; }
+        .interpretation em { color: var(--text); font-style: italic; }
+
+        /* section headings the model emits (### or "1. **Title**") */
+        .interpretation .int-h {
+            display: flex; align-items: baseline; gap: 10px;
+            color: var(--text-heading); font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.35;
+            margin: 1.9em 0 0.7em;
+            padding-bottom: 0.45em;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .interpretation .int-h:first-child { margin-top: 0; }
+        .interpretation .int-h1 { font-size: 1.15rem; }
+        .interpretation .int-h2 { font-size: 1.05rem; }
+        .interpretation .int-h3 { font-size: 0.98rem; }
+        .interpretation .int-num {
+            flex-shrink: 0;
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--surface-thistle); color: var(--accent-light);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.78rem; font-weight: 700;
+        }
+
+        .interpretation .int-list {
+            margin: 0 0 1.05em; padding-left: 0; list-style: none;
+        }
+        .interpretation .int-list li {
+            position: relative; padding-left: 22px; margin-bottom: 0.55em;
+        }
+        .interpretation .int-list li::before {
+            content: "✦"; position: absolute; left: 2px; top: 0;
+            color: var(--accent-light); font-size: 0.8rem;
+        }
+        .interpretation .int-num-inline { color: var(--accent-light); font-weight: 600; }
+
+        .interpretation .int-rule {
+            border: none; border-top: 1px solid var(--border-soft); margin: 1.6em 0;
+        }
+
+        /* --- daily summary cards --- */
+        .sum-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px; margin-bottom: 12px; align-items: stretch;
+        }
+        .sum-card {
+            border-radius: 14px; padding: 16px 14px; text-align: center;
+            border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column; justify-content: center;
+            gap: 4px; min-height: 84px;
+        }
+        .sum-mood { background: var(--surface-thistle); }
+        .sum-energy { background: var(--surface-icy); }
+        .sum-focus { background: var(--surface-petal); }
+        .sum-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .07em;
+            color: var(--text-dim); font-weight: 600; margin-bottom: 4px;
+        }
+        .sum-value { color: var(--text-heading); font-weight: 600; font-size: 1rem; line-height: 1.35; }
+
+        .sum-cols {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px; margin-bottom: 12px; align-items: stretch;
+        }
+        .sum-col {
+            border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
+        }
+        .sum-do { background: var(--surface-icy); }
+        .sum-avoid { background: var(--surface-pink); }
+        .sum-col-head {
+            font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.01em;
+        }
+        .sum-do .sum-col-head { color: var(--on-icy); }
+        .sum-avoid .sum-col-head { color: var(--on-pink); }
+        .sum-col ul { list-style: none; padding: 0; margin: 0; }
+        .sum-col li {
+            font-size: 0.86rem; line-height: 1.5; color: var(--text);
+            padding: 3px 0 3px 14px; position: relative;
+        }
+        .sum-col li::before {
+            content: "·"; position: absolute; left: 3px; top: 2px;
+            color: var(--text-dim); font-weight: 700;
+        }
+
+        .sum-caution {
+            display: flex; gap: 10px; align-items: flex-start;
+            background: var(--surface-petal); border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 12px 16px; margin-bottom: 18px;
+            font-size: 0.88rem; line-height: 1.55; color: var(--text);
+        }
+        .sum-caution strong { color: var(--text-heading); }
+        .sum-caution-icon { flex-shrink: 0; font-size: 1rem; }
+
+        /* --- "За мен" profile --- */
+        .prof-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px; margin-bottom: 20px;
+        }
+        .prof-point {
+            background: var(--surface-thistle); border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 14px 16px;
+        }
+        .prof-point-head { display: flex; gap: 12px; align-items: flex-start; }
+        .prof-glyph {
+            font-size: 1.5rem; line-height: 1; color: var(--accent-light);
+            background: var(--bg-card); border-radius: 50%; width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .prof-point-label {
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600;
+        }
+        .prof-point-value { color: var(--text-heading); font-weight: 600; font-size: 1rem; }
+        .prof-point-house { color: var(--text-muted); font-size: 0.8rem; }
+        .prof-point-meaning {
+            margin-top: 10px; font-size: 0.85rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .prof-block { margin-bottom: 22px; }
+        .prof-h3 {
+            font-size: 0.95rem; font-weight: 600; color: var(--text-heading);
+            margin-bottom: 12px; letter-spacing: -0.01em;
+        }
+        .prof-note {
+            margin-top: 10px; font-size: 0.85rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .bal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .bal-name { font-size: 0.85rem; color: var(--text); width: 92px; flex-shrink: 0; }
+        .bal-track {
+            flex: 1; height: 8px; border-radius: 99px; background: var(--surface-thistle);
+            overflow: hidden;
+        }
+        .bal-fill {
+            display: block; height: 100%; border-radius: 99px;
+            background: linear-gradient(90deg, var(--accent-light), var(--accent));
+        }
+        .bal-count { font-size: 0.8rem; color: var(--text-muted); width: 18px; text-align: right; }
+
+        .prof-house {
+            display: flex; gap: 12px; align-items: flex-start; padding: 10px 0;
+            border-bottom: 1px solid var(--border-soft); font-size: 0.88rem; line-height: 1.6;
+        }
+        .prof-house:last-child { border-bottom: none; }
+        .prof-house-num {
+            width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+            background: var(--surface-icy); color: var(--on-icy);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 0.85rem;
+        }
+
+        .prof-aspect { padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
+        .prof-aspect:last-child { border-bottom: none; }
+        .prof-aspect-title { font-size: 0.9rem; color: var(--text); }
+        .prof-aspect-title strong { color: var(--text-heading); }
+        .prof-orb {
+            font-size: 0.72rem; color: var(--text-dim); margin-left: 6px;
+            background: var(--surface-sky); padding: 2px 7px; border-radius: 99px;
+        }
+        .prof-aspect-meaning {
+            font-size: 0.82rem; color: var(--text-meaning); line-height: 1.55; margin-top: 3px;
         }
 
         .cache-bar {
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft);
         }
-        .cache-label { font-size: 0.78rem; color: var(--text-dim); }
+        .cache-label { font-size: 0.75rem; color: var(--text-dim); }
         .btn-refresh {
-            padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
-            background: transparent; color: var(--accent-light); font-size: 0.78rem;
-            cursor: pointer; min-height: 32px;
+            padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border);
+            background: transparent; color: var(--accent-light);
+            font-family: var(--font-body); font-size: 0.75rem; font-weight: 500;
+            cursor: pointer; min-height: 36px;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
         }
-        .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); }
+        .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); transform: translateY(-1px); }
+        .btn-refresh:active { transform: translateY(0); }
+        .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+        .crystal-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
+        }
+        .crystal-loader .orb-wrap {
+            position: relative; width: 56px; height: 56px;
+        }
+        .crystal-loader .orb {
+            position: absolute; inset: 0; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
+            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: orb-pulse 1.8s ease-in-out infinite;
+        }
+        .crystal-loader .spark {
+            position: absolute; inset: 0;
+            animation: orb-spin 2.4s linear infinite;
+        }
+        .crystal-loader .spark::before {
+            content: "✦"; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
+        }
+        @keyframes orb-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes orb-spin {
+            to { transform: rotate(360deg); }
+        }
         .error { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px; padding: 12px; color: var(--danger-text); }
 
         .stats {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 12px; margin-top: 12px;
+            gap: 12px; margin-top: 12px; align-items: stretch;
         }
         .stat {
-            background: var(--bg-input); border-radius: 8px; padding: 12px; text-align: center;
+            background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 14px;
+            padding: 14px 12px; text-align: center;
+            display: flex; flex-direction: column; height: 100%;
+            transition: border-color 0.15s ease, transform 0.15s ease;
         }
-        .stat-label { color: var(--text-muted); font-size: 0.8rem; }
-        .stat-value { color: var(--text-heading); font-size: 1.1rem; font-weight: 600; margin-top: 4px; }
-        .stat-meaning { color: var(--text-muted); font-size: 0.72rem; margin-top: 4px; line-height: 1.4; }
+        /* rotating pastel surfaces so the four stat cards stay visually distinct */
+        .stat:nth-child(4n+1) { background: var(--surface-thistle); }
+        .stat:nth-child(4n+2) { background: var(--surface-icy); }
+        .stat:nth-child(4n+3) { background: var(--surface-petal); }
+        .stat:nth-child(4n+4) { background: var(--surface-sky); }
+        .stat:hover { border-color: var(--accent-light); transform: translateY(-1px); }
+        .stat-label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        .stat-value { color: var(--text-heading); font-size: 1.05rem; font-weight: 600; line-height: 1.25; margin-top: 5px; }
+        /* margin-top:auto pins the description to the card bottom so values stay aligned across cards */
+        .stat-meaning {
+            color: var(--text-muted); font-size: 0.75rem; line-height: 1.5;
+            margin-top: auto; padding-top: 7px;
+        }
 
         .period-form {
             display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;
         }
         .period-form .form-group { margin-bottom: 0; }
-        .period-form label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
+        .period-form label { display: block; margin-bottom: 5px; color: var(--accent-light); font-size: 0.85rem; font-weight: 500; }
         .period-form input[type="date"] {
-            padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
-            background: var(--bg-input); color: var(--text); font-size: 15px; min-height: 44px;
+            padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+            background: var(--bg-input); color: var(--text);
+            font-family: var(--font-body); font-size: 15px; min-height: 44px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
         }
+        .period-form input[type="date"]:hover { border-color: var(--accent-light); }
+        .period-form input[type="date"]:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
         .btn {
-            padding: 10px 18px; border-radius: 8px; border: none; background: var(--accent);
-            color: white; font-size: 0.9rem; font-weight: 600; cursor: pointer; min-height: 44px;
+            padding: 10px 18px; border-radius: 12px; border: none; background: var(--accent);
+            color: white; font-family: var(--font-body); font-size: 0.9rem; font-weight: 600;
+            letter-spacing: 0.01em; cursor: pointer; min-height: 44px;
+            transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .btn:hover { background: var(--accent-hover); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--shadow-raised); }
+        .btn:active { transform: translateY(0); box-shadow: none; }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .day-entry {
             padding: 12px 0; border-bottom: 1px solid var(--border-soft);
         }
         .day-entry:last-child { border-bottom: none; }
-        .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+        .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-bottom: 6px; }
         .day-entry .day-aspect { font-size: 0.85rem; color: var(--text-soft); padding: 2px 0; }
 
-        .num-row {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 12px 0; border-bottom: 1px solid var(--border-soft); gap: 12px;
+        /* --- love horoscope --- */
+        .sign-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+            gap: 10px;
         }
-        .num-row:last-child { border-bottom: none; }
-        .num-label { color: var(--text-heading); font-weight: 600; font-size: 0.9rem; flex-shrink: 0; }
-        .num-value { color: var(--accent-light); font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
-        .num-meaning { color: var(--text-soft); font-size: 0.85rem; text-align: right; }
+        .sign-btn {
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            padding: 14px 8px; border-radius: 14px; cursor: pointer;
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            color: var(--text); font-family: var(--font-body); min-height: 96px;
+            transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+        }
+        .sign-btn:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .sign-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .sign-btn.active {
+            background: var(--surface-thistle); border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+        .sign-glyph { font-size: 1.6rem; line-height: 1.2; color: var(--accent-light); }
+        .sign-name { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); }
+        .sign-el { font-size: 0.7rem; color: var(--text-dim); }
+
+        .love-pair {
+            display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px;
+            align-items: center; margin-bottom: 20px;
+        }
+        .love-side {
+            text-align: center; padding: 18px 12px; border-radius: 16px;
+            background: var(--surface-thistle); border: 1px solid var(--border-soft);
+        }
+        .love-glyph { font-size: 2rem; line-height: 1.1; color: var(--accent-light); display: block; }
+        .love-side-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600; margin-top: 4px;
+        }
+        .love-side-sign {
+            font-family: var(--font-display); font-size: 1.3rem; font-weight: 700;
+            color: var(--text-heading); line-height: 1.2;
+        }
+        .love-side-meta { font-size: 0.76rem; color: var(--text-muted); }
+        .love-link { display: flex; align-items: center; justify-content: center; }
+        .love-aspect {
+            font-size: 0.78rem; font-weight: 700; padding: 7px 14px; border-radius: 99px;
+            white-space: nowrap;
+        }
+
+        .asp-good .love-badge, .love-aspect.asp-good { background: var(--surface-icy); color: var(--on-icy); }
+        .asp-tense .love-badge, .love-aspect.asp-tense { background: var(--surface-pink); color: var(--on-pink); }
+        .asp-same .love-badge, .love-aspect.asp-same { background: var(--surface-thistle); color: var(--on-thistle); }
+        .asp-neutral .love-badge, .love-aspect.asp-neutral { background: var(--surface-sky); color: var(--on-sky); }
+
+        .love-cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+            gap: 12px; margin-bottom: 18px; align-items: stretch;
+        }
+        .love-card {
+            border-radius: 14px; padding: 14px 16px;
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
+        }
+        .love-card-top { display: flex; gap: 11px; align-items: flex-start; }
+        .love-card-glyph {
+            font-size: 1.3rem; line-height: 1; color: var(--accent-light);
+            background: var(--bg-card); border-radius: 50%;
+            width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .love-card-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600;
+        }
+        .love-card-sign { color: var(--text-heading); font-weight: 600; font-size: 0.94rem; line-height: 1.3; }
+        .love-badge {
+            margin-left: auto; flex-shrink: 0;
+            font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 99px;
+        }
+        .love-card-meaning {
+            margin-top: 10px; font-size: 0.84rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .love-strips { margin-top: 4px; }
+        .love-strip {
+            display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+            padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.86rem; color: var(--text-soft); line-height: 1.6;
+        }
+        .love-strip:last-child { border-bottom: none; }
+        .love-strip-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600; min-width: 90px; flex-shrink: 0;
+        }
+
         @media (max-width: 600px) {
-            .num-row { flex-direction: column; align-items: flex-start; }
-            .num-meaning { text-align: left; }
+            .love-pair { grid-template-columns: 1fr; }
+            .love-link { padding: 4px 0; }
+        }
+
+        /* --- akashic: karmic markers --- */
+        .karm-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 12px; margin-bottom: 16px; align-items: stretch;
+        }
+        .karm-card {
+            border-radius: 14px; padding: 15px 16px; border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
+        }
+        .karm-t1 { background: var(--surface-thistle); }
+        .karm-t2 { background: var(--surface-icy); }
+        .karm-t3 { background: var(--surface-petal); }
+        .karm-t4 { background: var(--surface-sky); }
+        .karm-t5 { background: var(--surface-pink); }
+        .karm-t6 { background: var(--surface-thistle); }
+        .karm-head { display: flex; gap: 12px; align-items: flex-start; }
+        .karm-glyph {
+            font-size: 1.4rem; line-height: 1; color: var(--accent-light);
+            background: var(--bg-card); border-radius: 50%; width: 38px; height: 38px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .karm-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600;
+        }
+        .karm-value { color: var(--text-heading); font-weight: 600; font-size: 0.97rem; line-height: 1.3; }
+        .karm-house { color: var(--text-muted); font-size: 0.78rem; }
+        .karm-meaning {
+            margin-top: 10px; font-size: 0.84rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .karm-strip {
+            display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+            padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.86rem; color: var(--text-soft); line-height: 1.6;
+        }
+        .karm-strip:last-child { border-bottom: none; }
+        .karm-strip-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600; min-width: 130px; flex-shrink: 0;
+        }
+
+        /* numerology: numbers on cards, meanings read below */
+        .num-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px; margin-bottom: 20px; align-items: stretch;
+        }
+        .num-card {
+            border-radius: 14px; padding: 16px 12px; text-align: center;
+            border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column; justify-content: center; gap: 2px;
+            min-height: 96px;
+        }
+        .num-t1 { background: var(--surface-thistle); }
+        .num-t2 { background: var(--surface-icy); }
+        .num-t3 { background: var(--surface-petal); }
+        .num-t4 { background: var(--surface-sky); }
+        .num-t5 { background: var(--surface-pink); }
+        .num-t6 { background: var(--surface-thistle); }
+        .num-card-value {
+            font-family: var(--font-display); color: var(--text-heading);
+            font-size: 2.1rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em;
+        }
+        .num-card-label {
+            font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em;
+            color: var(--text-dim); font-weight: 600; line-height: 1.3;
+        }
+
+        .num-detail {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 11px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.88rem; line-height: 1.6; color: var(--text-soft);
+        }
+        .num-detail:last-child { border-bottom: none; }
+        .num-detail strong { color: var(--text-heading); }
+        .num-detail-badge {
+            flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+            background: var(--surface-thistle); color: var(--accent-light);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.85rem;
         }
 
         @media (max-width: 600px) {
@@ -416,15 +903,18 @@
             .planet-title-name { font-size: 0.95rem; }
             .planet-detail { font-size: 0.83rem; }
             .planet-meaning { font-size: 0.8rem; }
-            .tabs { gap: 2px; }
-            .tab { padding: 8px 12px; font-size: 0.85rem; min-height: 44px; min-width: 44px; }
+            .tabs { gap: 4px; margin-bottom: 16px; }
+            .tab { padding: 8px 12px; font-size: 0.8rem; min-height: 44px; }
         }
     </style>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <a href="/" class="back-link">← Всички хора</a>
+        <div class="page-nav">
+            <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="/" class="back-link">← Всички хора</a>
+        </div>
 
         <div class="chart-header">
             <h1>{{ person.name }}</h1>
@@ -458,11 +948,14 @@
 
         <div class="tabs">
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
+            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">За мен</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope">Дневен хороскоп</div>
             <div class="tab" onclick="showTab('period')" id="tabbtn-period">Период</div>
             <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology">Нумерология</div>
+            <div class="tab" onclick="showTab('love')" id="tabbtn-love">Любовен хороскоп</div>
+            <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic">Акашови записи</div>
             <div class="tab" onclick="showTab('interpretation')" id="tabbtn-interpretation">AI Интерпретация</div>
         </div>
 
@@ -470,9 +963,20 @@
             <div class="section wheel-section">
                 <h2>Натална карта</h2>
                 <div id="chart-wheel" class="wheel-container">
-                    <div class="loading">Зареждане на картата...</div>
+                    <div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Зареждане на картата...</div>
                 </div>
                 <div class="wheel-legend" id="wheel-legend"></div>
+            </div>
+        </div>
+
+        <div id="tab-profile" class="tab-content">
+            <div class="section">
+                <h2>Твоят профил</h2>
+                <div id="profile-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
+            </div>
+            <div class="section">
+                <h2>Личен портрет</h2>
+                <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
             </div>
         </div>
 
@@ -521,7 +1025,7 @@
                         {% if obj.name_meaning or obj.sign_meaning or obj.house_meaning %}
                         <div class="planet-meaning">
                             {% if obj.name_meaning %}<span class="meaning-line"><span class="ml-icon">✦</span>{{ obj.name_meaning }}</span>{% endif %}
-                            {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">♈</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
+                            {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">{{ obj.sign_symbol }}</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
                             {% if obj.house_meaning %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
                             {% if obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
                         </div>
@@ -580,11 +1084,11 @@
         <div id="tab-horoscope" class="tab-content">
             <div class="section">
                 <h2>Разчитане на деня</h2>
-                <div id="horoscope-ai-content" class="loading">Генериране на разчитане...</div>
+                <div id="horoscope-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на разчитане...</div></div>
             </div>
             <div class="section">
                 <h2>Дневен транзитен хороскоп — данни</h2>
-                <div id="horoscope-content" class="loading">Изчисляване...</div>
+                <div id="horoscope-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
         </div>
 
@@ -605,6 +1109,7 @@
                     </div>
                     <button class="btn" id="periodBtn" onclick="loadPeriod()">Анализирай период</button>
                 </div>
+                <div id="period-ai-content"></div>
                 <div id="period-content"></div>
             </div>
         </div>
@@ -615,25 +1120,158 @@
                 <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
                     Питагорова нумерология, изчислена математически от името и датата на раждане.
                 </p>
-                <div id="numerology-content" class="loading">Изчисляване...</div>
+                <div id="numerology-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
                 <h2>AI Интерпретация на нумерологията</h2>
-                <div id="numerology-ai-content" class="loading">Генериране...</div>
+                <div id="numerology-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
+            </div>
+        </div>
+
+        <div id="tab-love" class="tab-content">
+            <div class="section">
+                <h2>Избери зодията на партньора</h2>
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                    Достатъчна е само зодията. Ако знаеш и точния час и място на раждане, направи пълна синастрия от <a href="/synastry" style="color:var(--accent-light);">Съвместимост</a>.
+                </p>
+                <div id="sign-picker" class="sign-grid"></div>
+            </div>
+            <div id="love-result" style="display:none;">
+                <div class="section">
+                    <h2>Вашата съвместимост</h2>
+                    <div id="love-content"></div>
+                </div>
+                <div class="section">
+                    <h2>Любовен хороскоп</h2>
+                    <div id="love-ai-content"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-akashic" class="tab-content">
+            <div class="section">
+                <h2>Кармични точки в картата</h2>
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
+                    Четенето по-долу стъпва на тези точно изчислени позиции — лунните възли, Хирон, Сатурн, Плутон, Лилит, 12-ти дом и ретроградните планети.
+                </p>
+                <div id="akashic-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
+            </div>
+            <div class="section">
+                <h2>Четене на Акашовите записи</h2>
+                <div id="akashic-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Отваряне на записа...</div></div>
             </div>
         </div>
 
         <div id="tab-interpretation" class="tab-content">
             <div class="section">
                 <h2>AI Интерпретация</h2>
-                <div id="interpretation-content" class="loading">
-                    Генериране на интерпретация...
-                </div>
+                <div id="interpretation-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на интерпретация...</div></div>
             </div>
         </div>
     </div>
 
     <script>
+        function crystalLoader(text) {
+            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        }
+
+        // Presentation-only: turns the AI's plain text into paragraphs and renders
+        // its markdown **bold** as <strong>. Escapes first, so model output is never
+        // injected as live HTML.
+        function escapeHtmlText(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Inline markdown (bold / italics) for a single line. Escapes first, so the
+        // model's output is never injected as live HTML.
+        function inlineMd(text) {
+            let html = escapeHtmlText(text);
+            html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>');
+            return html;
+        }
+
+        // Turns the model's markdown-ish output into a readable, structured block:
+        // headings, numbered sections, bullet lists and paragraphs.
+        function formatInterpretation(raw) {
+            const lines = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').split('\n');
+            const out = [];
+            let listItems = [];
+            let paraLines = [];
+
+            const flushList = () => {
+                if (!listItems.length) return;
+                out.push('<ul class="int-list">' + listItems.map(li => '<li>' + li + '</li>').join('') + '</ul>');
+                listItems = [];
+            };
+            const flushPara = () => {
+                if (!paraLines.length) return;
+                out.push('<p>' + paraLines.join('<br>') + '</p>');
+                paraLines = [];
+            };
+            const flushAll = () => { flushList(); flushPara(); };
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+
+                if (!line) { flushAll(); continue; }
+
+                // --- horizontal rule
+                if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) {
+                    flushAll();
+                    out.push('<hr class="int-rule">');
+                    continue;
+                }
+
+                // ### Heading  /  ## Heading
+                const md = line.match(/^(#{1,6})\s+(.*)$/);
+                if (md) {
+                    flushAll();
+                    const level = Math.min(md[1].length, 3);
+                    out.push(`<h4 class="int-h int-h${level}">${inlineMd(md[2].replace(/[:：]\s*$/, ''))}</h4>`);
+                    continue;
+                }
+
+                // "1. **Заглавие**" or "**Заглавие**" alone on a line
+                const numbered = line.match(/^(\d+)[.)]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$/);
+                if (numbered) {
+                    flushAll();
+                    out.push(`<h4 class="int-h int-h2"><span class="int-num">${numbered[1]}</span>${inlineMd(numbered[2])}</h4>`);
+                    if (numbered[3]) paraLines.push(inlineMd(numbered[3]));
+                    continue;
+                }
+                if (/^\*\*[^*]+\*\*[:：]?$/.test(line)) {
+                    flushAll();
+                    out.push(`<h4 class="int-h int-h2">${inlineMd(line.replace(/^\*\*|\*\*[:：]?$/g, ''))}</h4>`);
+                    continue;
+                }
+
+                // bullets: -, *, • (but not **bold** at line start)
+                const bullet = line.match(/^[-•]\s+(.*)$/) || line.match(/^\*(?!\*)\s+(.*)$/);
+                if (bullet) {
+                    flushPara();
+                    listItems.push(inlineMd(bullet[1]));
+                    continue;
+                }
+
+                // numbered list item without bold title
+                const numItem = line.match(/^(\d+)[.)]\s+(.+)$/);
+                if (numItem) {
+                    flushPara();
+                    listItems.push('<span class="int-num-inline">' + numItem[1] + '.</span> ' + inlineMd(numItem[2]));
+                    continue;
+                }
+
+                flushList();
+                paraLines.push(inlineMd(line));
+            }
+
+            flushAll();
+            return out.join('');
+        }
+
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
             document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
@@ -675,8 +1313,20 @@
                 loadHoroscope();
                 loadHoroscopeAI();
             }
+            if (name === 'profile' && !window._profileLoaded) {
+                window._profileLoaded = true;
+                loadProfile();
+            }
             if (name === 'numerology' && !window._numerologyLoaded) {
                 loadNumerology();
+            }
+            if (name === 'akashic' && !window._akashicLoaded) {
+                window._akashicLoaded = true;
+                loadAkashic();
+            }
+            if (name === 'love' && !window._signsLoaded) {
+                window._signsLoaded = true;
+                loadSignPicker();
             }
         }
 
@@ -753,16 +1403,122 @@
             </div>`;
         }
 
+        function profilePoint(label, pt) {
+            if (!pt) return '';
+            return `<div class="prof-point">
+                <div class="prof-point-head">
+                    <span class="prof-glyph">${pt.sign_symbol}</span>
+                    <div>
+                        <div class="prof-point-label">${label}</div>
+                        <div class="prof-point-value">${pt.name_bg} в ${pt.sign_bg}</div>
+                        <div class="prof-point-house">${pt.house_bg}</div>
+                    </div>
+                </div>
+                ${pt.meaning ? `<p class="prof-point-meaning">${pt.meaning}</p>` : ''}
+            </div>`;
+        }
+
+        function balanceBars(counts, dominant, meaning, title) {
+            const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+            const rows = Object.entries(counts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `
+                    <div class="bal-row">
+                        <span class="bal-name">${k}</span>
+                        <span class="bal-track"><span class="bal-fill" style="width:${(v / total * 100).toFixed(0)}%"></span></span>
+                        <span class="bal-count">${v}</span>
+                    </div>`).join('');
+            return `<div class="prof-block">
+                <h3 class="prof-h3">${title}</h3>
+                ${rows}
+                ${dominant ? `<p class="prof-note"><strong>Доминира ${dominant}.</strong> ${meaning || ''}</p>` : ''}
+            </div>`;
+        }
+
+        async function loadProfile() {
+            const el = document.getElementById('profile-content');
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/profile', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const d = await resp.json();
+
+                let html = '<div class="prof-grid">';
+                html += profilePoint('Същност', d.core.sun);
+                html += profilePoint('Емоции', d.core.moon);
+                html += profilePoint('Как те виждат', d.core.ascendant);
+                html += profilePoint('Призвание', d.core.mc);
+                html += '</div>';
+
+                if (d.personal_planets && d.personal_planets.length) {
+                    html += '<div class="prof-block"><h3 class="prof-h3">Лични планети</h3><div class="prof-grid">';
+                    d.personal_planets.forEach(pt => { html += profilePoint(pt.name_bg, pt); });
+                    html += '</div></div>';
+                }
+
+                html += balanceBars(d.elements.counts, d.elements.dominant, d.elements.dominant_meaning, 'Баланс на стихиите');
+                html += balanceBars(d.modalities.counts, d.modalities.dominant, d.modalities.dominant_meaning, 'Баланс на качествата');
+
+                if (d.emphasised_houses && d.emphasised_houses.length) {
+                    html += '<div class="prof-block"><h3 class="prof-h3">Където животът ти е най-активен</h3>';
+                    d.emphasised_houses.forEach(h => {
+                        html += `<div class="prof-house">
+                            <span class="prof-house-num">${h.house}</span>
+                            <div><strong>${h.count} ${h.count === 1 ? 'планета' : 'планети'}</strong> — ${h.meaning}</div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                if (d.key_aspects && d.key_aspects.length) {
+                    html += '<div class="prof-block"><h3 class="prof-h3">Най-силните ти аспекти</h3>';
+                    d.key_aspects.forEach(a => {
+                        html += `<div class="prof-aspect">
+                            <div class="prof-aspect-title"><strong>${a.active_bg}</strong> ${a.type_bg} <strong>${a.passive_bg}</strong>
+                                <span class="prof-orb">орб ${a.orb}°</span></div>
+                            <div class="prof-aspect-meaning">${a.type_meaning || ''}</div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                document.getElementById('profile-ai-content').innerHTML = '';
+                return;
+            }
+            loadProfileAI();
+        }
+
+        async function loadProfileAI(refresh) {
+            const el = document.getElementById('profile-ai-content');
+            el.innerHTML = crystalLoader('Генериране на портрет...');
+            try {
+                const url = '/api/persons/{{ person.id }}/profile/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, { headers: authHeaders() });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, 'loadProfileAI(true)') +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира портрет.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
         async function loadHoroscopeAI(refresh) {
             const el = document.getElementById('horoscope-ai-content');
-            el.innerHTML = '<div class="loading">Генериране на разчитане...</div>';
+            el.innerHTML = crystalLoader('Генериране на разчитане...');
             try {
                 const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
                 const resp = await fetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadHoroscopeAI(true)') +
-                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                        summaryCards(data.summary) +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     el.innerHTML = '<div class="error">Не можа да се генерира разчитане.</div>';
                 }
@@ -771,17 +1527,50 @@
             }
         }
 
+        // Quick-glance cards above the full daily reading.
+        function summaryCards(s) {
+            if (!s) return '';
+            const list = (arr) => (Array.isArray(arr) ? arr : [])
+                .map(x => `<li>${escapeHtmlText(String(x))}</li>`).join('');
+            const cards = [];
+
+            if (s.mood) cards.push(`<div class="sum-card sum-mood">
+                <div class="sum-label">Настроение</div>
+                <div class="sum-value">${escapeHtmlText(s.mood)}</div></div>`);
+            if (s.energy) cards.push(`<div class="sum-card sum-energy">
+                <div class="sum-label">Енергия</div>
+                <div class="sum-value">${escapeHtmlText(s.energy)}</div></div>`);
+            if (s.focus) cards.push(`<div class="sum-card sum-focus">
+                <div class="sum-label">Фокус</div>
+                <div class="sum-value">${escapeHtmlText(s.focus)}</div></div>`);
+
+            let html = cards.length ? `<div class="sum-grid">${cards.join('')}</div>` : '';
+
+            const cols = [];
+            if (Array.isArray(s.do) && s.do.length) cols.push(`<div class="sum-col sum-do">
+                <div class="sum-col-head">✓ Добре е да</div><ul>${list(s.do)}</ul></div>`);
+            if (Array.isArray(s.avoid) && s.avoid.length) cols.push(`<div class="sum-col sum-avoid">
+                <div class="sum-col-head">✕ Избягвай</div><ul>${list(s.avoid)}</ul></div>`);
+            if (cols.length) html += `<div class="sum-cols">${cols.join('')}</div>`;
+
+            if (s.caution) html += `<div class="sum-caution">
+                <span class="sum-caution-icon">⚠</span>
+                <div><strong>Внимавай:</strong> ${escapeHtmlText(s.caution)}</div></div>`;
+
+            return html;
+        }
+
         async function loadInterpretation(refresh) {
             window._interpretationLoaded = true;
             const el = document.getElementById('interpretation-content');
-            el.innerHTML = '<div class="loading">Генериране на интерпретация...</div>';
+            el.innerHTML = crystalLoader('Генериране на интерпретация...');
             try {
                 const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await fetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadInterpretation(true)') +
-                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     el.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
                 }
@@ -806,7 +1595,7 @@
             }
             btn.disabled = true;
             btn.textContent = 'Анализиране...';
-            el.innerHTML = '<div class="loading">Изчисляване на периода...</div>';
+            el.innerHTML = crystalLoader('Изчисляване на периода...');
             try {
                 const resp = await fetch('/api/period-influence', {
                     method: 'POST',
@@ -826,7 +1615,7 @@
                     el.innerHTML = '<p style="color:var(--text-muted); margin-top:16px;">Няма настъпващи или отпадащи значими транзитни аспекти в избрания период.</p>';
                     return;
                 }
-                let html = '';
+                let html = '<h3 class="prof-h3" style="margin-top:22px;">Ден по ден</h3>';
                 data.days.forEach(day => {
                     html += `<div class="day-entry"><div class="day-date">${fmtDateShortBg(day.date)}</div>`;
                     day.entering.forEach(a => {
@@ -838,11 +1627,39 @@
                     html += '</div>';
                 });
                 el.innerHTML = html;
+                loadPeriodAI(startEl.value, endEl.value);
             } catch (e) {
                 el.innerHTML = '<div class="error">Грешка при анализа: ' + e.message + '</div>';
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Анализирай период';
+            }
+        }
+
+        async function loadPeriodAI(start, end, refresh) {
+            const el = document.getElementById('period-ai-content');
+            el.innerHTML = crystalLoader('Разчитане на периода...');
+            try {
+                const url = '/api/period-interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person_id: {{ person.id }}, start_date: start, end_date: end })
+                });
+                if (!resp.ok) {
+                    const d = await resp.json().catch(() => ({}));
+                    throw new Error(d.detail || ('HTTP ' + resp.status));
+                }
+                const data = await resp.json();
+                if (data.interpretation) {
+                    const refreshCall = `loadPeriodAI('${start}','${end}',true)`;
+                    el.innerHTML = cachedBadge(data, refreshCall) +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при разчитането: ' + e.message + '</div>';
             }
         }
 
@@ -862,22 +1679,42 @@
                     personality: 'Личност',
                     birthday: 'Рожден ден',
                 };
-                let html = '';
-                for (const key of ['life_path', 'expression', 'soul_urge', 'personality', 'birthday']) {
+                // The numbers themselves go on cards; their meanings read below.
+                const order = ['life_path', 'expression', 'soul_urge', 'personality', 'birthday'];
+                const tints = ['num-t1', 'num-t2', 'num-t3', 'num-t4', 'num-t5'];
+
+                let cards = '';
+                order.forEach((key, i) => {
                     const item = data[key];
-                    html += `<div class="num-row">
-                        <div class="num-label">${labels[key]}</div>
-                        <div class="num-value">${item.number}</div>
-                        <div class="num-meaning">${item.meaning || ''}</div>
+                    cards += `<div class="num-card ${tints[i % tints.length]}">
+                        <div class="num-card-value">${item.number}</div>
+                        <div class="num-card-label">${labels[key]}</div>
+                    </div>`;
+                });
+                const py = data.personal_year;
+                cards += `<div class="num-card num-t6">
+                    <div class="num-card-value">${py.number}</div>
+                    <div class="num-card-label">Лична година ${py.year}</div>
+                </div>`;
+
+                let details = '';
+                order.forEach(key => {
+                    const item = data[key];
+                    if (!item.meaning) return;
+                    details += `<div class="num-detail">
+                        <span class="num-detail-badge">${item.number}</span>
+                        <div><strong>${labels[key]}</strong> — ${item.meaning}</div>
+                    </div>`;
+                });
+                if (py.meaning) {
+                    details += `<div class="num-detail">
+                        <span class="num-detail-badge">${py.number}</span>
+                        <div><strong>Лична година ${py.year}</strong> — ${py.meaning}</div>
                     </div>`;
                 }
-                const py = data.personal_year;
-                html += `<div class="num-row">
-                    <div class="num-label">Лична година (${py.year})</div>
-                    <div class="num-value">${py.number}</div>
-                    <div class="num-meaning">${py.meaning || ''}</div>
-                </div>`;
-                el.innerHTML = html;
+
+                el.innerHTML = `<div class="num-grid">${cards}</div>` +
+                    (details ? `<div class="num-details">${details}</div>` : '');
             } catch (e) {
                 el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
                 aiEl.innerHTML = '';
@@ -889,19 +1726,219 @@
 
         async function loadNumerologyAI(refresh) {
             const aiEl = document.getElementById('numerology-ai-content');
-            aiEl.innerHTML = '<div class="loading">Генериране...</div>';
+            aiEl.innerHTML = crystalLoader('Генериране...');
             try {
                 const url = '/api/persons/{{ person.id }}/numerology/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await fetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     aiEl.innerHTML = cachedBadge(data, 'loadNumerologyAI(true)') +
-                        '<div class="interpretation">' + data.interpretation.replace(/\n/g, '<br>') + '</div>';
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
                     aiEl.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
                 }
             } catch (e) {
                 aiEl.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        // --- love horoscope ---
+        let selectedSign = null;
+
+        async function loadSignPicker() {
+            const el = document.getElementById('sign-picker');
+            el.innerHTML = crystalLoader('Зареждане...');
+            try {
+                const resp = await fetch('/api/zodiac-signs', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const d = await resp.json();
+                el.innerHTML = d.signs.map(s => `
+                    <button class="sign-btn" data-sign="${s.key}" onclick="pickSign('${s.key}')">
+                        <span class="sign-glyph">${s.symbol}</span>
+                        <span class="sign-name">${s.name_bg}</span>
+                        <span class="sign-el">${s.element_bg}</span>
+                    </button>`).join('');
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        function pickSign(sign) {
+            selectedSign = sign;
+            document.querySelectorAll('.sign-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.sign === sign);
+            });
+            document.getElementById('love-result').style.display = 'block';
+            loadLoveMatch();
+        }
+
+        function aspectClass(name) {
+            if (name === 'Тригон' || name === 'Секстил') return 'asp-good';
+            if (name === 'Квадрат' || name === 'Опозиция') return 'asp-tense';
+            if (name === 'Съвпад') return 'asp-same';
+            return 'asp-neutral';
+        }
+
+        async function loadLoveMatch() {
+            const el = document.getElementById('love-content');
+            el.innerHTML = crystalLoader('Изчисляване...');
+            try {
+                const resp = await fetch('/api/love-match', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person_id: {{ person.id }}, partner_sign: selectedSign })
+                });
+                if (!resp.ok) {
+                    const d = await resp.json().catch(() => ({}));
+                    throw new Error(d.detail || ('HTTP ' + resp.status));
+                }
+                const d = await resp.json();
+
+                let html = `<div class="love-pair">
+                    <div class="love-side">
+                        <span class="love-glyph">${d.you.sun_symbol || '✦'}</span>
+                        <div class="love-side-label">Ти</div>
+                        <div class="love-side-sign">${d.you.sun_bg || ''}</div>
+                        <div class="love-side-meta">${d.you.element_bg} · ${d.you.modality_bg}</div>
+                    </div>
+                    <div class="love-link">
+                        ${d.sun_aspect ? `<span class="love-aspect ${aspectClass(d.sun_aspect.name)}">${d.sun_aspect.name}</span>` : ''}
+                    </div>
+                    <div class="love-side">
+                        <span class="love-glyph">${d.partner.symbol}</span>
+                        <div class="love-side-label">Партньор</div>
+                        <div class="love-side-sign">${d.partner.sign_bg}</div>
+                        <div class="love-side-meta">${d.partner.element_bg} · ${d.partner.modality_bg}</div>
+                    </div>
+                </div>`;
+
+                html += '<div class="love-cards">';
+                d.points.forEach(pt => {
+                    if (!pt.aspect) return;
+                    html += `<div class="love-card ${aspectClass(pt.aspect)}">
+                        <div class="love-card-top">
+                            <span class="love-card-glyph">${pt.sign_symbol}</span>
+                            <div>
+                                <div class="love-card-label">${pt.label}</div>
+                                <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                            </div>
+                            <span class="love-badge">${pt.aspect}</span>
+                        </div>
+                        <p class="love-card-meaning">${pt.aspect_meaning}</p>
+                    </div>`;
+                });
+                html += '</div>';
+
+                if (d.elements || d.modalities) {
+                    html += '<div class="love-strips">';
+                    if (d.elements) html += `<div class="love-strip"><span class="love-strip-label">Стихии</span><span>${d.elements}</span></div>`;
+                    if (d.modalities) html += `<div class="love-strip"><span class="love-strip-label">Качества</span><span>${d.modalities}</span></div>`;
+                    html += '</div>';
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                document.getElementById('love-ai-content').innerHTML = '';
+                return;
+            }
+            loadLoveAI();
+        }
+
+        async function loadLoveAI(refresh) {
+            const el = document.getElementById('love-ai-content');
+            el.innerHTML = crystalLoader('Разчитане на връзката...');
+            try {
+                const url = '/api/love-match/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person_id: {{ person.id }}, partner_sign: selectedSign })
+                });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, 'loadLoveAI(true)') +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира хороскоп.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadAkashic() {
+            const el = document.getElementById('akashic-content');
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/akashic', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const d = await resp.json();
+
+                const labels = {
+                    'True North Node': 'Посока на растеж',
+                    'True South Node': 'Наследено от миналото',
+                    'Chiron': 'Раната, която лекува',
+                    'Saturn': 'Уроците',
+                    'Pluto': 'Трансформацията',
+                    'True Lilith': 'Потиснатото и автентичното',
+                };
+                const tints = ['karm-t1', 'karm-t2', 'karm-t3', 'karm-t4', 'karm-t5', 'karm-t6'];
+
+                let cards = '';
+                Object.keys(labels).forEach((key, i) => {
+                    const pt = d.points[key];
+                    if (!pt) return;
+                    cards += `<div class="karm-card ${tints[i % tints.length]}">
+                        <div class="karm-head">
+                            <span class="karm-glyph">${pt.sign_symbol}</span>
+                            <div>
+                                <div class="karm-label">${labels[key]}</div>
+                                <div class="karm-value">${pt.name_bg} в ${pt.sign_bg}</div>
+                                <div class="karm-house">${pt.house_bg}${pt.retrograde ? ' · ретрограден' : ''}</div>
+                            </div>
+                        </div>
+                        ${pt.meaning ? `<p class="karm-meaning">${pt.meaning}</p>` : ''}
+                    </div>`;
+                });
+
+                let extra = '';
+                if (d.twelfth_house && d.twelfth_house.length) {
+                    extra += `<div class="karm-strip"><span class="karm-strip-label">12-ти дом</span>
+                        <span>${d.twelfth_house.map(o => `${o.sign_symbol} ${o.name_bg} в ${o.sign_bg}`).join(' · ')}</span></div>`;
+                }
+                if (d.retrogrades && d.retrogrades.length) {
+                    extra += `<div class="karm-strip"><span class="karm-strip-label">Ретроградни</span>
+                        <span>${d.retrogrades.map(o => `${o.sign_symbol} ${o.name_bg} (${o.house_bg})`).join(' · ')}</span></div>`;
+                }
+                if (d.life_path) {
+                    extra += `<div class="karm-strip"><span class="karm-strip-label">Число на съдбата</span>
+                        <span>${d.life_path}</span></div>`;
+                }
+
+                el.innerHTML = `<div class="karm-grid">${cards}</div>` + extra;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                document.getElementById('akashic-ai-content').innerHTML = '';
+                return;
+            }
+            loadAkashicAI();
+        }
+
+        async function loadAkashicAI(refresh) {
+            const el = document.getElementById('akashic-ai-content');
+            el.innerHTML = crystalLoader('Отваряне на записа...');
+            try {
+                const url = '/api/persons/{{ person.id }}/akashic/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, { headers: authHeaders() });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, 'loadAkashicAI(true)') +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира четене.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
             }
         }
     </script>

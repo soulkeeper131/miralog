@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Настройки — МираСкоп</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -11,9 +13,16 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
             --bg: #0a0a1a;
             --bg-card: #1a1a2e;
             --bg-input: #16162a;
@@ -32,8 +41,27 @@
             --success: #22c55e;
             --success-bg: #14261c;
             --success-text: #86efac;
+            /* --- pastel palette (raw tones, identical in both themes) --- */
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
         }
         :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
             --bg: #faf7fb;
             --bg-card: #ffffff;
             --bg-input: #f7f1f9;
@@ -52,9 +80,24 @@
             --success: #16a34a;
             --success-bg: #f0fdf4;
             --success-text: #16a34a;
+            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
         }
         body {
-            font-family: -apple-system, system-ui, sans-serif;
+            font-family: var(--font-body);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
             background: var(--bg);
             color: var(--text);
             min-height: 100dvh;
@@ -90,20 +133,73 @@
             padding-bottom: max(20px, env(safe-area-inset-bottom));
         }
         .back-link {
-            color: var(--text-muted); text-decoration: none; font-size: 0.9rem;
-            display: inline-flex; align-items: center; margin-bottom: 16px;
-            min-height: 44px; min-width: 44px;
+            color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
+            display: inline-flex; align-items: center;
+            min-height: 44px;
+            transition: color 0.15s ease;
         }
         .back-link:hover { color: var(--accent-light); }
-        h1 { color: var(--text-heading); font-size: 1.6rem; margin-bottom: 4px; }
+        /* shared page mark: small logo sitting beside the back-link */
+        .page-nav {
+            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        .page-logo {
+            width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+            flex-shrink: 0;
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 3px var(--surface-thistle);
+        }
+        h1 {
+            font-family: var(--font-display); font-weight: 700;
+            letter-spacing: -0.02em; line-height: 1.2;
+            color: var(--text-heading); font-size: 1.9rem; margin-bottom: 4px;
+        }
         .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
+
+        .crystal-loader {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
+        }
+        .crystal-loader .orb-wrap {
+            position: relative; width: 56px; height: 56px;
+        }
+        .crystal-loader .orb {
+            position: absolute; inset: 0; border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
+            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: orb-pulse 1.8s ease-in-out infinite;
+        }
+        .crystal-loader .spark {
+            position: absolute; inset: 0;
+            animation: orb-spin 2.4s linear infinite;
+        }
+        .crystal-loader .spark::before {
+            content: "✦"; position: absolute; top: -6px; left: 50%;
+            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
+        }
+        @keyframes orb-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.92; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+        @keyframes orb-spin {
+            to { transform: rotate(360deg); }
+        }
 
         .section {
             background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
             padding: 24px; margin-bottom: 20px;
         }
-        .section h2 { color: var(--accent-light); font-size: 1.1rem; margin-bottom: 6px; }
-        .section .desc { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 18px; line-height: 1.5; }
+        /* alternating pastel tint so stacked settings sections read apart */
+        .section:nth-of-type(odd) { background: var(--surface-thistle); }
+        .section:nth-of-type(even) { background: var(--surface-icy); }
+        .section h2 {
+            color: var(--accent-light); font-size: 1.15rem; font-weight: 600;
+            letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 6px;
+        }
+        .section .desc {
+            color: var(--text-muted); font-size: 0.85rem; margin-bottom: 18px;
+            line-height: 1.65; max-width: 68ch;
+        }
 
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
@@ -143,7 +239,10 @@
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <a href="#" id="backLink" class="back-link">← Табло</a>
+        <div class="page-nav">
+            <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="#" id="backLink" class="back-link">← Табло</a>
+        </div>
         <h1>Настройки</h1>
         <div class="subtitle">Конфигурация на приложението</div>
 
@@ -156,9 +255,15 @@
                 Ключът се пази в базата данни на приложението.
             </div>
 
+            <div id="settingsLoader" class="crystal-loader">
+                <div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>
+                Зареждане на настройките...
+            </div>
+
+            <div id="settingsBody" hidden>
             <div class="status-row">
                 <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Зареждане...</span>
+                <span id="statusText"></span>
             </div>
 
             <form id="settingsForm">
@@ -177,6 +282,7 @@
                 </div>
                 <button type="submit" class="btn btn-primary" id="saveBtn">Запази</button>
             </form>
+            </div>
         </div>
     </div>
 
@@ -217,6 +323,11 @@
             setTimeout(() => { el.innerHTML = ''; }, 4000);
         }
 
+        function revealSettings() {
+            document.getElementById('settingsLoader').hidden = true;
+            document.getElementById('settingsBody').hidden = false;
+        }
+
         async function loadSettings() {
             try {
                 const resp = await fetch('/api/settings', { headers: authHeaders() });
@@ -226,6 +337,7 @@
                 const dot = document.getElementById('statusDot');
                 const text = document.getElementById('statusText');
                 const hint = document.getElementById('keyHint');
+                dot.classList.remove('on', 'off');
                 if (data.ai_api_key_set) {
                     dot.classList.add('on');
                     text.textContent = 'AI ключ е конфигуриран (' + data.ai_api_key_masked + ')';
@@ -235,7 +347,9 @@
                     text.textContent = 'Няма конфигуриран AI ключ';
                     hint.textContent = '';
                 }
+                revealSettings();
             } catch (e) {
+                revealSettings();
                 showBanner('Грешка при зареждане на настройките: ' + e.message, 'error');
             }
         }

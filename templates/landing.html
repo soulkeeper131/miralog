@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>МираСкоп — твоята натална карта, разчетена на разбираем език</title>
+    <meta name="description" content="Точна натална карта по Swiss Ephemeris, разчетена на български: кой си, какво ти предстои днес, кармичните ти теми и нумерологията ти.">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
+            --bg: #0a0a1a;
+            --bg-card: #1a1a2e;
+            --bg-input: #16162a;
+            --border: #2a2a4a;
+            --border-soft: #1e1e36;
+            --text: #e0e0e0;
+            --text-heading: #c9b1ff;
+            --text-muted: #888;
+            --text-dim: #666;
+            --text-soft: #aaa;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --accent-lighter: #c9b1ff;
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
+            --hero-glow: radial-gradient(1100px 520px at 50% -10%, rgba(124,58,237,0.30), transparent 70%);
+        }
+        :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
+            --bg: #faf7fb;
+            --bg-card: #ffffff;
+            --bg-input: #f7f1f9;
+            --border: #e5d4ec;
+            --border-soft: #efe3f4;
+            --text: #2d2438;
+            --text-heading: #6d4a89;
+            --text-muted: #7a6d8a;
+            --text-dim: #a595b0;
+            --text-soft: #7a6d8a;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --accent-lighter: #6d4a89;
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
+            --hero-glow: radial-gradient(1100px 520px at 50% -10%, rgba(205,180,219,0.55), transparent 70%);
+        }
+
+        body {
+            font-family: var(--font-body);
+            font-size: 0.98rem;
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+            overflow-x: hidden;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px; height: 44px; border-radius: 50%;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+            z-index: 200;
+        }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        .wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+
+        /* --- hero --- */
+        .hero {
+            position: relative;
+            padding: clamp(56px, 11vw, 108px) 0 clamp(40px, 7vw, 72px);
+            text-align: center;
+        }
+        .hero::before {
+            content: ""; position: absolute; inset: -180px 0 auto 0; height: 620px;
+            background: var(--hero-glow); pointer-events: none; z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+
+        /* The logo art is portrait with the wordmark at the bottom; the circle is
+           centred on the illustration itself so nothing important gets clipped. */
+        .hero-logo {
+            width: auto; height: clamp(230px, 34vw, 330px);
+            max-width: 100%; object-fit: contain;
+            display: block; margin: 0 auto 20px;
+            filter: drop-shadow(0 16px 36px rgba(124,58,237,0.30));
+        }
+        :root[data-theme="light"] .hero-logo {
+            filter: drop-shadow(0 16px 32px rgba(134,89,163,0.24));
+        }
+        .hero h1 {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: clamp(2.5rem, 7vw, 4.1rem); line-height: 1.05;
+            letter-spacing: -0.02em; color: var(--text-heading); margin-bottom: 8px;
+        }
+        .hero .kicker {
+            font-size: 0.78rem; letter-spacing: .22em; text-transform: uppercase;
+            color: var(--text-dim); font-weight: 600; margin-bottom: 18px;
+        }
+        .hero .lede {
+            font-size: clamp(1.05rem, 2.3vw, 1.28rem); color: var(--text-soft);
+            max-width: 40ch; margin: 0 auto 14px; line-height: 1.6;
+        }
+        .hero .sub {
+            font-size: 0.95rem; color: var(--text-muted); max-width: 46ch; margin: 0 auto 30px;
+        }
+
+        .cta-row {
+            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px;
+        }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 14px 30px; border-radius: 12px; text-decoration: none; border: none;
+            font-family: var(--font-body); font-size: 1rem; font-weight: 600; letter-spacing: .01em;
+            cursor: pointer; min-height: 50px;
+            transition: background-color .15s ease, border-color .15s ease, color .15s ease,
+                        transform .15s ease, box-shadow .15s ease;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            color: #fff; box-shadow: var(--shadow-raised);
+        }
+        .btn-primary:hover { filter: brightness(1.06); }
+        .btn-ghost {
+            background: var(--bg-card); color: var(--text-heading); border: 1px solid var(--border);
+        }
+        .btn-ghost:hover { border-color: var(--accent); }
+        .cta-note { font-size: 0.82rem; color: var(--text-dim); }
+
+        /* --- sections --- */
+        section { padding: clamp(44px, 7vw, 76px) 0; }
+        .sec-head { text-align: center; margin-bottom: clamp(28px, 5vw, 46px); }
+        .sec-head h2 {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.15; letter-spacing: -0.02em;
+            color: var(--text-heading); margin-bottom: 10px;
+        }
+        .sec-head p { color: var(--text-muted); max-width: 52ch; margin: 0 auto; }
+
+        .cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+            gap: 16px; align-items: stretch;
+        }
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 18px; padding: 24px 22px;
+            display: flex; flex-direction: column;
+            box-shadow: var(--shadow-card);
+            transition: transform .18s ease, border-color .18s ease;
+        }
+        .card:hover { transform: translateY(-3px); border-color: var(--accent-light); }
+        .card-ico {
+            width: 48px; height: 48px; border-radius: 15px; margin-bottom: 15px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .card-ico svg { width: 24px; height: 24px; }
+        .i-thistle { background: var(--surface-thistle); color: var(--on-thistle); }
+        .i-icy { background: var(--surface-icy); color: var(--on-icy); }
+        .i-petal { background: var(--surface-petal); color: var(--on-pink); }
+        .i-sky { background: var(--surface-sky); color: var(--on-sky); }
+        .i-pink { background: var(--surface-pink); color: var(--on-pink); }
+        .card h3 {
+            font-size: 1.06rem; font-weight: 600; letter-spacing: -0.01em;
+            color: var(--text-heading); margin-bottom: 7px; line-height: 1.35;
+        }
+        .card p { font-size: 0.9rem; color: var(--text-soft); line-height: 1.65; }
+
+        /* --- steps --- */
+        .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+        .step { text-align: center; padding: 0 8px; }
+        .step-num {
+            width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 14px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-display); font-size: 1.35rem; font-weight: 700;
+            background: var(--surface-thistle); color: var(--text-heading);
+            border: 1px solid var(--border-soft);
+        }
+        .step h3 { font-size: 1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 6px; }
+        .step p { font-size: 0.89rem; color: var(--text-soft); }
+
+        /* --- trust strip --- */
+        .trust {
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 18px; padding: clamp(24px, 4vw, 34px);
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 22px;
+            box-shadow: var(--shadow-card);
+        }
+        .trust-item { display: flex; gap: 12px; align-items: flex-start; }
+        .trust-ico { font-size: 1.1rem; flex-shrink: 0; line-height: 1.5; }
+        .trust-item h4 { font-size: 0.95rem; font-weight: 600; color: var(--text-heading); margin-bottom: 3px; }
+        .trust-item p { font-size: 0.86rem; color: var(--text-soft); line-height: 1.6; }
+
+        /* --- pricing --- */
+        .plans {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 18px; align-items: stretch; max-width: 780px; margin: 0 auto;
+        }
+        .plan {
+            position: relative;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 20px; padding: 30px 26px 26px;
+            display: flex; flex-direction: column;
+            box-shadow: var(--shadow-card);
+            transition: transform .18s ease, border-color .18s ease;
+        }
+        .plan:hover { transform: translateY(-3px); }
+        .plan-featured {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent), var(--shadow-raised);
+        }
+        .plan-badge {
+            position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            color: #fff; font-size: 0.72rem; font-weight: 700;
+            letter-spacing: .08em; text-transform: uppercase;
+            padding: 6px 16px; border-radius: 99px; white-space: nowrap;
+        }
+        .plan-head { text-align: center; margin-bottom: 20px; }
+        .plan-head h3 {
+            font-family: var(--font-display); font-size: 1.5rem; font-weight: 700;
+            color: var(--text-heading); letter-spacing: -0.01em; margin-bottom: 6px;
+        }
+        .plan-price { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
+        .plan-price .amount {
+            font-family: var(--font-display); font-size: 2.9rem; font-weight: 700;
+            color: var(--text-heading); line-height: 1; letter-spacing: -0.02em;
+        }
+        .plan-price .per { font-size: 0.92rem; color: var(--text-muted); }
+        .plan-note { font-size: 0.82rem; color: var(--text-dim); margin-top: 6px; }
+
+        .plan-list { list-style: none; padding: 0; margin: 0 0 24px; flex: 1; }
+        .plan-list li {
+            position: relative; padding: 8px 0 8px 30px;
+            font-size: 0.9rem; line-height: 1.55; color: var(--text-soft);
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .plan-list li:last-child { border-bottom: none; }
+        .plan-list li strong { color: var(--text-heading); font-weight: 600; }
+        .plan-list li::before {
+            position: absolute; left: 2px; top: 8px;
+            width: 20px; height: 20px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.68rem; font-weight: 700;
+        }
+        .plan-list li.yes::before {
+            content: "✓"; background: var(--surface-icy); color: var(--on-icy);
+        }
+        .plan-list li.no::before {
+            content: "–"; background: var(--surface-thistle); color: var(--text-dim);
+        }
+        .plan-list li.no { color: var(--text-dim); }
+        .plan-btn { width: 100%; }
+        .plans-foot {
+            text-align: center; font-size: 0.83rem; color: var(--text-dim); margin-top: 20px;
+        }
+
+        /* --- closing cta --- */
+        .final {
+            text-align: center;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 22px; padding: clamp(36px, 6vw, 60px) clamp(22px, 5vw, 48px);
+            box-shadow: var(--shadow-card);
+        }
+        .final h2 {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: clamp(1.7rem, 4vw, 2.35rem); line-height: 1.2; letter-spacing: -0.02em;
+            color: var(--text-heading); margin-bottom: 10px;
+        }
+        .final p { color: var(--text-soft); max-width: 46ch; margin: 0 auto 26px; }
+
+        footer {
+            padding: 40px 0 48px; text-align: center;
+            color: var(--text-dim); font-size: 0.84rem;
+            border-top: 1px solid var(--border-soft); margin-top: 20px;
+        }
+        footer a { color: var(--accent-light); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <header class="hero">
+        <div class="wrap">
+            <img class="hero-logo" src="/static/logo-full.png" alt="МираСкоп">
+            <div class="kicker">Астрология на разбираем език</div>
+            <h1>МираСкоп</h1>
+            <p class="lede">Небето в мига на раждането ти казва повече, отколкото предполагаш. Тук то е преведено на човешки.</p>
+            <p class="sub">Точни изчисления по Swiss Ephemeris, разчетени дума по дума — без мъгла, без общи приказки, без термини, които трябва да гуглиш.</p>
+
+            <div class="cta-row">
+                <a class="btn btn-primary" href="/register">Създай своята карта</a>
+                <a class="btn btn-ghost" href="/login">Вече имам акаунт</a>
+            </div>
+            <p class="cta-note">Безплатно. Нужни са само дата, час и място на раждане.</p>
+        </div>
+    </header>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Какво ще откриеш</h2>
+                <p>Всяка секция стъпва на реалните позиции в твоята карта — нищо не е измислено или общо за зодията ти.</p>
+            </div>
+            <div class="cards">
+                <article class="card">
+                    <div class="card-ico i-thistle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></div>
+                    <h3>За мен</h3>
+                    <p>Кой си ти в едно изречение — и после подробно. Същност, емоции, как те виждат другите, силните ти страни и слабите места, казани честно и без плашене.</p>
+                </article>
+                <article class="card">
+                    <div class="card-ico i-icy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.8A8.5 8.5 0 1 1 9.2 3.5a6.8 6.8 0 0 0 11.3 11.3Z"/></svg></div>
+                    <h3>Денят ти</h3>
+                    <p>Какво е благоприятно днес и какво не. Конкретно: какво да свършиш, какво да отложиш, в какво да внимаваш — всяко от тях изведено от реален транзит.</p>
+                </article>
+                <article class="card">
+                    <div class="card-ico i-petal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.4"/><path d="M12 3v3.6M12 17.4V21M3 12h3.6M17.4 12H21"/></svg></div>
+                    <h3>Натална карта</h3>
+                    <p>Истинско колело с домовете по Плацидус, аспектите и всяка планета. Плюс обяснение до всяка позиция какво означава — на български.</p>
+                </article>
+                <article class="card">
+                    <div class="card-ico i-sky"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/><circle cx="12" cy="15" r="1.6"/></svg></div>
+                    <h3>Периоди напред</h3>
+                    <p>Избираш дати и виждаш кои дни носят промяна: кой транзит започва, кой отпада и какво означава това за седмиците пред теб.</p>
+                </article>
+                <article class="card">
+                    <div class="card-ico i-pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.2-4.4-9.1-8.6A5.2 5.2 0 0 1 12 6.4a5.2 5.2 0 0 1 9.1 5c-1.9 4.2-9.1 8.6-9.1 8.6Z"/></svg></div>
+                    <h3>Съвместимост</h3>
+                    <p>Синастрия между двама души: как се разбирате емоционално, къде има химия, къде има търкания и какъв е дългосрочният потенциал.</p>
+                </article>
+                <article class="card">
+                    <div class="card-ico i-thistle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 14.6 9l6.9.5-5.3 4.4 1.7 6.6L12 16.9 6.1 20.5l1.7-6.6L2.5 9.5 9.4 9Z"/></svg></div>
+                    <h3>Акашови записи и нумерология</h3>
+                    <p>Кармичните теми от лунните възли, Хирон и Сатурн — и числата на съдбата ти, изчислени по питагоровата система.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Как работи</h2>
+                <p>От рождена дата до разчетена карта — за по-малко от минута.</p>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <h3>Въведи данните</h3>
+                    <p>Дата, час и място на раждане. Търсиш града по име — координатите и часовата зона се попълват сами.</p>
+                </div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <h3>Картата се изчислява</h3>
+                    <p>Swiss Ephemeris смята позициите с астрономическа точност — същата основа, която ползват професионалните астролози.</p>
+                </div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <h3>Четеш на своя език</h3>
+                    <p>Всяка позиция, аспект и дом идват с обяснение. Разчитанията са структурирани, не изсипани — четат се леко.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="trust">
+                <div class="trust-item">
+                    <span class="trust-ico">✦</span>
+                    <div>
+                        <h4>Точни изчисления, не догадки</h4>
+                        <p>Позициите идват от Swiss Ephemeris — астрономическият стандарт. Разчитането обяснява данните, не ги измисля.</p>
+                    </div>
+                </div>
+                <div class="trust-item">
+                    <span class="trust-ico">✦</span>
+                    <div>
+                        <h4>Изцяло на български</h4>
+                        <p>Знаци, планети, домове, аспекти — всичко преведено, с кратко обяснение до всеки термин.</p>
+                    </div>
+                </div>
+                <div class="trust-item">
+                    <span class="trust-ico">✦</span>
+                    <div>
+                        <h4>Данните ти остават твои</h4>
+                        <p>Всеки вижда само своите хора. Нищо не се споделя и не се продава на трети страни.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="plans">
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Започни безплатно</h2>
+                <p>Разгледай приложението без ангажимент. Ако ти върши работа, отключи всичко за цената на едно кафе.</p>
+            </div>
+            <div class="plans">
+                <article class="plan">
+                    <div class="plan-head">
+                        <h3>Демо</h3>
+                        <div class="plan-price"><span class="amount">0 €</span></div>
+                        <p class="plan-note">Без карта, без срок</p>
+                    </div>
+                    <ul class="plan-list">
+                        <li class="yes">Една натална карта</li>
+                        <li class="yes">Пълното колело с домове и аспекти</li>
+                        <li class="yes">Позициите с обяснение на български</li>
+                        <li class="yes">Нумерологичните ти числа</li>
+                        <li class="no">Разчитанията с изкуствен интелект</li>
+                        <li class="no">Дневен хороскоп и периоди</li>
+                        <li class="no">Съвместимост и акашови записи</li>
+                    </ul>
+                    <a class="btn btn-ghost plan-btn" href="/register">Опитай безплатно</a>
+                </article>
+
+                <article class="plan plan-featured">
+                    <div class="plan-badge">Пълен достъп</div>
+                    <div class="plan-head">
+                        <h3>МираСкоп</h3>
+                        <div class="plan-price"><span class="amount">5 €</span><span class="per">/ месец</span></div>
+                        <p class="plan-note">Откажи по всяко време</p>
+                    </div>
+                    <ul class="plan-list">
+                        <li class="yes">Неограничен брой карти</li>
+                        <li class="yes"><strong>За мен</strong> — личен портрет със силни и слаби страни</li>
+                        <li class="yes"><strong>Денят ти</strong> — какво е благоприятно и какво не</li>
+                        <li class="yes"><strong>Периоди</strong> — разчитане на седмиците напред</li>
+                        <li class="yes"><strong>Съвместимост</strong> между двама души</li>
+                        <li class="yes"><strong>Акашови записи</strong> и кармични теми</li>
+                        <li class="yes">Нови разчитания всеки ден</li>
+                    </ul>
+                    <a class="btn btn-primary plan-btn" href="/register">Вземи пълен достъп</a>
+                </article>
+            </div>
+            <p class="plans-foot">Плащането още не е активно — създай акаунт сега и започни с демото.</p>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Виж какво пише в твоята карта</h2>
+                <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/register">Създай своята карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="wrap">
+            МираСкоп · Астрология на разбираем език<br>
+            Разчитанията са за размисъл и себепознание, не заместват професионален съвет.
+        </div>
+    </footer>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        // Someone already signed in has no reason to read the pitch again.
+        if (localStorage.getItem('miralog_token')) {
+            window.location.replace('/dashboard');
+        }
+    </script>
+</body>
+</html>

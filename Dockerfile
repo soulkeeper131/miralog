@@ -17,6 +17,7 @@ COPY chart_svg.py .
 COPY translations.py .
 COPY numerology.py .
 COPY templates/ templates/
+COPY static/ static/
 
 # Create dirs and download essential ephemeris files
 RUN mkdir -p /app/static /app/ephe /app/data && \

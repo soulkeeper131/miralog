@@ -27,6 +27,10 @@ import bcrypt
 from translations import (
     tr_sign, tr_object, tr_aspect, tr_moon_phase, tr_movement, tr_shape, tr_house_system, tr_house,
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
+    sign_symbol, sign_element, sign_modality,
+    sign_aspect, element_pair_meaning, modality_pair_meaning,
+    ELEMENTS_BG, MODALITIES_BG, ELEMENT_MEANINGS, MODALITY_MEANINGS,
+    SIGNS, ZODIAC_ORDER,
 )
 from numerology import compute_numerology
 
@@ -143,6 +147,10 @@ class BirthDataUpdate(BaseModel):
 class SynastryRequest(BaseModel):
     person1_id: int
     person2_id: int
+
+class LoveMatchRequest(BaseModel):
+    person_id: int
+    partner_sign: str  # English sign name, e.g. "Taurus"
 
 class TransitsRequest(BaseModel):
     person_id: int
@@ -323,6 +331,7 @@ def serialize_objects(objects: dict) -> dict:
             "icon": icons.get(name, '🪐'),
             "sign": sign,
             "sign_bg": tr_sign(sign),
+            "sign_symbol": sign_symbol(sign),
             "sign_meaning": meaning_sign(sign),
             "sign_longitude": obj.sign_longitude.formatted,
             "longitude": obj.longitude.formatted,
@@ -532,6 +541,21 @@ def api_login(data: AuthRequest):
         "user": {"id": user["id"], "email": user["email"]}
     }
 
+@app.post("/api/auth/register")
+def api_register(data: AuthRequest):
+    """Create an account. Each user only ever sees their own people."""
+    email = (data.email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
+    if len(data.password or "") < 6:
+        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    if get_user_by_email(email):
+        raise HTTPException(409, "Вече съществува акаунт с този имейл.")
+
+    user = create_user(email, hash_password(data.password))
+    token = create_token(user["id"], user["email"])
+    return {"token": token, "user": {"id": user["id"], "email": user["email"]}}
+
 @app.get("/api/auth/me")
 def api_me(user: Tuple[int, str] = Depends(get_current_user)):
     """Get current authenticated user from token."""
@@ -555,6 +579,88 @@ def api_update_settings(data: SettingsUpdate, user: Tuple[int, str] = Depends(ge
     if data.ai_provider is not None and data.ai_provider.strip():
         set_setting("ai_provider", data.ai_provider.strip())
     return {"ok": True}
+
+# --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
+_geocode_cache: dict = {}
+_geocode_last_call: list = [0.0]  # mutable holder so the helper can update it
+
+def geocode_place(query: str, limit: int = 6) -> list:
+    """Look up a place name and return candidate locations with coordinates.
+
+    Nominatim's usage policy requires an identifying User-Agent and at most one
+    request per second, so results are cached and calls are spaced out.
+    """
+    import time
+    import urllib.parse
+    import urllib.request
+
+    key = query.strip().lower()
+    if not key:
+        return []
+    if key in _geocode_cache:
+        return _geocode_cache[key]
+
+    # Respect Nominatim's 1 request/second limit.
+    elapsed = time.monotonic() - _geocode_last_call[0]
+    if elapsed < 1.0:
+        time.sleep(1.0 - elapsed)
+
+    params = urllib.parse.urlencode({
+        "q": query,
+        "format": "json",
+        "limit": limit,
+        "addressdetails": 1,
+        "accept-language": "bg",
+    })
+    req = urllib.request.Request(
+        f"https://nominatim.openstreetmap.org/search?{params}",
+        headers={"User-Agent": "MiraSkop/1.0 (astrology chart app)"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = json.loads(resp.read())
+    except Exception as e:
+        raise HTTPException(502, f"Грешка при търсене на място: {e}")
+    finally:
+        _geocode_last_call[0] = time.monotonic()
+
+    try:
+        from timezonefinder import TimezoneFinder
+        tf = TimezoneFinder()
+    except Exception:
+        tf = None
+
+    results = []
+    for item in raw:
+        addr = item.get("address", {})
+        place = (addr.get("city") or addr.get("town") or addr.get("village")
+                 or addr.get("municipality") or addr.get("county") or item.get("name", ""))
+        country = addr.get("country", "")
+        lat, lon = float(item["lat"]), float(item["lon"])
+        tz = None
+        if tf:
+            try:
+                tz = tf.timezone_at(lat=lat, lng=lon)
+            except Exception:
+                tz = None
+        results.append({
+            "label": item.get("display_name", ""),
+            "place": place,
+            "country": country,
+            "lat": lat,
+            "lon": lon,
+            "timezone": tz or "Europe/Sofia",
+        })
+
+    _geocode_cache[key] = results
+    return results
+
+@app.get("/api/geocode")
+def api_geocode(q: str, user: Tuple[int, str] = Depends(get_current_user)):
+    """Search for a place by name and return matching coordinates."""
+    if len(q.strip()) < 2:
+        return {"results": []}
+    return {"results": geocode_place(q)}
 
 # --- API Routes (AUTH REQUIRED) ---
 @app.get("/api/persons")
@@ -653,6 +759,438 @@ def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_us
     svg = generate_chart_svg(chart_data)
     return Response(content=svg, media_type="image/svg+xml")
 
+# Shared tail for every AI prompt: the UI renders markdown headings, bullet lists
+# and **bold**, so the model is asked to emit exactly that structure.
+STYLE_RULES = """
+=== КАК ДА ПИШЕШ ===
+- Пиши на български, топло и практично, все едно говориш директно на човека.
+- ОБРЪЩЕНИЕ: обръщай се на "ти" и САМО с малкото име (то е подадено като "Малко име"). Никога не използвай фамилията и не пиши на "Вие".
+- ФОРМАТ: всяко номерирано заглавие започва на нов ред във вида `1. **Заглавие**`. Където изброяваш неща, ползвай тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
+- СТРУКТУРА: всяка секция да е самостоятелна и завършена. Не повтаряй едно и също през различните секции.
+- ЛОГИКА: върви от общото към конкретното, така че читателят да вижда връзката между данните и изводите.
+- ДЪЛЖИНА: бъди подробен — всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи.
+- Бъди конкретен, избягвай клишета. Обяснявай астрологичните термини накратко, за да е разбираемо и за човек без познания.
+- Основавай се единствено на подадените данни, без да добавяш измислени детайли.
+
+=== ПРАВОПИС (задължително) ===
+Пиши на книжовен български. Внимавай особено за:
+- "в" / "във": пълната форма "във" се пише САМО пред думи, започващи с "в" или "ф" (във въздуха, във фокуса). Иначе винаги "в" (в дома, в знака, в картата).
+- "с" / "със": пълната форма "със" се пише САМО пред думи, започващи със "с" или "з" (със Сатурн, със знанието). Иначе винаги "с" (с Луната, с търпение, с хората).
+- Пълен и кратък член: пълен член (-ът, -ят) само при подлог (Сатурн е учителят); кратък (-а, -я) при допълнение (виждаш учителя).
+- Пълните форми на местоименията: "него/нея" след предлог, "го/я" като кратка форма.
+- Не пропускай запетаи пред "който", "която", "което", "които", "че", "но", "а".
+- Внимавай с бройната форма: два/три + мъжки род = "два аспекта", "три знака" (не "аспекти"/"знакове")."""
+
+def first_name(full_name: str) -> str:
+    """First name only — the readings address the person informally."""
+    return (full_name or "").strip().split()[0] if (full_name or "").strip() else ""
+
+def split_summary(raw: str) -> Tuple[Optional[dict], str]:
+    """Split an AI reply into its ---SUMMARY--- JSON block and the prose that follows.
+
+    The summary drives the little cards above the text; if the model skipped it or
+    emitted invalid JSON, the prose is still returned unchanged.
+    """
+    import re
+    if not raw:
+        return None, raw or ""
+    match = re.search(r"---SUMMARY---\s*(.*?)\s*---END---\s*", raw, re.DOTALL)
+    if not match:
+        return None, raw
+    body = raw[match.end():].lstrip()
+    try:
+        summary = json.loads(match.group(1))
+    except Exception:
+        return None, body
+    return summary, body
+
+PERSONAL_PLANETS = {"Sun", "Moon", "Mercury", "Venus", "Mars"}
+
+def build_profile(chart_data: dict) -> dict:
+    """Summarise a natal chart into a readable 'about me' profile:
+    key points, element/modality balance, house emphasis and strongest aspects."""
+    objects = chart_data.get("objects", {})
+    by_name = {o["name"]: o for o in objects.values()}
+
+    # Element and modality balance, counted over the personal + social planets
+    # plus the Ascendant, which is what actually colours the temperament.
+    counted = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Asc"]
+    elements: dict = {}
+    modalities: dict = {}
+    for name in counted:
+        obj = by_name.get(name)
+        if not obj:
+            continue
+        el = sign_element(obj["sign"])
+        mo = sign_modality(obj["sign"])
+        if el:
+            elements[el] = elements.get(el, 0) + 1
+        if mo:
+            modalities[mo] = modalities.get(mo, 0) + 1
+
+    def top_key(counts: dict):
+        return max(counts, key=counts.get) if counts else None
+
+    dominant_el = top_key(elements)
+    dominant_mo = top_key(modalities)
+
+    # Which houses hold the most planets — the life areas the chart emphasises.
+    house_counts: dict = {}
+    for obj in objects.values():
+        if obj["name"] in PERSONAL_PLANETS or obj["name"] in {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"}:
+            hn = obj.get("house_number")
+            if hn:
+                house_counts[hn] = house_counts.get(hn, 0) + 1
+    emphasised = sorted(house_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+
+    # Tightest aspects (smallest orb) between the meaningful bodies.
+    aspect_bodies = PERSONAL_PLANETS | {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Asc", "MC"}
+    scored = [
+        a for a in chart_data.get("aspects", [])
+        if a.get("orb") is not None
+        and a["active"] in aspect_bodies and a["passive"] in aspect_bodies
+        and a["type"] in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
+    ]
+    scored.sort(key=lambda a: abs(a["orb"]))
+    seen = set()
+    key_aspects = []
+    for a in scored:
+        pair = tuple(sorted((a["active"], a["passive"])))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        key_aspects.append(a)
+        if len(key_aspects) >= 6:
+            break
+
+    def point(name):
+        o = by_name.get(name)
+        if not o:
+            return None
+        return {
+            "name_bg": o["name_bg"],
+            "sign_bg": o["sign_bg"],
+            "sign_symbol": o["sign_symbol"],
+            "house_bg": o["house_bg"],
+            "meaning": o.get("name_meaning", ""),
+            "sign_meaning": o.get("sign_meaning", ""),
+        }
+
+    return {
+        "core": {
+            "sun": point("Sun"),
+            "moon": point("Moon"),
+            "ascendant": point("Asc"),
+            "mc": point("MC"),
+        },
+        "personal_planets": [point(n) for n in ("Mercury", "Venus", "Mars") if point(n)],
+        "elements": {
+            "counts": {ELEMENTS_BG[k]: v for k, v in elements.items()},
+            "dominant": ELEMENTS_BG.get(dominant_el) if dominant_el else None,
+            "dominant_meaning": ELEMENT_MEANINGS.get(dominant_el, "") if dominant_el else "",
+        },
+        "modalities": {
+            "counts": {MODALITIES_BG[k]: v for k, v in modalities.items()},
+            "dominant": MODALITIES_BG.get(dominant_mo) if dominant_mo else None,
+            "dominant_meaning": MODALITY_MEANINGS.get(dominant_mo, "") if dominant_mo else "",
+        },
+        "emphasised_houses": [
+            {"house": h, "count": c, "meaning": meaning_house(f"{h}{'st' if h == 1 else 'nd' if h == 2 else 'rd' if h == 3 else 'th'} House")}
+            for h, c in emphasised
+        ],
+        "key_aspects": [
+            {
+                "active_bg": a["active_bg"], "passive_bg": a["passive_bg"],
+                "type_bg": a["type_bg"], "type_meaning": a.get("type_meaning", ""),
+                "orb": round(a["orb"], 1),
+            }
+            for a in key_aspects
+        ],
+        "shape_bg": chart_data.get("shape_bg"),
+        "shape_meaning": chart_data.get("shape_meaning"),
+        "moon_phase_bg": chart_data.get("moon_phase_bg"),
+        "moon_phase_meaning": chart_data.get("moon_phase_meaning"),
+        "diurnal": chart_data.get("diurnal"),
+    }
+
+@app.get("/api/persons/{person_id}/profile")
+def api_profile(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    """Computed 'about me' profile — deterministic, no AI."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    return build_profile(compute_natal(p))
+
+@app.get("/api/persons/{person_id}/profile/interpretation")
+def api_profile_interpretation(person_id: int, refresh: bool = False,
+                               user: Tuple[int, str] = Depends(get_current_user)):
+    """AI 'about me' reading — strengths, weaknesses and what makes this chart distinctive."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+
+    if not refresh:
+        cached = get_ai_cache(person_id, "profile")
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    chart_data = compute_natal(p)
+    prof = build_profile(chart_data)
+
+    def fmt_point(label, pt):
+        return f"{label}: {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}" if pt else f"{label}: няма данни"
+
+    aspects_txt = "\n".join(
+        f"- {a['active_bg']} {a['type_bg']} {a['passive_bg']} (орб {a['orb']}°)"
+        for a in prof["key_aspects"]
+    )
+    houses_txt = ", ".join(f"{h['house']}-ти дом ({h['count']} планети)" for h in prof["emphasised_houses"])
+    el_txt = ", ".join(f"{k}: {v}" for k, v in prof["elements"]["counts"].items())
+    mo_txt = ", ".join(f"{k}: {v}" for k, v in prof["modalities"]["counts"].items())
+
+    prompt = f"""Ти си професионален астролог. Напиши раздел "ЗА МЕН" — личен портрет на човека, СТРИКТНО базиран на точните данни от наталната му карта по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции — обясни какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
+Роден: {p['day']}.{p['month']}.{p['year']} в {p['hour']:02d}:{p['minute']:02d}
+
+=== ЯДРО НА ЛИЧНОСТТА ===
+{fmt_point('Слънце (същност)', prof['core']['sun'])}
+{fmt_point('Луна (емоции)', prof['core']['moon'])}
+{fmt_point('Асцендент (как те виждат)', prof['core']['ascendant'])}
+{fmt_point('Медиум Коели (призвание)', prof['core']['mc'])}
+
+=== ЛИЧНИ ПЛАНЕТИ ===
+{chr(10).join(f"- {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}" for pt in prof['personal_planets'])}
+
+=== БАЛАНС НА СТИХИИТЕ ===
+{el_txt} — доминира: {prof['elements']['dominant']}
+
+=== БАЛАНС НА КАЧЕСТВАТА ===
+{mo_txt} — доминира: {prof['modalities']['dominant']}
+
+=== НАЙ-АКЦЕНТИРАНИ ДОМОВЕ ===
+{houses_txt}
+
+=== НАЙ-СИЛНИ АСПЕКТИ (най-малък орб = най-точен и осезаем) ===
+{aspects_txt}
+
+=== ДРУГИ ===
+Форма на картата: {prof['shape_bg']}
+Лунна фаза при раждане: {prof['moon_phase_bg']}
+Раждане: {'дневно' if prof['diurnal'] else 'нощно'}
+
+=== ЗАДАЧА ===
+Напиши личен портрет в следната структура (обръщай се на "ти", топло и директно):
+
+1. **Кой си ти в едно изречение** — есенцията на характера, уловена кратко и запомнящо се.
+2. **Твоята същност** — Слънце, Луна и Асцендент: кой си отвътре, какво чувстваш и как те виждат другите. Обясни разликите между трите, ако има такива.
+3. **Силните ти страни** — 4-5 конкретни, изведени от реалните аспекти и позиции. За всяка обясни КАК се проявява в ежедневието.
+4. **Слабите ти места** — 3-4 честни, но доброжелателни. Не плаши — обясни какъв е урокът и как се работи с тях.
+5. **Твоят темперамент** — какво значи доминацията на стихията и качеството за начина, по който живееш.
+6. **Къде е фокусът на живота ти** — акцентираните домове и какви теми носят.
+7. **Интересни особености** — 3-4 любопитни детайла от картата: рядка конфигурация, необичайно силен аспект, ретроградна планета, форма на картата, лунна фаза, дневно/нощно раждане. Направи ги наистина интересни, не банални.
+8. **Какво да развиваш** — 2-3 конкретни насоки за растеж.
+""" + STYLE_RULES
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
+            set_ai_cache(person_id, "profile", interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
+KARMIC_POINTS = ("True North Node", "True South Node", "Chiron", "Saturn", "Pluto", "True Lilith")
+
+def build_karmic(chart_data: dict, numerology: dict) -> dict:
+    """Collect the chart's traditionally karmic markers — lunar nodes, Chiron,
+    Saturn, Pluto, Lilith, 12th-house tenants and retrogrades — plus the
+    numerology life path. These are the factual basis the akashic reading uses."""
+    objects = chart_data.get("objects", {})
+    by_name = {o["name"]: o for o in objects.values()}
+
+    def pt(name):
+        o = by_name.get(name)
+        if not o:
+            return None
+        return {
+            "name_bg": o["name_bg"], "sign_bg": o["sign_bg"], "sign_symbol": o["sign_symbol"],
+            "house_bg": o["house_bg"], "house_number": o.get("house_number"),
+            "retrograde": o.get("movement") == "Retrograde",
+            "meaning": o.get("name_meaning", ""),
+        }
+
+    twelfth = [
+        {"name_bg": o["name_bg"], "sign_bg": o["sign_bg"], "sign_symbol": o["sign_symbol"]}
+        for o in objects.values()
+        if o.get("house_number") == 12 and o["name"] not in ("Asc", "Desc", "MC", "IC")
+    ]
+    retrogrades = [
+        {"name_bg": o["name_bg"], "sign_bg": o["sign_bg"], "sign_symbol": o["sign_symbol"],
+         "house_bg": o["house_bg"]}
+        for o in objects.values()
+        if o.get("movement") == "Retrograde"
+        and o["name"] in ("Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Chiron")
+    ]
+
+    return {
+        "points": {k: pt(k) for k in KARMIC_POINTS if pt(k)},
+        "twelfth_house": twelfth,
+        "retrogrades": retrogrades,
+        "life_path": numerology["life_path"]["number"],
+        "moon_phase_bg": chart_data.get("moon_phase_bg"),
+        "diurnal": chart_data.get("diurnal"),
+    }
+
+@app.get("/api/persons/{person_id}/akashic")
+def api_akashic(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    """The karmic markers the akashic reading is built on (computed, no AI)."""
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
+    return build_karmic(compute_natal(p), numerology)
+
+@app.get("/api/persons/{person_id}/akashic/interpretation")
+def api_akashic_interpretation(person_id: int, refresh: bool = False,
+                               user: Tuple[int, str] = Depends(get_current_user)):
+    """Akashic-records style reading of the chart's karmic markers.
+
+    Framed as contemplative interpretation, not as retrieved record: there is no
+    data source for akashic records, so the reading stays anchored to the chart.
+    """
+    user_id, email = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+
+    if not refresh:
+        cached = get_ai_cache(person_id, "akashic")
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    chart_data = compute_natal(p)
+    numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
+    k = build_karmic(chart_data, numerology)
+
+    def line(label, point):
+        if not point:
+            return f"{label}: няма данни"
+        retro = " (ретрограден)" if point["retrograde"] else ""
+        return f"{label}: {point['name_bg']} в {point['sign_bg']}, {point['house_bg']}{retro}"
+
+    twelfth_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']}" for o in k["twelfth_house"]) or "празен"
+    retro_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']} ({o['house_bg']})" for o in k["retrogrades"]) or "няма"
+
+    # Aspects touching the karmic points give the reading far more to work with
+    # than the bare positions alone.
+    karmic_bg = {tr_object(n) for n in KARMIC_POINTS}
+    karmic_aspects = [
+        f"- {a['active_bg']} {a['type_bg']} {a['passive_bg']}"
+        + (f" (орб {a['orb']:.1f}°)" if a.get("orb") is not None else "")
+        for a in chart_data.get("aspects", [])
+        if a["type"] in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
+        and (a["active_bg"] in karmic_bg or a["passive_bg"] in karmic_bg)
+    ]
+    karmic_aspects_txt = "\n".join(karmic_aspects[:18]) or "няма значими аспекти към кармичните точки"
+
+    houses_txt = "\n".join(
+        f"- {h['number']}-ти дом започва в {h['sign_bg']} {h['sign_longitude']}"
+        for h in chart_data.get("houses", [])
+    ) or "няма данни"
+
+    all_positions = "\n".join(
+        f"- {o['name_bg']}: {o['sign_bg']} {o['sign_longitude']}, {o['house_bg']}"
+        + (" (ретрограден)" if o.get("movement") == "Retrograde" else "")
+        for o in chart_data.get("objects", {}).values()
+    )
+
+    prompt = f"""Ти си водач при четене на Акашови записи. Работиш съзерцателно: вглеждаш се в кармичните маркери на наталната карта и ги разчиташ като следи от пътя на душата.
+
+Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
+Роден: {p['day']}.{p['month']}.{p['year']} в {p['hour']:02d}:{p['minute']:02d}
+
+=== КАРМИЧНИ ТОЧКИ (точно изчислени със Swiss Ephemeris) ===
+{line('Северен възел (посока на растеж)', k['points'].get('True North Node'))}
+{line('Южен възел (наследено от миналото)', k['points'].get('True South Node'))}
+{line('Хирон (раната, която лекува)', k['points'].get('Chiron'))}
+{line('Сатурн (уроците и структурата)', k['points'].get('Saturn'))}
+{line('Плутон (дълбоката трансформация)', k['points'].get('Pluto'))}
+{line('Лилит (потиснатото и автентичното)', k['points'].get('True Lilith'))}
+
+Планети в 12-ти дом (домът на подсъзнанието и наследеното): {twelfth_txt}
+Ретроградни планети (енергия, обърната навътре — недовършена работа): {retro_txt}
+Лунна фаза при раждане: {k['moon_phase_bg']}
+Раждане: {'дневно' if k['diurnal'] else 'нощно'}
+Форма на картата: {chart_data.get('shape_bg', 'няма данни')}
+Число на съдбата (нумерология): {k['life_path']}
+
+=== АСПЕКТИ КЪМ КАРМИЧНИТЕ ТОЧКИ (по-малък орб = по-силно изразен) ===
+{karmic_aspects_txt}
+
+=== ВСИЧКИ ПОЗИЦИИ В КАРТАТА (за контекст) ===
+{all_positions}
+
+=== ДОМОВЕ ===
+{houses_txt}
+
+=== КАК СЕ ЧЕТАТ АКАШОВИТЕ ЗАПИСИ ===
+В тази традиция Акашовите записи се разбират като поле на паметта на душата. Не се "четат" като книга с факти, а се съзерцават чрез символите, които душата е оставила в наталната карта. Ключовите ориентири са:
+- Южният възел — какво душата вече владее до втръсване; зоната на комфорт, която в този живот вече не храни.
+- Северният възел — посоката, която отначало е неудобна, но носи израстване; обратният полюс на Южния.
+- Осите на възлите през домовете — двойката области от живота, между които се люлее развитието.
+- Хирон — раната, която не се лекува докрай, но точно затова прави човека способен да лекува същото у другите.
+- Сатурн — къде животът поставя условия, забавя и изисква зрялост; уроците, които се повтарят, докато не бъдат научени.
+- Плутон — където се случват необратимите смъртта-и-прераждане процеси на личността.
+- Лилит — това, което е било потискано и иска да бъде върнато без срам.
+- 12-ти дом — колективното, наследеното, неосъзнатото; всичко, което действа зад кулисите.
+- Ретроградните планети — енергии, които се проявяват навътре, преди да могат навън; често усещане за "недовършено".
+
+=== ЗАДАЧА ===
+Напиши задълбочено четене на Акашовите записи в следната структура:
+
+1. **Отваряне на записа** — 2-3 изречения въведение: настройка към момента, спокойно и с уважение. Без театралност.
+2. **Какво носи душата от преди** — Южният възел, 12-ти дом и ретроградните планети: какви модели, дарби и навици идват като наследство. Обвържи ги конкретно с изброените позиции и обясни защо точно този знак и дом дават този модел.
+3. **Раната, която се лекува** — Хирон: къде е болката, откъде идва, как се проявява в ежедневието и как точно се превръща в дарба за другите. Ползвай и аспектите към Хирон, ако има такива.
+4. **Договорът на този живот** — Северният възел и Сатурн: към какво се движи душата, каква е задачата ѝ, какви са условията на израстването и какво се иска да бъде оставено зад гърба.
+5. **Силата на трансформацията** — Плутон и Лилит: къде живее най-дълбоката промяна, какво е било потиснато и какво иска да бъде върнато.
+6. **Оста на развитието** — двойката домове на лунните възли: между кои две области от живота се движи растежът и как изглежда балансът между тях.
+7. **Кармичните възли** — 3-4 повтарящи се теми, които вероятно се връщат в живота, докато не бъдат осъзнати. За всяка посочи от коя точка в картата произтича.
+8. **Какво иска душата да чуе сега** — 4-5 конкретни насоки за освобождаване и движение напред.
+9. **Затваряне на записа** — 2-3 изречения спокойно обобщение.
+
+ВАЖНО ЗА ТОНА:
+- Пиши поетично и съзерцателно, с образи и метафори, но БЕЗ да твърдиш конкретни факти за минали животи (не измисляй имена, епохи, държави, професии или събития). Говори за модели, теми и енергии — не за биографии.
+- Всяко твърдение трябва да стъпва на изброените по-горе точки — читателят да вижда връзката с реалната карта.
+- Не плаши и не предсказвай нещастия. Кармата тук е урок, не наказание.
+- Бъди щедър в дължината: това е основният текст на раздела, разгърни всяка секция пълноценно.
+""" + STYLE_RULES
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000)
+            set_ai_cache(person_id, "akashic", interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
 @app.get("/api/persons/{person_id}/numerology")
 def api_numerology(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
     """Compute the Pythagorean numerology profile for a person (deterministic, no AI)."""
@@ -682,6 +1220,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
     prompt = f"""Ти си професионален нумеролог. Интерпретирай СТРИКТНО следния питагоров нумерологичен профил, изчислен математически от името и датата на раждане. Не измисляй и не променяй числата — те са точен резултат от изчислението. Обясни само какво ОЗНАЧАВАТ.
 
 Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
 Дата на раждане: {p['day']}.{p['month']}.{p['year']}
 
 Число на съдбата (Life Path): {profile['life_path']['number']}
@@ -691,21 +1230,184 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
 Число на рождения ден: {profile['birthday']['number']}
 Лично число за {profile['personal_year']['year']} година: {profile['personal_year']['number']}
 
-Моля, направи пълна интерпретация включваща:
-1. Число на съдбата — основен жизнен път и цел
-2. Число на изразяването — таланти и как се проявяват навън
-3. Душевен копнеж — вътрешни желания и мотивация
-4. Личност — как те възприемат другите
-5. Лична година — на какво да наблегне тази година
-6. Как числата си взаимодействат — хармония или напрежение между тях
-
-Пиши на български, с ясен и практичен език. Основавай се единствено на изброените по-горе числа."""
+Моля, направи пълна интерпретация със следните секции:
+1. **Число на съдбата** — основен жизнен път и цел
+2. **Число на изразяването** — таланти и как се проявяват навън
+3. **Душевен копнеж** — вътрешни желания и мотивация
+4. **Личност** — как те възприемат другите
+5. **Лична година** — на какво да наблегнеш тази година
+6. **Как числата си взаимодействат** — хармония или напрежение между тях
+""" + STYLE_RULES
 
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
             set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
+
+LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
+
+@app.get("/api/zodiac-signs")
+def api_zodiac_signs(user: Tuple[int, str] = Depends(get_current_user)):
+    """The twelve signs, for the partner picker."""
+    return {"signs": [
+        {"key": s, "name_bg": tr_sign(s), "symbol": sign_symbol(s),
+         "element_bg": ELEMENTS_BG.get(sign_element(s)),
+         "modality_bg": MODALITIES_BG.get(sign_modality(s))}
+        for s in ZODIAC_ORDER
+    ]}
+
+def build_love_match(person: dict, partner_sign: str) -> dict:
+    """Compare the person's love-relevant placements against a partner's sun sign.
+
+    Only the partner's sign is known here — no birth time — so this compares
+    sign to sign rather than computing a full synastry chart.
+    """
+    chart_data = compute_natal(person)
+    by_name = {o["name"]: o for o in chart_data["objects"].values()}
+
+    pairs = []
+    labels = {
+        "Sun": "Слънце (същност)",
+        "Moon": "Луна (емоции)",
+        "Venus": "Венера (любов)",
+        "Mars": "Марс (страст)",
+        "Asc": "Асцендент (първо впечатление)",
+    }
+    for name in LOVE_POINTS:
+        o = by_name.get(name)
+        if not o:
+            continue
+        asp = sign_aspect(o["sign"], partner_sign)
+        pairs.append({
+            "label": labels[name],
+            "name_bg": o["name_bg"],
+            "sign_bg": o["sign_bg"],
+            "sign_symbol": o["sign_symbol"],
+            "aspect": asp[0] if asp else None,
+            "aspect_meaning": asp[1] if asp else "",
+        })
+
+    sun = by_name.get("Sun")
+    venus = by_name.get("Venus")
+    sun_sign = sun["sign"] if sun else None
+
+    el_a, el_b = sign_element(sun_sign), sign_element(partner_sign)
+    mo_a, mo_b = sign_modality(sun_sign), sign_modality(partner_sign)
+
+    return {
+        "partner": {
+            "sign": partner_sign,
+            "sign_bg": tr_sign(partner_sign),
+            "symbol": sign_symbol(partner_sign),
+            "element_bg": ELEMENTS_BG.get(el_b),
+            "modality_bg": MODALITIES_BG.get(mo_b),
+            "sign_meaning": meaning_sign(partner_sign),
+        },
+        "you": {
+            "sun_bg": tr_sign(sun_sign) if sun_sign else None,
+            "sun_symbol": sign_symbol(sun_sign) if sun_sign else None,
+            "venus_bg": tr_sign(venus["sign"]) if venus else None,
+            "venus_symbol": sign_symbol(venus["sign"]) if venus else None,
+            "element_bg": ELEMENTS_BG.get(el_a),
+            "modality_bg": MODALITIES_BG.get(mo_a),
+        },
+        "sun_aspect": (lambda a: {"name": a[0], "meaning": a[1]} if a else None)(
+            sign_aspect(sun_sign, partner_sign) if sun_sign else None),
+        "venus_aspect": (lambda a: {"name": a[0], "meaning": a[1]} if a else None)(
+            sign_aspect(venus["sign"], partner_sign) if venus else None),
+        "elements": element_pair_meaning(el_a, el_b),
+        "modalities": modality_pair_meaning(mo_a, mo_b),
+        "points": pairs,
+    }
+
+@app.post("/api/love-match")
+def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(get_current_user)):
+    """Sign-level love compatibility (computed, no AI)."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    if data.partner_sign not in ZODIAC_ORDER:
+        raise HTTPException(400, "Невалиден зодиакален знак.")
+    return build_love_match(p, data.partner_sign)
+
+@app.post("/api/love-match/interpretation")
+def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
+                                  user: Tuple[int, str] = Depends(get_current_user)):
+    """AI love reading for the person against a partner's sun sign."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    if data.partner_sign not in ZODIAC_ORDER:
+        raise HTTPException(400, "Невалиден зодиакален знак.")
+
+    cache_key = f"love:{data.partner_sign}"
+    if not refresh:
+        cached = get_ai_cache(data.person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    m = build_love_match(p, data.partner_sign)
+
+    points_txt = "\n".join(
+        f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
+        f" ({pt['aspect_meaning']})"
+        for pt in m["points"] if pt["aspect"]
+    )
+
+    prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между конкретен човек и партньор от даден зодиакален знак.
+
+Малко име (обръщай се само с него): {first_name(p['name'])}
+
+=== ТВОЯТА КАРТА (точно изчислена) ===
+Слънце: {m['you']['sun_bg']} · Венера: {m['you']['venus_bg']}
+Стихия: {m['you']['element_bg']} · Качество: {m['you']['modality_bg']}
+
+=== ПАРТНЬОРЪТ ===
+Зодия: {m['partner']['sign_bg']}
+Стихия: {m['partner']['element_bg']} · Качество: {m['partner']['modality_bg']}
+Характер на знака: {m['partner']['sign_meaning']}
+
+=== АСПЕКТИ МЕЖДУ ЗНАЦИТЕ ===
+{points_txt or "няма изчислени аспекти"}
+
+Стихии: {m['elements']}
+Качества: {m['modalities']}
+
+ВАЖНО: знаем само зодията на партньора, не и точния му час на раждане. Затова говори за тенденции на ниво знак, а не за неговата пълна карта. Ако някъде е нужно повече, кажи честно, че за по-точен прочит трябват и неговите час и място на раждане.
+
+=== ЗАДАЧА ===
+Напиши любовен хороскоп в следната структура:
+
+1. **Общата картина** — каква е динамиката между вас в две-три изречения.
+2. **Какво ви свързва** — 3-4 конкретни неща, изведени от аспектите и стихиите по-горе. За всяко посочи от какво произтича.
+3. **Къде ще има търкания** — 3-4 честни точки на напрежение и защо се появяват.
+4. **Как да го подхождаш** — 4-5 конкретни съвета какво ДА правиш с този партньор: как да общуваш, какво го печели, кога да отстъпиш.
+5. **С какво да внимаваш** — 3-4 неща, които е добре да избягваш в тази връзка, с обяснение защо точно тук са рискови.
+6. **Емоционална съвместимост** — Луната и Венера: как се разбирате на ниво чувства и нежност.
+7. **Страст и привличане** — Марс и Слънце: каква е химията между вас.
+8. **Дългосрочен потенциал** — какво е нужно, за да проработи в дългосрочен план.
+9. **Едно изречение накрая** — есенцията на тази двойка.
+
+Бъди честен: ако комбинацията е трудна, кажи го, но покажи и как се работи с нея. Не превръщай всичко в розово.
+""" + STYLE_RULES
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
+            set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}
@@ -767,11 +1469,11 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
     prompt = f"""Ти си професионален астролог. Направи интерпретация на съвместимостта между двама души на български език.
 
 ПЪРВИ ЧОВЕК:
-Име: {p1['name']}
+Малко име (използвай само него): {first_name(p1['name'])}
 Дата на раждане: {p1['year']}-{p1['month']:02d}-{p1['day']:02d} {p1['hour']:02d}:{p1['minute']:02d}
 
 ВТОРИ ЧОВЕК:
-Име: {p2['name']}
+Малко име (използвай само него): {first_name(p2['name'])}
 Дата на раждане: {p2['year']}-{p2['month']:02d}-{p2['day']:02d} {p2['hour']:02d}:{p2['minute']:02d}
 
 Форма на съвместимостта: {composite.get('shape_bg', composite.get('shape', 'N/A'))}
@@ -781,15 +1483,16 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
 {chr(10).join(aspects_text) if aspects_text else "Няма данни"}
 
 Моля, направи пълна интерпретация включваща:
-1. Обща характеристика на връзката — каква е динамиката между двамата
-2. Емоционална съвместимост — как се разбират на чувствено ниво
-3. Комуникация и интелектуална връзка — как общуват и мислят заедно
-4. Силни страни на връзката — какво ги сближава и прави добър екип
-5. Предизвикателства — къде може да има търкания и как да ги преодолеят
-6. Романтична и физическа химия
-7. Дългосрочен потенциал — какво показват звездите за бъдещето им
+1. **Обща характеристика на връзката** — каква е динамиката между двамата
+2. **Емоционална съвместимост** — как се разбират на чувствено ниво
+3. **Комуникация и интелектуална връзка** — как общуват и мислят заедно
+4. **Силни страни на връзката** — какво ги сближава и прави добър екип
+5. **Предизвикателства** — къде може да има търкания и как да ги преодолеят
+6. **Романтична и физическа химия**
+7. **Дългосрочен потенциал** — какво показват аспектите за бъдещето им
 
-Пиши на български, с топъл и разбираем език. Обърни се директно към тях (използвай имената им)."""
+Обърни се директно към тях (използвай имената им).
+""" + STYLE_RULES
 
     ai_key, provider = get_ai_config()
     if ai_key:
@@ -845,7 +1548,9 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
-            return {"interpretation": cached["content"], "date": now.strftime("%d.%m.%Y"), "cached": True}
+            summary, body = split_summary(cached["content"])
+            return {"interpretation": body, "summary": summary,
+                    "date": now.strftime("%d.%m.%Y"), "cached": True}
 
     transit_data = compute_transits(p, now)
 
@@ -861,6 +1566,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     prompt = f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
 
 Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
 Дата на анализа: {date_bg}
 
 === ФОН НА ДЕНЯ ===
@@ -871,21 +1577,46 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
 {chr(10).join(aspects_lines) if aspects_lines else "Няма значими активни аспекти днес."}
 
 === ЗАДАЧА ===
-Напиши подробен, практичен дневен хороскоп в следната структура:
-1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня.
-2. **Разчитане на всеки значим транзитен аспект** — за всеки от списъка обясни конкретно какво носи (възможности, предизвикателства, теми, които изникват).
-3. **На какво да обърне внимание** — 2-3 практични съвета за деня, изведени пряко от аспектите.
-4. **Емоции и настроение** — базирано на транзитите към Луната и личните планети.
-5. **Кратко обобщение** — 1-2 изречения "essence" на деня.
+Отговорът ти се състои от ДВЕ части, в този ред.
 
-Пиши на български, топло и практично, все едно говориш директно на човека. Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли."""
+ЧАСТ 1 — резюме за карти. Започни отговора си с JSON блок между маркерите ---SUMMARY--- и ---END--- точно в този формат (без допълнителен текст в блока):
+---SUMMARY---
+{{"mood": "една дума за настроението на деня (напр. Съсредоточен, Емоционален, Динамичен)",
+"energy": "Висока|Средна|Ниска",
+"do": ["3 кратки неща за правене, по 2-4 думи всяко"],
+"avoid": ["2-3 кратки неща за избягване, по 2-4 думи всяко"],
+"focus": "една дума/кратка фраза за фокуса на деня",
+"caution": "едно кратко изречение в какво да внимава"}}
+---END---
+
+ЧАСТ 2 — разгърнатият текст, веднага след ---END---, в следната структура. Използвай точно тези заглавия, номерирани:
+
+1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня.
+2. **Разчитане на аспектите** — за всеки значим аспект от списъка обясни конкретно какво носи. Обяснявай термините накратко (напр. "квадрат — напрежение, което подтиква към действие").
+3. **Благоприятно е за** — 3-5 конкретни неща, за които днешните аспекти дават попътен вятър (напр. разговори, преговори, творчество, почивка, финансови решения, физическа активност, срещи). За всяко посочи кой аспект го подкрепя.
+4. **Не е благоприятно за** — 3-4 неща, които по-добре да се отложат днес, и защо според аспектите.
+5. **Какво да направиш днес** — 3-4 конкретни, изпълними действия (не общи фрази — реални неща, които човек може да свърши днес).
+6. **Какво да избягваш** — 2-3 конкретни поведения или решения, които днешните транзити правят рискови.
+7. **В какво да внимаваш** — 2-3 предупреждения: къде е рискът от недоразумение, прибързаност, преумора или конфликт, според напрегнатите аспекти (квадрати, опозиции).
+8. **Емоции и настроение** — базирано на транзитите към Луната и личните планети.
+9. **Есенцията на деня** — 1-2 изречения обобщение.
+
+=== КАК ДА ПИШЕШ ===
+- Пиши на български, топло и практично, все едно говориш директно на човека.
+- ФОРМАТ: всяко от деветте заглавия започва на нов ред във вида `1. **Заглавие**`. Под него — текст на отделни редове. Където изброяваш неща, ползвай тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
+- СТРУКТУРА: всяка секция да е самостоятелна и завършена. Не повтаряй едно и също през различните секции — ако вече си обяснил аспект в секция 2, в следващите само се позовавай на него накратко.
+- ЛОГИКА: върви от общото към конкретното. Секции 3-7 трябва да следват пряко от аспектите, обяснени в секция 2 — читателят да вижда връзката "този аспект → затова този съвет".
+- ДЪЛЖИНА: бъди подробен. Всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи.
+- Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
+- Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли."""
 
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=3000)
-            set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "date": date_bg, "cached": False}
+            raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
+            set_ai_cache(person_id, cache_key, raw)
+            summary, body = split_summary(raw)
+            return {"interpretation": body, "summary": summary, "date": date_bg, "cached": False}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}", "date": date_bg}
         except Exception as e:
@@ -966,6 +1697,71 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(ge
         prev_pairs = curr_pairs
 
     return {"start_date": data.start_date, "end_date": data.end_date, "days": results}
+
+@app.post("/api/period-interpretation")
+def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
+                              user: Tuple[int, str] = Depends(get_current_user)):
+    """AI reading of a date range's transits. Cached per person + date range."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, f"Person (id={data.person_id}) not found")
+
+    cache_key = f"period:{data.start_date}:{data.end_date}"
+    if not refresh:
+        cached = get_ai_cache(data.person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    period = api_period_influence(data, user)
+    days = period.get("days", [])
+
+    if not days:
+        return {"interpretation": "През избрания период няма настъпващи или отпадащи значими транзити.",
+                "cached": False}
+
+    lines = []
+    for day in days:
+        parts = []
+        for a in day.get("entering", []):
+            parts.append(f"започва {a['active']} {a['type']} {a['passive']} (натал)")
+        for a in day.get("leaving", []):
+            parts.append(f"приключва {a['active']} {a['type']} {a['passive']} (натал)")
+        lines.append(f"- {day['date']}: " + "; ".join(parts))
+
+    prompt = f"""Ти си професионален астролог. Направи РАЗЧИТАНЕ НА ПЕРИОД за конкретен човек, СТРИКТНО базирано на точните транзитни данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
+Период: {data.start_date} до {data.end_date}
+
+=== ТРАНЗИТНИ СЪБИТИЯ ПО ДНИ ===
+{chr(10).join(lines)}
+
+=== ЗАДАЧА ===
+Напиши свързан, разбираем разказ за периода (НЕ просто списък), в следната структура:
+
+1. **Общ характер на периода** — каква е основната тема и енергия на тези седмици, като цялост.
+2. **Ключовите моменти** — 3-5 най-значими дати от списъка и какво конкретно носи всяка (по-бавните планети — Юпитер, Сатурн, Уран, Нептун, Плутон — тежат повече от бързите като Меркурий и Венера; отбележи това).
+3. **Възможности** — къде периодът дава отворени врати и какво си струва да се предприеме.
+4. **Предизвикателства** — кои дни изискват внимание или търпение и защо.
+5. **Практични съвети** — 3-4 конкретни препоръки, изведени пряко от аспектите.
+6. **Обобщение** — 2-3 изречения есенция на периода.
+""" + STYLE_RULES
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
+            set_ai_cache(data.person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
 
 class AIError(Exception):
     """Raised with a user-facing Bulgarian explanation of what went wrong with an AI call."""
@@ -1088,6 +1884,7 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
 
 === ДАННИ ЗА ЛИЧНОСТТА ===
 Име: {chart_data['native']['name']}
+Малко име (обръщай се само с него): {first_name(chart_data['native']['name'])}
 Дата и час на раждане: {chart_data['native']['datetime']}
 Място: {chart_data['native']['lat']}, {chart_data['native']['lon']} ({chart_data['native']['timezone']})
 
@@ -1123,8 +1920,7 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
 8. **Кариера и призвание** — базирано на MC, 10-ти дом, Сатурн, Слънце.
 9. **Кармични уроци** — Лунни възли (Северен/Южен), какво трябва да развие и какво да остави.
 10. **Най-важните 5-8 аспекта** — обяснени поотделно, всеки с конкретно практическо значение.
-
-Пиши на български, с топъл но професионален и практичен език — все едно говориш директно на човека. Основавай се единствено на изброените по-горе данни, без да добавяш измислени детайли. Целта е дълъг, наситен с конкретика текст, не кратко обобщение."""
+""" + STYLE_RULES
 
     ai_key, provider = get_ai_config()
     if ai_key:
@@ -1142,9 +1938,12 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Root: redirect to /dashboard if token cookie exists, else /login"""
-    # Check for a simple cookie hint or just serve login — JS handles token check
-    return HTMLResponse(templates.get_template("login.html").render({"request": request}))
+    """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
+    return HTMLResponse(templates.get_template("landing.html").render({"request": request}))
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return HTMLResponse(templates.get_template("register.html").render({"request": request}))
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
