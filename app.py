@@ -45,6 +45,10 @@ ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@miralog.bg")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+# A standing demo account, so the locked/paywalled views can be checked without
+# touching a real user. Set DEMO_EMAIL="" to skip creating it in production.
+DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@miralog.bg")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "demo123")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -140,6 +144,28 @@ def init_db():
                 sort_order INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # One-off purchases: a user buys a single feature outright, on top of
+        # whatever plan they hold. Unlike a plan these never expire.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feature_purchases (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                feature_key TEXT NOT NULL,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                payment_id INTEGER REFERENCES payments(id),
+                PRIMARY KEY (user_id, feature_key)
+            )
+        """)
+        # Per-feature one-off price list, keyed by the FEATURE_CATALOGUE keys.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feature_prices (
+                feature_key TEXT PRIMARY KEY,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                is_purchasable INTEGER NOT NULL DEFAULT 1
+            )
+        """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,6 +193,49 @@ def init_db():
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
+
+        # The seeded admin predates the role column, so claim it here.
+        conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
+                     (ADMIN_EMAIL,))
+
+        # A demo account on the demo plan, for checking what a paying customer
+        # does and does not see. It is deliberately never an admin.
+        if DEMO_EMAIL:
+            exists = conn.execute("SELECT COUNT(*) FROM users WHERE email = ?",
+                                  (DEMO_EMAIL,)).fetchone()[0]
+            if not exists:
+                cur = conn.execute(
+                    "INSERT INTO users (email, password_hash, role, plan_key, note)"
+                    " VALUES (?, ?, 'user', 'demo', ?)",
+                    (DEMO_EMAIL, hash_password(DEMO_PASSWORD),
+                     "Тестов акаунт за проверка на заключените функции."))
+                # Give it a chart so every tab has something to render.
+                conn.execute(
+                    "INSERT INTO persons (user_id, name, year, month, day, hour, minute,"
+                    " lat, lon, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (cur.lastrowid, "Демо Профил", 1990, 6, 15, 12, 30,
+                     42.6977, 23.3219, "Europe/Sofia"))
+
+        # Seed the one-off price list. Everything in the paid plan can also be
+        # bought on its own, at a price that only makes sense for one feature.
+        if conn.execute("SELECT COUNT(*) FROM feature_prices").fetchone()[0] == 0:
+            conn.executemany(
+                "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
+                " VALUES (?, ?, 'EUR', ?)",
+                [
+                    ("profile", 500, 1),
+                    ("horoscope", 300, 1),
+                    ("period", 500, 1),
+                    ("synastry", 700, 1),
+                    ("love", 500, 1),
+                    ("akashic", 900, 1),
+                    ("moon", 300, 1),
+                    # The basics come with every plan, so they are never sold.
+                    ("chart", 0, 0),
+                    ("planets", 0, 0),
+                    ("aspects", 0, 0),
+                    ("numerology", 400, 1),
+                ])
 
         # Seed the two plans the landing page advertises.
         if conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0:
@@ -324,6 +393,46 @@ def effective_plan(user: dict) -> dict:
         "features": ["chart", "planets", "aspects", "numerology"],
     }
 
+def purchased_features(user_id: int) -> list:
+    """Feature keys the user bought outright. These never expire."""
+    with sqlite3.connect(DB_PATH) as conn:
+        return [r[0] for r in conn.execute(
+            "SELECT feature_key FROM feature_purchases WHERE user_id = ?", (user_id,))]
+
+def unlocked_features(user: dict) -> list:
+    """Everything the user may reach: the plan's features plus one-off purchases.
+
+    Admins get the whole catalogue.
+    """
+    if user.get("role") == "admin":
+        return [f["key"] for f in FEATURE_CATALOGUE]
+    keys = list(effective_plan(user).get("features", []))
+    for key in purchased_features(user["id"]):
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+def get_feature_prices() -> dict:
+    """The one-off price list, keyed by feature. Missing rows mean 'not for sale'."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return {r["feature_key"]: dict(r) for r in
+                conn.execute("SELECT * FROM feature_prices")}
+
+def feature_offer(feature_key: str) -> Optional[dict]:
+    """What a single feature costs, or None when it isn't sold separately."""
+    row = get_feature_prices().get(feature_key)
+    if not row or not row["is_purchasable"] or row["price_cents"] <= 0:
+        return None
+    meta = next((f for f in FEATURE_CATALOGUE if f["key"] == feature_key), {})
+    return {
+        "key": feature_key,
+        "name": meta.get("name", feature_key),
+        "note": meta.get("note", ""),
+        "price_cents": row["price_cents"],
+        "currency": row["currency"],
+    }
+
 def require_admin(user: Tuple[int, str] = Depends(get_current_user)) -> dict:
     """Dependency for the admin area."""
     row = get_user_by_id(user[0])
@@ -341,8 +450,24 @@ def require_feature(feature: str):
             raise HTTPException(403, "Акаунтът е блокиран.")
         if row.get("role") == "admin":
             return user
-        if feature not in effective_plan(row).get("features", []):
-            raise HTTPException(402, "Тази функция изисква пълен достъп. Виж плановете.")
+        if feature not in unlocked_features(row):
+            # 402 carries the offer, so the UI can show the price on the blurred
+            # panel instead of a bare refusal.
+            offer = feature_offer(feature)
+            meta = next((f for f in FEATURE_CATALOGUE if f["key"] == feature), {})
+            detail = {
+                "reason": "locked",
+                "feature": feature,
+                "feature_name": meta.get("name", feature),
+                "message": (
+                    f"„{meta.get('name', feature)}“ не е включена в пакета ти."
+                    if not offer else
+                    f"„{offer['name']}“ не е включена в пакета ти, "
+                    f"но можеш да я отключиш еднократно."
+                ),
+                "offer": offer,
+            }
+            raise HTTPException(402, detail)
         return user
     return _check
 
@@ -729,6 +854,13 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
             "expires": row.get("plan_expires"),
             "active": plan_is_active(row),
         },
+        # What the account may actually open, and what the rest would cost.
+        "features": unlocked_features(row),
+        "purchased": purchased_features(user_id),
+        "offers": [] if is_admin else [
+            offer for offer in (feature_offer(f["key"]) for f in FEATURE_CATALOGUE)
+            if offer and offer["key"] not in unlocked_features(row)
+        ],
     }
 
 # Everything a plan can unlock. Keys are what require_feature() checks against.
@@ -1102,6 +1234,156 @@ def api_admin_delete_payment(payment_id: int, admin: dict = Depends(require_admi
         conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
         conn.commit()
     return {"ok": True}
+
+# --- One-off feature purchases ---
+
+class FeaturePriceUpdate(BaseModel):
+    price_cents: int = 0
+    currency: str = "EUR"
+    is_purchasable: bool = True
+
+class FeatureGrant(BaseModel):
+    user_id: int
+    feature_key: str
+    price_cents: Optional[int] = None
+    note: Optional[str] = None
+
+@app.get("/api/admin/feature-prices")
+def api_admin_feature_prices(admin: dict = Depends(require_admin)):
+    """The one-off price list, with every catalogue feature represented."""
+    prices = get_feature_prices()
+    return {"features": [
+        {
+            **f,
+            "price_cents": prices.get(f["key"], {}).get("price_cents", 0),
+            "currency": prices.get(f["key"], {}).get("currency", "EUR"),
+            "is_purchasable": bool(prices.get(f["key"], {}).get("is_purchasable", 0)),
+        }
+        for f in FEATURE_CATALOGUE
+    ]}
+
+@app.put("/api/admin/feature-prices/{feature_key}")
+def api_admin_set_feature_price(feature_key: str, data: FeaturePriceUpdate,
+                                admin: dict = Depends(require_admin)):
+    """Set what a single feature costs as a one-off unlock."""
+    if not any(f["key"] == feature_key for f in FEATURE_CATALOGUE):
+        raise HTTPException(404, "Няма такава функция.")
+    if data.price_cents < 0:
+        raise HTTPException(400, "Цената не може да е отрицателна.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
+            " VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(feature_key) DO UPDATE SET price_cents = excluded.price_cents,"
+            " currency = excluded.currency, is_purchasable = excluded.is_purchasable",
+            (feature_key, data.price_cents, data.currency, 1 if data.is_purchasable else 0))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/feature-purchases")
+def api_admin_feature_purchases(user_id: Optional[int] = None,
+                                admin: dict = Depends(require_admin)):
+    """Who bought what."""
+    sql = ("SELECT fp.*, u.email FROM feature_purchases fp"
+           " JOIN users u ON u.id = fp.user_id")
+    params: list = []
+    if user_id:
+        sql += " WHERE fp.user_id = ?"
+        params.append(user_id)
+    sql += " ORDER BY fp.purchased_at DESC"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return {"purchases": [dict(r) for r in conn.execute(sql, params)]}
+
+@app.post("/api/admin/feature-purchases")
+def api_admin_grant_feature(data: FeatureGrant, admin: dict = Depends(require_admin)):
+    """Unlock a feature for a user and log the payment behind it."""
+    target = get_user_by_id(data.user_id)
+    if not target:
+        raise HTTPException(404, "Потребителят не е намерен.")
+    meta = next((f for f in FEATURE_CATALOGUE if f["key"] == data.feature_key), None)
+    if not meta:
+        raise HTTPException(404, "Няма такава функция.")
+
+    price_row = get_feature_prices().get(data.feature_key, {})
+    amount = data.price_cents if data.price_cents is not None else price_row.get("price_cents", 0)
+    currency = price_row.get("currency", "EUR")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO payments (user_id, plan_key, amount_cents, currency, method, note, recorded_by)"
+            " VALUES (?, NULL, ?, ?, ?, ?, ?)",
+            (data.user_id, amount, currency, "еднократно",
+             data.note or f"Еднократно отключване: {meta['name']}", admin["id"]))
+        conn.execute(
+            "INSERT INTO feature_purchases (user_id, feature_key, price_cents, currency, payment_id)"
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(user_id, feature_key) DO UPDATE SET price_cents = excluded.price_cents,"
+            " currency = excluded.currency, payment_id = excluded.payment_id,"
+            " purchased_at = CURRENT_TIMESTAMP",
+            (data.user_id, data.feature_key, amount, currency, cur.lastrowid))
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/feature-purchases/{user_id}/{feature_key}")
+def api_admin_revoke_feature(user_id: int, feature_key: str,
+                             admin: dict = Depends(require_admin)):
+    """Take a one-off unlock back. The payment record stays for the books."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM feature_purchases WHERE user_id = ? AND feature_key = ?",
+                     (user_id, feature_key))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/features")
+def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
+    """What the signed-in account can open, and the price of everything else."""
+    user_id, _ = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    unlocked = unlocked_features(row)
+    return {
+        "unlocked": unlocked,
+        "purchased": purchased_features(user_id),
+        "catalogue": [
+            {
+                **f,
+                "unlocked": f["key"] in unlocked,
+                "offer": None if f["key"] in unlocked else feature_offer(f["key"]),
+            }
+            for f in FEATURE_CATALOGUE
+        ],
+    }
+
+@app.post("/api/features/{feature_key}/request")
+def api_request_feature(feature_key: str, user: Tuple[int, str] = Depends(get_current_user)):
+    """Ask to buy a feature. There is no payment processor yet, so this emails
+    the admin address and tells the user someone will get back to them."""
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if feature_key in unlocked_features(row):
+        return {"ok": True, "already": True}
+
+    offer = feature_offer(feature_key)
+    if not offer:
+        raise HTTPException(404, "Тази функция не се продава отделно.")
+
+    to = get_setting("smtp_from") or get_setting("smtp_user")
+    if to:
+        try:
+            send_email(
+                to,
+                f"Заявка за отключване: {offer['name']}",
+                f"Потребител {email} (ID {user_id}) иска да отключи "
+                f"„{offer['name']}“ за {offer['price_cents'] / 100:.2f} {offer['currency']}.",
+            )
+        except HTTPException:
+            # A missing SMTP config must not make the button look broken.
+            pass
+    return {"ok": True, "offer": offer}
 
 @app.get("/api/admin/settings")
 def api_admin_settings(admin: dict = Depends(require_admin)):
@@ -1672,7 +1954,7 @@ def build_profile(chart_data: dict) -> dict:
     }
 
 @app.get("/api/persons/{person_id}/profile")
-def api_profile(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_profile(person_id: int, user: Tuple[int, str] = Depends(require_feature("profile"))):
     """Computed 'about me' profile — deterministic, no AI."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -1682,7 +1964,7 @@ def api_profile(person_id: int, user: Tuple[int, str] = Depends(get_current_user
 
 @app.get("/api/persons/{person_id}/profile/interpretation")
 def api_profile_interpretation(person_id: int, refresh: bool = False,
-                               user: Tuple[int, str] = Depends(get_current_user)):
+                               user: Tuple[int, str] = Depends(require_feature("profile"))):
     """AI 'about me' reading — strengths, weaknesses and what makes this chart distinctive."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -1811,7 +2093,7 @@ def build_karmic(chart_data: dict, numerology: dict) -> dict:
     }
 
 @app.get("/api/persons/{person_id}/akashic")
-def api_akashic(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_akashic(person_id: int, user: Tuple[int, str] = Depends(require_feature("akashic"))):
     """The karmic markers the akashic reading is built on (computed, no AI)."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -1822,7 +2104,7 @@ def api_akashic(person_id: int, user: Tuple[int, str] = Depends(get_current_user
 
 @app.get("/api/persons/{person_id}/akashic/interpretation")
 def api_akashic_interpretation(person_id: int, refresh: bool = False,
-                               user: Tuple[int, str] = Depends(get_current_user)):
+                               user: Tuple[int, str] = Depends(require_feature("akashic"))):
     """Akashic-records style reading of the chart's karmic markers.
 
     Framed as contemplative interpretation, not as retrieved record: there is no
@@ -1952,7 +2234,7 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
 
 @app.get("/api/persons/{person_id}/numerology")
-def api_numerology(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_numerology(person_id: int, user: Tuple[int, str] = Depends(require_feature("numerology"))):
     """Compute the Pythagorean numerology profile for a person (deterministic, no AI)."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -1961,7 +2243,7 @@ def api_numerology(person_id: int, user: Tuple[int, str] = Depends(get_current_u
     return compute_numerology(p["name"], p["year"], p["month"], p["day"])
 
 @app.get("/api/persons/{person_id}/numerology/interpretation")
-def api_numerology_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_numerology_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("numerology"))):
     """Generate AI interpretation of a person's numerology profile. Cached per year — pass ?refresh=true to regenerate."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -2259,7 +2541,7 @@ def resolve_love_match(data: "LoveMatchRequest", person: dict) -> dict:
     return m
 
 @app.post("/api/love-match")
-def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(get_current_user)):
+def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(require_feature("love"))):
     """Love compatibility — full charts when birth data is given, otherwise sign to sign."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
@@ -2269,7 +2551,7 @@ def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(get_c
 
 @app.post("/api/love-match/interpretation")
 def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
-                                  user: Tuple[int, str] = Depends(get_current_user)):
+                                  user: Tuple[int, str] = Depends(require_feature("love"))):
     """AI love reading — uses the partner's full chart when available."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
@@ -2379,7 +2661,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 
 
 @app.post("/api/synastry")
-def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_current_user)):
+def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_feature("synastry"))):
     """Compute synastry (composite) chart between two persons."""
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)
@@ -2392,7 +2674,7 @@ def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_curr
 
 
 @app.post("/api/synastry/interpretation")
-def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("synastry"))):
     """Generate an AI interpretation of synastry between two persons."""
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)
@@ -2490,7 +2772,7 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_curr
     return compute_transits(p, target_date)
 
 @app.get("/api/persons/{person_id}/daily-horoscope")
-def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
     """Generate an AI-written interpretation of today's transits to the person's natal chart.
     Cached per calendar day — pass ?refresh=true to force a new generation for today."""
     user_id, email = user
@@ -2662,7 +2944,7 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(ge
 
 @app.post("/api/period-interpretation")
 def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
-                              user: Tuple[int, str] = Depends(get_current_user)):
+                              user: Tuple[int, str] = Depends(require_feature("period"))):
     """AI reading of a date range's transits. Cached per person + date range."""
     user_id, email = user
     p = get_person(data.person_id, user_id)

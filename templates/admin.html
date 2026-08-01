@@ -860,12 +860,15 @@
                     '<input type="checkbox" id="euBlocked"' + (u.is_blocked ? ' checked' : '') + '> Блокиран акаунт</label></div>' +
                 '<div class="form-group"><label for="euNote">Бележка</label>' +
                     '<textarea id="euNote" placeholder="вътрешна бележка">' + escapeHtml(u.note || '') + '</textarea></div>' +
+                '<div class="form-group"><label>Еднократно отключени функции</label>' +
+                    '<div id="euUnlocks" class="hint">Зареждане…</div></div>' +
                 '<div class="btn-row">' +
                     '<button class="btn" id="euSave">Запази</button>' +
                     '<button class="btn btn-ghost" id="euPay">Отбележи плащане</button>' +
                     '<button class="btn btn-danger" id="euDelete">Изтрий потребителя</button>' +
                 '</div>';
             openModal('Редакция на потребител', u.email, body);
+            renderUserUnlocks(u.id);
 
             document.getElementById('euSave').addEventListener('click', async function() {
                 const payload = {
@@ -912,6 +915,65 @@
             });
         }
 
+        /* ---------- one-off unlocks on a user ---------- */
+        async function renderUserUnlocks(userId) {
+            const box = document.getElementById('euUnlocks');
+            if (!box) return;
+            try {
+                const [prices, bought] = await Promise.all([
+                    api('/api/admin/feature-prices'),
+                    api('/api/admin/feature-purchases?user_id=' + userId),
+                ]);
+                const owned = (bought.purchases || []).map(function(p) { return p.feature_key; });
+                const sellable = (prices.features || []).filter(function(f) {
+                    return f.is_purchasable && f.price_cents > 0;
+                });
+                if (!sellable.length) {
+                    box.className = 'hint';
+                    box.textContent = 'Няма функции, обявени за отделна продажба.';
+                    return;
+                }
+                box.className = 'feature-list';
+                box.innerHTML = sellable.map(function(f) {
+                    const has = owned.indexOf(f.key) >= 0;
+                    return '<label class="feature-item">' +
+                        '<input type="checkbox" data-unlock="' + escapeHtml(f.key) + '"' +
+                            (has ? ' checked' : '') + '>' +
+                        '<span><span class="feature-name">' + escapeHtml(f.name) + '</span><br>' +
+                        '<span class="feature-note">' + money(f.price_cents, f.currency) +
+                            (has ? ' · платено' : '') + '</span></span></label>';
+                }).join('');
+
+                // Ticking a box records the payment straight away; unticking revokes it.
+                box.querySelectorAll('[data-unlock]').forEach(function(cb) {
+                    cb.addEventListener('change', async function() {
+                        const key = cb.dataset.unlock;
+                        cb.disabled = true;
+                        try {
+                            if (cb.checked) {
+                                await api('/api/admin/feature-purchases', {
+                                    method: 'POST', headers: jsonHeaders(),
+                                    body: JSON.stringify({ user_id: userId, feature_key: key }),
+                                });
+                                notify('Функцията е отключена и плащането е записано.');
+                            } else {
+                                await api('/api/admin/feature-purchases/' + userId + '/' +
+                                    encodeURIComponent(key), { method: 'DELETE', headers: authHeaders() });
+                                notify('Отключването е премахнато.');
+                            }
+                            loaded.payments = false;
+                        } catch (e) {
+                            notifyError(e);
+                            cb.checked = !cb.checked;
+                        } finally { cb.disabled = false; }
+                    });
+                });
+            } catch (e) {
+                box.className = 'hint';
+                box.textContent = 'Грешка при зареждане: ' + e.message;
+            }
+        }
+
         /* ---------- plans ---------- */
         async function loadPlans() {
             const el = document.getElementById('plansBody');
@@ -927,8 +989,63 @@
                 el.innerHTML = '<div class="plan-grid">' +
                     allPlans.map(function(p) { return planCardHtml(p); }).join('') + '</div>';
                 bindPlanCards(el);
+                await loadFeaturePrices(el);
             } catch (e) {
                 if (!forbidden) el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        /* ---------- one-off feature prices ---------- */
+        async function loadFeaturePrices(container) {
+            const box = document.createElement('div');
+            box.className = 'section';
+            box.innerHTML = '<h2>Еднократни отключвания</h2>' +
+                '<div class="hint" style="margin-bottom:14px;">' +
+                    'Цена за отделна функция, която потребителят плаща веднъж и я запазва завинаги. ' +
+                    'Заключените функции се показват замъглени с тази цена. ' +
+                    'Цена 0 или изключено „Продава се“ означава, че функцията не се предлага отделно.</div>' +
+                crystalLoader('Зареждане на цените…');
+            container.appendChild(box);
+            try {
+                const d = await api('/api/admin/feature-prices');
+                box.innerHTML = '<h2>Еднократни отключвания</h2>' +
+                    '<div class="hint" style="margin-bottom:14px;">' +
+                        'Цена за отделна функция, която потребителят плаща веднъж и я запазва завинаги. ' +
+                        'Заключените функции се показват замъглени с тази цена.</div>' +
+                    '<div class="form-grid">' + (d.features || []).map(function(f) {
+                        return '<div class="form-group" data-feature-price="' + escapeHtml(f.key) + '">' +
+                            '<label>' + escapeHtml(f.name) + '</label>' +
+                            '<input type="number" min="0" step="0.01" data-price value="' +
+                                ((Number(f.price_cents) || 0) / 100).toFixed(2) + '">' +
+                            '<label class="check" style="margin-top:6px;">' +
+                                '<input type="checkbox" data-sellable' + (f.is_purchasable ? ' checked' : '') +
+                                '> Продава се отделно</label>' +
+                            '<div class="hint">' + escapeHtml(f.note || '') + '</div></div>';
+                    }).join('') + '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveFeaturePricesBtn">Запази цените</button></div>';
+
+                document.getElementById('saveFeaturePricesBtn').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.disabled = true;
+                    try {
+                        const rows = box.querySelectorAll('[data-feature-price]');
+                        for (const row of rows) {
+                            const cents = Math.round(parseFloat(row.querySelector('[data-price]').value || '0') * 100);
+                            await api('/api/admin/feature-prices/' + encodeURIComponent(row.dataset.featurePrice), {
+                                method: 'PUT', headers: jsonHeaders(),
+                                body: JSON.stringify({
+                                    price_cents: cents,
+                                    currency: 'EUR',
+                                    is_purchasable: row.querySelector('[data-sellable]').checked,
+                                }),
+                            });
+                        }
+                        notify('Цените са запазени.');
+                    } catch (e) { notifyError(e); } finally { btn.disabled = false; }
+                });
+            } catch (e) {
+                box.innerHTML = '<h2>Еднократни отключвания</h2><div class="error">' +
+                    escapeHtml(e.message) + '</div>';
             }
         }
 
