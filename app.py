@@ -28,7 +28,9 @@ from translations import (
     tr_sign, tr_object, tr_aspect, tr_moon_phase, tr_movement, tr_shape, tr_house_system, tr_house,
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
     sign_symbol, sign_element, sign_modality,
+    sign_aspect, element_pair_meaning, modality_pair_meaning,
     ELEMENTS_BG, MODALITIES_BG, ELEMENT_MEANINGS, MODALITY_MEANINGS,
+    SIGNS, ZODIAC_ORDER,
 )
 from numerology import compute_numerology
 
@@ -145,6 +147,10 @@ class BirthDataUpdate(BaseModel):
 class SynastryRequest(BaseModel):
     person1_id: int
     person2_id: int
+
+class LoveMatchRequest(BaseModel):
+    person_id: int
+    partner_sign: str  # English sign name, e.g. "Taurus"
 
 class TransitsRequest(BaseModel):
     person_id: int
@@ -1238,6 +1244,170 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
             set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False}
+        except AIError as e:
+            return {"interpretation": f"⚠️ {str(e)}"}
+        except Exception as e:
+            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+
+    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+
+
+LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
+
+@app.get("/api/zodiac-signs")
+def api_zodiac_signs(user: Tuple[int, str] = Depends(get_current_user)):
+    """The twelve signs, for the partner picker."""
+    return {"signs": [
+        {"key": s, "name_bg": tr_sign(s), "symbol": sign_symbol(s),
+         "element_bg": ELEMENTS_BG.get(sign_element(s)),
+         "modality_bg": MODALITIES_BG.get(sign_modality(s))}
+        for s in ZODIAC_ORDER
+    ]}
+
+def build_love_match(person: dict, partner_sign: str) -> dict:
+    """Compare the person's love-relevant placements against a partner's sun sign.
+
+    Only the partner's sign is known here — no birth time — so this compares
+    sign to sign rather than computing a full synastry chart.
+    """
+    chart_data = compute_natal(person)
+    by_name = {o["name"]: o for o in chart_data["objects"].values()}
+
+    pairs = []
+    labels = {
+        "Sun": "Слънце (същност)",
+        "Moon": "Луна (емоции)",
+        "Venus": "Венера (любов)",
+        "Mars": "Марс (страст)",
+        "Asc": "Асцендент (първо впечатление)",
+    }
+    for name in LOVE_POINTS:
+        o = by_name.get(name)
+        if not o:
+            continue
+        asp = sign_aspect(o["sign"], partner_sign)
+        pairs.append({
+            "label": labels[name],
+            "name_bg": o["name_bg"],
+            "sign_bg": o["sign_bg"],
+            "sign_symbol": o["sign_symbol"],
+            "aspect": asp[0] if asp else None,
+            "aspect_meaning": asp[1] if asp else "",
+        })
+
+    sun = by_name.get("Sun")
+    venus = by_name.get("Venus")
+    sun_sign = sun["sign"] if sun else None
+
+    el_a, el_b = sign_element(sun_sign), sign_element(partner_sign)
+    mo_a, mo_b = sign_modality(sun_sign), sign_modality(partner_sign)
+
+    return {
+        "partner": {
+            "sign": partner_sign,
+            "sign_bg": tr_sign(partner_sign),
+            "symbol": sign_symbol(partner_sign),
+            "element_bg": ELEMENTS_BG.get(el_b),
+            "modality_bg": MODALITIES_BG.get(mo_b),
+            "sign_meaning": meaning_sign(partner_sign),
+        },
+        "you": {
+            "sun_bg": tr_sign(sun_sign) if sun_sign else None,
+            "sun_symbol": sign_symbol(sun_sign) if sun_sign else None,
+            "venus_bg": tr_sign(venus["sign"]) if venus else None,
+            "venus_symbol": sign_symbol(venus["sign"]) if venus else None,
+            "element_bg": ELEMENTS_BG.get(el_a),
+            "modality_bg": MODALITIES_BG.get(mo_a),
+        },
+        "sun_aspect": (lambda a: {"name": a[0], "meaning": a[1]} if a else None)(
+            sign_aspect(sun_sign, partner_sign) if sun_sign else None),
+        "venus_aspect": (lambda a: {"name": a[0], "meaning": a[1]} if a else None)(
+            sign_aspect(venus["sign"], partner_sign) if venus else None),
+        "elements": element_pair_meaning(el_a, el_b),
+        "modalities": modality_pair_meaning(mo_a, mo_b),
+        "points": pairs,
+    }
+
+@app.post("/api/love-match")
+def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(get_current_user)):
+    """Sign-level love compatibility (computed, no AI)."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    if data.partner_sign not in ZODIAC_ORDER:
+        raise HTTPException(400, "Невалиден зодиакален знак.")
+    return build_love_match(p, data.partner_sign)
+
+@app.post("/api/love-match/interpretation")
+def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
+                                  user: Tuple[int, str] = Depends(get_current_user)):
+    """AI love reading for the person against a partner's sun sign."""
+    user_id, email = user
+    p = get_person(data.person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Person not found")
+    if data.partner_sign not in ZODIAC_ORDER:
+        raise HTTPException(400, "Невалиден зодиакален знак.")
+
+    cache_key = f"love:{data.partner_sign}"
+    if not refresh:
+        cached = get_ai_cache(data.person_id, cache_key)
+        if cached:
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"]}
+
+    m = build_love_match(p, data.partner_sign)
+
+    points_txt = "\n".join(
+        f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
+        f" ({pt['aspect_meaning']})"
+        for pt in m["points"] if pt["aspect"]
+    )
+
+    prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между конкретен човек и партньор от даден зодиакален знак.
+
+Малко име (обръщай се само с него): {first_name(p['name'])}
+
+=== ТВОЯТА КАРТА (точно изчислена) ===
+Слънце: {m['you']['sun_bg']} · Венера: {m['you']['venus_bg']}
+Стихия: {m['you']['element_bg']} · Качество: {m['you']['modality_bg']}
+
+=== ПАРТНЬОРЪТ ===
+Зодия: {m['partner']['sign_bg']}
+Стихия: {m['partner']['element_bg']} · Качество: {m['partner']['modality_bg']}
+Характер на знака: {m['partner']['sign_meaning']}
+
+=== АСПЕКТИ МЕЖДУ ЗНАЦИТЕ ===
+{points_txt or "няма изчислени аспекти"}
+
+Стихии: {m['elements']}
+Качества: {m['modalities']}
+
+ВАЖНО: знаем само зодията на партньора, не и точния му час на раждане. Затова говори за тенденции на ниво знак, а не за неговата пълна карта. Ако някъде е нужно повече, кажи честно, че за по-точен прочит трябват и неговите час и място на раждане.
+
+=== ЗАДАЧА ===
+Напиши любовен хороскоп в следната структура:
+
+1. **Общата картина** — каква е динамиката между вас в две-три изречения.
+2. **Какво ви свързва** — 3-4 конкретни неща, изведени от аспектите и стихиите по-горе. За всяко посочи от какво произтича.
+3. **Къде ще има търкания** — 3-4 честни точки на напрежение и защо се появяват.
+4. **Как да го подхождаш** — 4-5 конкретни съвета какво ДА правиш с този партньор: как да общуваш, какво го печели, кога да отстъпиш.
+5. **С какво да внимаваш** — 3-4 неща, които е добре да избягваш в тази връзка, с обяснение защо точно тук са рискови.
+6. **Емоционална съвместимост** — Луната и Венера: как се разбирате на ниво чувства и нежност.
+7. **Страст и привличане** — Марс и Слънце: каква е химията между вас.
+8. **Дългосрочен потенциал** — какво е нужно, за да проработи в дългосрочен план.
+9. **Едно изречение накрая** — есенцията на тази двойка.
+
+Бъди честен: ако комбинацията е трудна, кажи го, но покажи и как се работи с нея. Не превръщай всичко в розово.
+""" + STYLE_RULES
+
+    ai_key, provider = get_ai_config()
+    if ai_key:
+        try:
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
+            set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False}
         except AIError as e:
             return {"interpretation": f"⚠️ {str(e)}"}

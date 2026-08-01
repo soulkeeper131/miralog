@@ -713,6 +713,103 @@
         .day-entry .day-date { color: var(--text-heading); font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-bottom: 6px; }
         .day-entry .day-aspect { font-size: 0.85rem; color: var(--text-soft); padding: 2px 0; }
 
+        /* --- love horoscope --- */
+        .sign-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+            gap: 10px;
+        }
+        .sign-btn {
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            padding: 14px 8px; border-radius: 14px; cursor: pointer;
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            color: var(--text); font-family: var(--font-body); min-height: 96px;
+            transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+        }
+        .sign-btn:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .sign-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .sign-btn.active {
+            background: var(--surface-thistle); border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+        .sign-glyph { font-size: 1.6rem; line-height: 1.2; color: var(--accent-light); }
+        .sign-name { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); }
+        .sign-el { font-size: 0.7rem; color: var(--text-dim); }
+
+        .love-pair {
+            display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px;
+            align-items: center; margin-bottom: 20px;
+        }
+        .love-side {
+            text-align: center; padding: 18px 12px; border-radius: 16px;
+            background: var(--surface-thistle); border: 1px solid var(--border-soft);
+        }
+        .love-glyph { font-size: 2rem; line-height: 1.1; color: var(--accent-light); display: block; }
+        .love-side-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600; margin-top: 4px;
+        }
+        .love-side-sign {
+            font-family: var(--font-display); font-size: 1.3rem; font-weight: 700;
+            color: var(--text-heading); line-height: 1.2;
+        }
+        .love-side-meta { font-size: 0.76rem; color: var(--text-muted); }
+        .love-link { display: flex; align-items: center; justify-content: center; }
+        .love-aspect {
+            font-size: 0.78rem; font-weight: 700; padding: 7px 14px; border-radius: 99px;
+            white-space: nowrap;
+        }
+
+        .asp-good .love-badge, .love-aspect.asp-good { background: var(--surface-icy); color: var(--on-icy); }
+        .asp-tense .love-badge, .love-aspect.asp-tense { background: var(--surface-pink); color: var(--on-pink); }
+        .asp-same .love-badge, .love-aspect.asp-same { background: var(--surface-thistle); color: var(--on-thistle); }
+        .asp-neutral .love-badge, .love-aspect.asp-neutral { background: var(--surface-sky); color: var(--on-sky); }
+
+        .love-cards {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+            gap: 12px; margin-bottom: 18px; align-items: stretch;
+        }
+        .love-card {
+            border-radius: 14px; padding: 14px 16px;
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            display: flex; flex-direction: column;
+        }
+        .love-card-top { display: flex; gap: 11px; align-items: flex-start; }
+        .love-card-glyph {
+            font-size: 1.3rem; line-height: 1; color: var(--accent-light);
+            background: var(--bg-card); border-radius: 50%;
+            width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .love-card-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600;
+        }
+        .love-card-sign { color: var(--text-heading); font-weight: 600; font-size: 0.94rem; line-height: 1.3; }
+        .love-badge {
+            margin-left: auto; flex-shrink: 0;
+            font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 99px;
+        }
+        .love-card-meaning {
+            margin-top: 10px; font-size: 0.84rem; line-height: 1.6; color: var(--text-meaning);
+        }
+
+        .love-strips { margin-top: 4px; }
+        .love-strip {
+            display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+            padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+            font-size: 0.86rem; color: var(--text-soft); line-height: 1.6;
+        }
+        .love-strip:last-child { border-bottom: none; }
+        .love-strip-label {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-dim); font-weight: 600; min-width: 90px; flex-shrink: 0;
+        }
+
+        @media (max-width: 600px) {
+            .love-pair { grid-template-columns: 1fr; }
+            .love-link { padding: 4px 0; }
+        }
+
         /* --- akashic: karmic markers --- */
         .karm-grid {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -857,6 +954,7 @@
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope">Дневен хороскоп</div>
             <div class="tab" onclick="showTab('period')" id="tabbtn-period">Период</div>
             <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology">Нумерология</div>
+            <div class="tab" onclick="showTab('love')" id="tabbtn-love">Любовен хороскоп</div>
             <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic">Акашови записи</div>
             <div class="tab" onclick="showTab('interpretation')" id="tabbtn-interpretation">AI Интерпретация</div>
         </div>
@@ -1027,6 +1125,26 @@
             <div class="section">
                 <h2>AI Интерпретация на нумерологията</h2>
                 <div id="numerology-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
+            </div>
+        </div>
+
+        <div id="tab-love" class="tab-content">
+            <div class="section">
+                <h2>Избери зодията на партньора</h2>
+                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                    Достатъчна е само зодията. Ако знаеш и точния час и място на раждане, направи пълна синастрия от <a href="/synastry" style="color:var(--accent-light);">Съвместимост</a>.
+                </p>
+                <div id="sign-picker" class="sign-grid"></div>
+            </div>
+            <div id="love-result" style="display:none;">
+                <div class="section">
+                    <h2>Вашата съвместимост</h2>
+                    <div id="love-content"></div>
+                </div>
+                <div class="section">
+                    <h2>Любовен хороскоп</h2>
+                    <div id="love-ai-content"></div>
+                </div>
             </div>
         </div>
 
@@ -1205,6 +1323,10 @@
             if (name === 'akashic' && !window._akashicLoaded) {
                 window._akashicLoaded = true;
                 loadAkashic();
+            }
+            if (name === 'love' && !window._signsLoaded) {
+                window._signsLoaded = true;
+                loadSignPicker();
             }
         }
 
@@ -1617,6 +1739,131 @@
                 }
             } catch (e) {
                 aiEl.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        // --- love horoscope ---
+        let selectedSign = null;
+
+        async function loadSignPicker() {
+            const el = document.getElementById('sign-picker');
+            el.innerHTML = crystalLoader('Зареждане...');
+            try {
+                const resp = await fetch('/api/zodiac-signs', { headers: authHeaders() });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const d = await resp.json();
+                el.innerHTML = d.signs.map(s => `
+                    <button class="sign-btn" data-sign="${s.key}" onclick="pickSign('${s.key}')">
+                        <span class="sign-glyph">${s.symbol}</span>
+                        <span class="sign-name">${s.name_bg}</span>
+                        <span class="sign-el">${s.element_bg}</span>
+                    </button>`).join('');
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
+        }
+
+        function pickSign(sign) {
+            selectedSign = sign;
+            document.querySelectorAll('.sign-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.sign === sign);
+            });
+            document.getElementById('love-result').style.display = 'block';
+            loadLoveMatch();
+        }
+
+        function aspectClass(name) {
+            if (name === 'Тригон' || name === 'Секстил') return 'asp-good';
+            if (name === 'Квадрат' || name === 'Опозиция') return 'asp-tense';
+            if (name === 'Съвпад') return 'asp-same';
+            return 'asp-neutral';
+        }
+
+        async function loadLoveMatch() {
+            const el = document.getElementById('love-content');
+            el.innerHTML = crystalLoader('Изчисляване...');
+            try {
+                const resp = await fetch('/api/love-match', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person_id: {{ person.id }}, partner_sign: selectedSign })
+                });
+                if (!resp.ok) {
+                    const d = await resp.json().catch(() => ({}));
+                    throw new Error(d.detail || ('HTTP ' + resp.status));
+                }
+                const d = await resp.json();
+
+                let html = `<div class="love-pair">
+                    <div class="love-side">
+                        <span class="love-glyph">${d.you.sun_symbol || '✦'}</span>
+                        <div class="love-side-label">Ти</div>
+                        <div class="love-side-sign">${d.you.sun_bg || ''}</div>
+                        <div class="love-side-meta">${d.you.element_bg} · ${d.you.modality_bg}</div>
+                    </div>
+                    <div class="love-link">
+                        ${d.sun_aspect ? `<span class="love-aspect ${aspectClass(d.sun_aspect.name)}">${d.sun_aspect.name}</span>` : ''}
+                    </div>
+                    <div class="love-side">
+                        <span class="love-glyph">${d.partner.symbol}</span>
+                        <div class="love-side-label">Партньор</div>
+                        <div class="love-side-sign">${d.partner.sign_bg}</div>
+                        <div class="love-side-meta">${d.partner.element_bg} · ${d.partner.modality_bg}</div>
+                    </div>
+                </div>`;
+
+                html += '<div class="love-cards">';
+                d.points.forEach(pt => {
+                    if (!pt.aspect) return;
+                    html += `<div class="love-card ${aspectClass(pt.aspect)}">
+                        <div class="love-card-top">
+                            <span class="love-card-glyph">${pt.sign_symbol}</span>
+                            <div>
+                                <div class="love-card-label">${pt.label}</div>
+                                <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                            </div>
+                            <span class="love-badge">${pt.aspect}</span>
+                        </div>
+                        <p class="love-card-meaning">${pt.aspect_meaning}</p>
+                    </div>`;
+                });
+                html += '</div>';
+
+                if (d.elements || d.modalities) {
+                    html += '<div class="love-strips">';
+                    if (d.elements) html += `<div class="love-strip"><span class="love-strip-label">Стихии</span><span>${d.elements}</span></div>`;
+                    if (d.modalities) html += `<div class="love-strip"><span class="love-strip-label">Качества</span><span>${d.modalities}</span></div>`;
+                    html += '</div>';
+                }
+
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                document.getElementById('love-ai-content').innerHTML = '';
+                return;
+            }
+            loadLoveAI();
+        }
+
+        async function loadLoveAI(refresh) {
+            const el = document.getElementById('love-ai-content');
+            el.innerHTML = crystalLoader('Разчитане на връзката...');
+            try {
+                const url = '/api/love-match/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person_id: {{ person.id }}, partner_sign: selectedSign })
+                });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, 'loadLoveAI(true)') +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Не можа да се генерира хороскоп.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
             }
         }
 
