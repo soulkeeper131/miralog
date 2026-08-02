@@ -33,8 +33,10 @@
         "description": "{{ seo_description }}",
         "offers": {
             "@type": "Offer",
-            "price": "5",
-            "priceCurrency": "EUR"
+            "name": "Натална карта",
+            "price": "9",
+            "priceCurrency": "EUR",
+            "category": "OneTimePayment"
         }
     }
     </script>
@@ -784,6 +786,71 @@
             text-align: center; font-size: 0.83rem; color: var(--text-dim); margin-top: 20px;
         }
 
+        /* --- entry purchase: the chart is the product, so it gets a panel of
+               its own rather than sitting in a row of equal plan cards --- */
+        .entry {
+            display: grid; grid-template-columns: 1fr 280px; gap: 0;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 20px; overflow: hidden;
+            box-shadow: var(--shadow-card);
+        }
+        @media (max-width: 820px) { .entry { grid-template-columns: 1fr; } }
+
+        .entry-main { padding: clamp(26px, 4vw, 38px); }
+        .entry-eyebrow {
+            display: inline-block; font-family: var(--font-mono);
+            font-size: .66rem; letter-spacing: .16em; text-transform: uppercase;
+            color: var(--gilt); margin-bottom: 12px;
+        }
+        .entry-main h3 {
+            font-family: var(--font-display); font-weight: 700;
+            font-variation-settings: 'opsz' 90, 'SOFT' 24, 'WONK' 1;
+            font-size: clamp(1.6rem, 3.6vw, 2.1rem); line-height: 1.15;
+            color: var(--text-heading); margin-bottom: 10px;
+        }
+        .entry-main > p {
+            color: var(--text-muted); font-size: .95rem; line-height: 1.7;
+            margin-bottom: 18px; max-width: 52ch;
+        }
+        .entry-list { list-style: none; padding: 0; margin: 0; }
+        .entry-list li {
+            position: relative; padding: 7px 0 7px 26px;
+            font-size: .9rem; color: var(--text-soft);
+        }
+        .entry-list li::before {
+            content: "△"; position: absolute; left: 0; top: 7px;
+            width: 18px; text-align: center;
+            font-size: .68rem; color: var(--on-icy);
+        }
+
+        .entry-side {
+            display: flex; flex-direction: column; justify-content: center;
+            padding: clamp(26px, 4vw, 38px);
+            background: var(--bg-raised);
+            border-left: 1px solid var(--border-soft);
+            text-align: center;
+        }
+        @media (max-width: 820px) {
+            .entry-side { border-left: none; border-top: 1px solid var(--border-soft); }
+        }
+        .entry-price {
+            font-family: var(--font-display); font-weight: 700;
+            font-variation-settings: 'opsz' 144, 'SOFT' 26, 'WONK' 1;
+            font-variant-numeric: tabular-nums;
+            font-size: 3.4rem; line-height: 1; letter-spacing: -.03em;
+            color: var(--gilt);
+        }
+        .entry-once {
+            font-family: var(--font-mono); font-size: .72rem;
+            letter-spacing: .1em; color: var(--text-dim);
+            margin-top: 8px; margin-bottom: 20px;
+        }
+        .entry-btn { width: 100%; }
+        .entry-note {
+            font-size: .76rem; color: var(--text-dim);
+            margin-top: 12px; line-height: 1.5;
+        }
+
         /* --- one-off unlocks: priced chips, for people who want one thing only --- */
         .unlocks {
             margin-top: 34px; padding-top: 30px;
@@ -917,10 +984,10 @@
             <p class="sub">Точни изчисления по Swiss Ephemeris, разчетени дума по дума — без мъгла, без общи приказки, без термини, които трябва да гуглиш.</p>
 
             <div class="cta-row">
-                <a class="btn btn-primary" href="/register">Създай своята карта</a>
+                <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
                 <a class="btn btn-ghost" href="/login">Вече имам акаунт</a>
             </div>
-            <p class="cta-note">Безплатно. Нужни са само дата, час и място на раждане.</p>
+            <p class="cta-note">Нужни са само дата, час и място на раждане.</p>
         </div>
     </header>
 
@@ -1016,8 +1083,8 @@
                 </div>
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="/register">Направи първата си карта</a>
-                <span class="mid-cta-note">Отнема под минута · без карта за плащане</span>
+                <a class="btn btn-primary" href="/start">Направи своята натална карта</a>
+                <span class="mid-cta-note">Отнема под минута да въведеш данните</span>
             </div>
         </div>
     </section>
@@ -1069,8 +1136,8 @@
                 </div>
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="/register">Виж своето разчитане</a>
-                <span class="mid-cta-note">Демото включва две карти безплатно</span>
+                <a class="btn btn-primary" href="/start">Виж своето разчитане</a>
+                <span class="mid-cta-note">Наталната карта — 9 €, еднократно</span>
             </div>
         </div>
     </section>
@@ -1106,52 +1173,38 @@
     <section id="plans">
         <div class="wrap">
             <div class="sec-head">
-                <h2>Започни безплатно</h2>
-                <p>Разгледай приложението без ангажимент. Ако ти върши работа, отключи всичко за цената на едно кафе.</p>
+                <span class="mark">☉</span>
+                <h2>Плащаш само за това, което искаш</h2>
+                <p>Няма абонамент и няма месечна такса. Започваш с наталната си карта,
+                   а всяко следващо разчитане отключваш поотделно — веднъж, завинаги.</p>
             </div>
-            <div class="plans">
-                <article class="plan">
-                    <div class="plan-head">
-                        <h3>Демо</h3>
-                        <div class="plan-price"><span class="amount">0 €</span></div>
-                        <p class="plan-note">Без карта, без срок</p>
-                    </div>
-                    <ul class="plan-list">
-                        <li class="yes">Две натални карти</li>
-                        <li class="yes">Пълното колело с домове и аспекти</li>
-                        <li class="yes">Позициите с обяснение на български</li>
-                        <li class="yes">Нумерологичните ти числа</li>
-                        <li class="no">Подробните разчитания на текст</li>
-                        <li class="no">Дневен хороскоп и периоди</li>
-                        <li class="no">Съвместимост и акашови записи</li>
-                    </ul>
-                    <a class="btn btn-ghost plan-btn" href="/register">Опитай безплатно</a>
-                </article>
 
-                <article class="plan plan-featured">
-                    <div class="plan-badge">Пълен достъп</div>
-                    <div class="plan-head">
-                        <h3>МираСкоп</h3>
-                        <div class="plan-price"><span class="amount">5 €</span><span class="per">/ месец</span></div>
-                        <p class="plan-note">Откажи по всяко време</p>
-                    </div>
-                    <ul class="plan-list">
-                        <li class="yes">Неограничен брой карти</li>
-                        <li class="yes"><strong>За мен</strong> — личен портрет със силни и слаби страни</li>
-                        <li class="yes"><strong>Денят ти</strong> — какво е благоприятно и какво не</li>
-                        <li class="yes"><strong>Периоди</strong> — разчитане на седмиците напред</li>
-                        <li class="yes"><strong>Съвместимост</strong> между двама души</li>
-                        <li class="yes"><strong>Акашови записи</strong> и кармични теми</li>
-                        <li class="yes">Нови разчитания всеки ден</li>
+            <div class="entry">
+                <div class="entry-main">
+                    <span class="entry-eyebrow">Започва оттук</span>
+                    <h3>Натална карта</h3>
+                    <p>Пълното колело с домовете по Плацидус, всяка планета и всички
+                       аспекти — плюс обяснение до всяка позиция на български.
+                       Изчислена със Swiss Ephemeris.</p>
+                    <ul class="entry-list">
+                        <li>Колелото на картата ти</li>
+                        <li>Планети, точки и домове с тълкуване</li>
+                        <li>Аспектите и какво носят</li>
+                        <li>Сваляне като PDF</li>
                     </ul>
-                    <a class="btn btn-primary plan-btn" href="/register">Вземи пълен достъп</a>
-                </article>
+                </div>
+                <div class="entry-side">
+                    <div class="entry-price">9 €</div>
+                    <div class="entry-once">еднократно</div>
+                    <a class="btn btn-primary entry-btn" href="/start">Създай своя натална карта</a>
+                    <p class="entry-note">Нужни са дата, час и място на раждане</p>
+                </div>
             </div>
+
             <div class="unlocks">
                 <div class="unlocks-head">
-                    <h3>Или плати само за това, което ти трябва</h3>
-                    <p>Не искаш абонамент? Отключи отделна функция еднократно — плащаш веднъж
-                       и ти остава завинаги, без месечна такса.</p>
+                    <h3>Добави каквото ти трябва</h3>
+                    <p>Всяко от тези се отключва отделно към картата ти и остава завинаги.</p>
                 </div>
                 <div class="chip-row">
                     <span class="chip">Дневен хороскоп <span class="price">3 €</span></span>
@@ -1160,12 +1213,14 @@
                     <span class="chip">За мен <span class="price">5 €</span></span>
                     <span class="chip">Периоди <span class="price">5 €</span></span>
                     <span class="chip">Любовен хороскоп <span class="price">5 €</span></span>
+                    <span class="chip">Пълно разчитане <span class="price">6 €</span></span>
                     <span class="chip">Съвместимост <span class="price">7 €</span></span>
                     <span class="chip">Акашови записи <span class="price">9 €</span></span>
                 </div>
             </div>
 
-            <p class="plans-foot">Регистрацията е моментална и не иска карта. За абонамент или отделно отключване пиши ни — свързваме се същия ден.</p>
+            <p class="plans-foot">Плащането минава през Stripe. Картата ти остава достъпна винаги,
+               без значение дали добавяш още разчитания.</p>
         </div>
     </section>
 
@@ -1175,7 +1230,7 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/register">Създай своята карта</a>
+                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -1185,7 +1240,8 @@
     <footer>
         <div class="wrap">
             МираСкоп · Астрология на разбираем език<br>
-            Разчитанията са за размисъл и себепознание, не заместват професионален съвет.
+            Разчитанията са за размисъл и себепознание, не заместват професионален съвет.<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
         </div>
     </footer>
 

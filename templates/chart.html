@@ -928,6 +928,20 @@
             font-size: 0.86rem; color: var(--text-soft); line-height: 1.6;
         }
         .karm-strip:last-child { border-bottom: none; }
+
+        /* The akashic reading is the longest text in the app and is read
+           slowly, so it gets a larger measure than the other panels. */
+        #akashic-ai-content .interpretation {
+            font-size: 1.06rem; line-height: 1.9; max-width: 64ch;
+        }
+        #akashic-ai-content .interpretation p { margin: 0 0 1.15em; }
+        #akashic-ai-content .interpretation h3,
+        #akashic-ai-content .interpretation h4 { font-size: 1.16rem; }
+        #akashic-content .karm-meaning { font-size: 0.92rem; line-height: 1.7; }
+        #akashic-content .karm-value { font-size: 1.04rem; }
+        @media (max-width: 600px) {
+            #akashic-ai-content .interpretation { font-size: 1.02rem; line-height: 1.85; }
+        }
         .karm-strip-label {
             font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
             color: var(--text-dim); font-weight: 600; min-width: 130px; flex-shrink: 0;
@@ -1440,7 +1454,19 @@
 
         function getToken() {
             const params = new URLSearchParams(window.location.search);
-            return params.get('token') || localStorage.getItem('miralog_token');
+            const fromUrl = params.get('token');
+            if (fromUrl) {
+                localStorage.setItem('miralog_token', fromUrl);
+                document.cookie = 'miralog_token=' + encodeURIComponent(fromUrl) + '; path=/; SameSite=Lax; max-age=2592000';
+                params.delete('token');
+                const q = params.toString();
+                history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
+            }
+            const token = localStorage.getItem('miralog_token');
+            if (token) {
+                document.cookie = 'miralog_token=' + encodeURIComponent(token) + '; path=/; SameSite=Lax; max-age=2592000';
+            }
+            return token;
         }
 
         function authHeaders() {
@@ -1623,7 +1649,8 @@
             const key = data.cache_key || '';
             const exportBtns = key ? `
                 <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>
-                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>` : '';
+                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>
+                <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
             return `<div class="cache-bar">
                 <span class="cache-label">${label}</span>
                 <div class="cache-actions">
@@ -1685,6 +1712,28 @@
                 uiToast('Разчитането е изпратено на ' + data.to, 'ok');
             } catch (e) {
                 uiAlert('Имейлът не можа да се изпрати: ' + e.message,
+                        { title: 'Нещо се обърка', tone: 'danger' });
+            }
+        }
+
+        async function shareReading(key) {
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/share', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cache_key: key }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
+                const url = data.url;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(url);
+                    uiToast('Линкът за споделяне е копиран', 'ok');
+                } else {
+                    uiAlert(url, { title: 'Линк за споделяне' });
+                }
+            } catch (e) {
+                uiAlert('Споделянето не успя: ' + e.message,
                         { title: 'Нещо се обърка', tone: 'danger' });
             }
         }

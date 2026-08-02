@@ -58,7 +58,7 @@ function renderLocked(el, detail, retry) {
         ? `<div class="locked-price">${money(offer.price_cents, offer.currency)}
                <small>еднократно, остава завинаги</small></div>
            <button class="locked-btn" data-feature="${escapeHtml(offer.key)}">Отключи „${escapeHtml(offer.name)}“</button>`
-        : `<a class="locked-btn" href="/settings?token=${encodeURIComponent(getToken())}"
+        : `<a class="locked-btn" href="/settings"
                style="text-decoration:none;">Виж пакетите</a>`;
 
     el.classList.add('locked');
@@ -130,6 +130,10 @@ async function requestUnlock(btn, featureKey, retry) {
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
         if (data.already && retry) { retry(); return; }
+        if (data.checkout_url) {
+            window.location.href = data.checkout_url;
+            return;
+        }
         uiAlert('Ще се свържем с теб, за да уредим плащането. След това функцията '
               + 'се отключва за постоянно.', { title: 'Заявката е изпратена' });
         btn.textContent = 'Заявката е изпратена';

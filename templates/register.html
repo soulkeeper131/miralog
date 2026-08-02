@@ -378,12 +378,14 @@
                 // Registration successful — store token and go to dashboard
                 localStorage.setItem('miralog_token', data.token);
                 localStorage.setItem('miralog_email', data.user.email);
+                document.cookie = 'miralog_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=2592000';
 
                 successEl.textContent = 'Регистрацията е успешна! Пренасочване...';
                 successEl.classList.add('visible');
 
+                const wantFull = new URLSearchParams(location.search).get('plan') === 'full';
                 setTimeout(() => {
-                    window.location.replace('/dashboard');
+                    window.location.replace(wantFull ? '/settings?subscribe=1' : '/dashboard');
                 }, 800);
             } catch (err) {
                 errorEl.textContent = err.message;

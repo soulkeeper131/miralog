@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Плащането мина — МираСкоп</title>
+    <meta name="robots" content="noindex">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --font-body: 'Outfit', -apple-system, system-ui, sans-serif;
+            --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --bg: #08071a;
+            --bg-card: #14122e;
+            --border-soft: #1d1a3c;
+            --text: #e6e2f4;
+            --text-heading: #d6c6ff;
+            --text-muted: #9a93b8;
+            --text-dim: #9090a4;
+            --accent: #7c3aed;
+            --accent-light: #a78bfa;
+            --gilt: #e8c56b;
+            --gilt-soft: rgba(232,197,107,0.12);
+            --success: #22c55e;
+        }
+        :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --bg: #f7f4fa;
+            --bg-card: #ffffff;
+            --border-soft: #ece3f2;
+            --text: #241d33;
+            --text-heading: #513173;
+            --text-muted: #6e6285;
+            --text-dim: #7d6888;
+            --accent: #8659a3;
+            --accent-light: #8659a3;
+            --gilt: #8a6410;
+            --gilt-soft: rgba(138,100,16,0.10);
+            --success: #16a34a;
+        }
+        body {
+            font-family: var(--font-body);
+            font-size: 0.98rem; line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+            background: var(--bg); color: var(--text);
+            min-height: 100dvh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            max-width: 520px; width: 100%; text-align: center;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 20px; padding: clamp(30px, 6vw, 46px);
+            box-shadow: var(--shadow-card);
+        }
+        .seal {
+            width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 20px;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--gilt-soft); color: var(--gilt); font-size: 1.7rem;
+        }
+        h1 {
+            font-family: var(--font-display); font-weight: 700;
+            font-variation-settings: 'opsz' 90, 'SOFT' 24, 'WONK' 1;
+            font-size: clamp(1.7rem, 4.6vw, 2.3rem); line-height: 1.15;
+            color: var(--text-heading); margin-bottom: 12px; text-wrap: balance;
+        }
+        p { color: var(--text-muted); margin-bottom: 14px; }
+        .mail-note {
+            display: block; margin: 22px 0;
+            padding: 16px 18px; border-radius: 14px;
+            background: var(--gilt-soft); color: var(--text);
+            font-size: 0.92rem; line-height: 1.6; text-align: left;
+        }
+        .mail-note strong { color: var(--text-heading); }
+        .foot {
+            font-size: 0.8rem; color: var(--text-dim); margin-top: 20px; margin-bottom: 0;
+        }
+        .foot a { color: var(--accent-light); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="seal" aria-hidden="true">✦</div>
+        <h1>Плащането мина</h1>
+        <p>Наталната ти карта е изчислена и запазена.</p>
+
+        <span class="mail-note">
+            Изпратихме ти имейл с връзка за <strong>задаване на парола</strong>.
+            След като я зададеш, влизаш в профила си и картата те чака там.
+            <br><br>
+            Не виждаш писмото? Провери и в спам папката — понякога първото
+            съобщение попада там.
+        </span>
+
+        <p class="foot">
+            Връзката е валидна 2 часа. Ако изтече, използвай
+            <a href="/forgot-password">Забравена парола</a> със същия имейл.
+        </p>
+    </div>
+</body>
+</html>

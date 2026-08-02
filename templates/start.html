@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Създай своята натална карта — МираСкоп</title>
+    <meta name="robots" content="noindex">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        [hidden] { display: none !important; }
+        :root {
+            --font-body: 'Outfit', -apple-system, system-ui, sans-serif;
+            --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
+            --bg: #08071a;
+            --bg-raised: #0f0e26;
+            --bg-card: #14122e;
+            --bg-input: #100f26;
+            --border: #2b2752;
+            --border-soft: #1d1a3c;
+            --text: #e6e2f4;
+            --text-heading: #d6c6ff;
+            --text-muted: #9a93b8;
+            --text-dim: #9090a4;
+            --text-soft: #b4adcc;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --danger: #ef4444;
+            --danger-bg: #2d1b1b;
+            --danger-text: #fca5a5;
+            --success: #22c55e;
+            --gilt: #e8c56b;
+            --gilt-soft: rgba(232,197,107,0.12);
+            --surface-thistle: rgba(205,180,219,0.10);
+            --on-thistle: #c9b1ff;
+        }
+        :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
+            --bg: #f7f4fa;
+            --bg-raised: #ffffff;
+            --bg-card: #ffffff;
+            --bg-input: #f4eff8;
+            --border: #e2d5ec;
+            --border-soft: #ece3f2;
+            --text: #241d33;
+            --text-heading: #513173;
+            --text-muted: #6e6285;
+            --text-dim: #7d6888;
+            --text-soft: #6e6285;
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #8659a3;
+            --danger: #c2255c;
+            --danger-bg: #fff0f5;
+            --danger-text: #c2255c;
+            --success: #16a34a;
+            --gilt: #8a6410;
+            --gilt-soft: rgba(138,100,16,0.10);
+            --surface-thistle: rgba(205,180,219,0.28);
+            --on-thistle: #5b3a73;
+        }
+
+        html { overflow-x: hidden; }
+        body {
+            font-family: var(--font-body);
+            font-size: 0.98rem; line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+            background: var(--bg); color: var(--text);
+            min-height: 100dvh;
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+        .theme-toggle {
+            position: fixed; top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px; height: 44px; border-radius: 50%;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 200;
+            box-shadow: 0 0 0 6px var(--bg), var(--shadow-card);
+        }
+        .wrap {
+            max-width: 620px; margin: 0 auto;
+            padding: clamp(28px, 6vw, 56px) clamp(20px, 5vw, 32px) 64px;
+        }
+        .page-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
+        .page-logo {
+            width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+        }
+        .back-link {
+            color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
+            display: inline-flex; align-items: center; min-height: 44px;
+        }
+        .back-link:hover { color: var(--accent-light); }
+
+        h1 {
+            font-family: var(--font-display); font-weight: 700;
+            font-variation-settings: 'opsz' 90, 'SOFT' 24, 'WONK' 1;
+            font-size: clamp(1.9rem, 5vw, 2.6rem); line-height: 1.1;
+            letter-spacing: -0.022em; color: var(--text-heading);
+            margin-bottom: 10px; text-wrap: balance;
+        }
+        .lede {
+            color: var(--text-muted); font-size: 1rem; line-height: 1.7;
+            margin-bottom: 8px;
+        }
+
+        /* Steps: three states, so the visitor always knows what is left. */
+        .steps {
+            display: flex; align-items: center; gap: 8px;
+            margin: 24px 0 28px; flex-wrap: wrap;
+        }
+        .step {
+            display: inline-flex; align-items: center; gap: 7px;
+            font-size: 0.78rem; color: var(--text-dim);
+        }
+        .step-num {
+            width: 24px; height: 24px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-family: var(--font-mono); font-size: 0.7rem;
+            border: 1px solid var(--border); color: var(--text-dim);
+        }
+        .step.on { color: var(--text); }
+        .step.on .step-num {
+            background: var(--accent); border-color: var(--accent); color: #fff;
+        }
+        .step-sep { color: var(--border); }
+
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            border-radius: 18px; padding: clamp(22px, 4vw, 30px);
+            box-shadow: var(--shadow-card);
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block; margin-bottom: 5px;
+            color: var(--text-muted); font-size: 0.85rem;
+        }
+        .form-group input {
+            width: 100%; padding: 11px 13px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-family: inherit; font-size: 16px; min-height: 46px;
+        }
+        .form-group input:focus {
+            outline: none; border-color: var(--accent); box-shadow: var(--focus-ring);
+        }
+        .hint { font-size: 0.76rem; color: var(--text-dim); margin-top: 5px; }
+        .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        @media (max-width: 460px) {
+            .row-3 { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        }
+
+        /* Place lookup */
+        .place-group { position: relative; }
+        .suggestions {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 40;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; margin-top: 4px; overflow: hidden;
+            box-shadow: 0 14px 34px rgba(0,0,0,.4); max-height: 240px; overflow-y: auto;
+        }
+        .suggestion {
+            padding: 11px 14px; cursor: pointer; font-size: 0.88rem;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .suggestion:last-child { border-bottom: none; }
+        .suggestion:hover { background: var(--surface-thistle); }
+        .coords {
+            font-family: var(--font-mono); font-size: 0.72rem;
+            color: var(--gilt); margin-top: 6px;
+        }
+
+        .divider {
+            height: 1px; background: var(--border-soft); margin: 24px 0;
+        }
+        .price-row {
+            display: flex; align-items: baseline; justify-content: space-between;
+            gap: 12px; padding: 16px 18px; border-radius: 14px;
+            background: var(--gilt-soft); margin-bottom: 18px;
+        }
+        .price-what { font-size: 0.92rem; color: var(--text); }
+        .price-what small { display: block; color: var(--text-dim); font-size: 0.76rem; }
+        .price-amount {
+            font-family: var(--font-display); font-weight: 700; font-size: 1.9rem;
+            color: var(--gilt); line-height: 1; white-space: nowrap;
+        }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            width: 100%; padding: 14px 24px; border-radius: 12px; border: none;
+            background: var(--accent); color: #fff; cursor: pointer;
+            font-family: inherit; font-size: 1rem; font-weight: 600;
+            min-height: 52px; line-height: 1.2;
+        }
+        .btn:hover { background: var(--accent-hover); }
+        .btn:disabled { opacity: .6; cursor: not-allowed; }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        .foot-note {
+            text-align: center; font-size: 0.8rem; color: var(--text-dim);
+            margin-top: 16px; line-height: 1.6;
+        }
+        .foot-note a { color: var(--accent-light); }
+
+        .banner {
+            border-radius: 12px; padding: 13px 16px; font-size: 0.88rem;
+            margin-bottom: 18px; line-height: 1.6;
+        }
+        .banner-error {
+            background: var(--danger-bg); border: 1px solid var(--danger);
+            color: var(--danger-text);
+        }
+        .banner-error a { color: var(--danger-text); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <div class="wrap">
+        <div class="page-nav">
+            <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
+            <a href="/" class="back-link">← Начало</a>
+        </div>
+
+        <h1>Създай своята натална карта</h1>
+        <p class="lede">
+            Нужни са само дата, час и място на раждане. Картата се изчислява
+            със Swiss Ephemeris — същите таблици, които ползват професионалните
+            астролози.
+        </p>
+
+        <div class="steps" aria-label="Стъпки">
+            <span class="step on"><span class="step-num">1</span>Данни за раждане</span>
+            <span class="step-sep">·</span>
+            <span class="step"><span class="step-num">2</span>Плащане</span>
+            <span class="step-sep">·</span>
+            <span class="step"><span class="step-num">3</span>Готово</span>
+        </div>
+
+        <div class="card">
+            <div id="banner"></div>
+
+            <form id="startForm" novalidate>
+                <div class="form-group">
+                    <label for="fName">Име</label>
+                    <input type="text" id="fName" required placeholder="Как се казваш" autocomplete="name">
+                </div>
+
+                <div class="row-3">
+                    <div class="form-group">
+                        <label for="fDay">Ден</label>
+                        <input type="number" id="fDay" required placeholder="8" min="1" max="31" inputmode="numeric">
+                    </div>
+                    <div class="form-group">
+                        <label for="fMonth">Месец</label>
+                        <input type="number" id="fMonth" required placeholder="1" min="1" max="12" inputmode="numeric">
+                    </div>
+                    <div class="form-group">
+                        <label for="fYear">Година</label>
+                        <input type="number" id="fYear" required placeholder="1988" min="1800" max="2100" inputmode="numeric">
+                    </div>
+                </div>
+
+                <div class="row-2">
+                    <div class="form-group">
+                        <label for="fHour">Час</label>
+                        <input type="number" id="fHour" value="12" min="0" max="23" inputmode="numeric">
+                    </div>
+                    <div class="form-group">
+                        <label for="fMinute">Минути</label>
+                        <input type="number" id="fMinute" value="0" min="0" max="59" inputmode="numeric">
+                    </div>
+                </div>
+                <p class="hint" style="margin-top:-8px; margin-bottom:16px;">
+                    Ако не знаеш точния час, остави 12:00 — картата ще е вярна,
+                    но асцендентът и домовете ще са приблизителни.
+                </p>
+
+                <div class="form-group place-group">
+                    <label for="fPlace">Място на раждане</label>
+                    <input type="text" id="fPlace" required autocomplete="off"
+                           placeholder="Напр. София, Пловдив, Видин...">
+                    <div id="suggestions"></div>
+                    <div class="coords" id="coords" hidden></div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="form-group">
+                    <label for="fEmail">Твоят имейл</label>
+                    <input type="email" id="fEmail" required placeholder="име@поща.bg" autocomplete="email">
+                    <div class="hint">
+                        Тук пращаме картата и връзка за задаване на парола,
+                        с която влизаш после.
+                    </div>
+                </div>
+
+                <div class="price-row">
+                    <span class="price-what">
+                        Натална карта
+                        <small>Колелото, позициите и аспектите — остава ти завинаги</small>
+                    </span>
+                    <span class="price-amount" id="priceTag">9 €</span>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">Към плащането</button>
+            </form>
+        </div>
+
+        <p class="foot-note">
+            Вече имаш акаунт? <a href="/login">Влез оттук</a>
+        </p>
+    </div>
+
+    <script src="/static/ui.js"></script>
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        let picked = null;   // { lat, lon, timezone, label }
+
+        function showBanner(html) {
+            document.getElementById('banner').innerHTML =
+                '<div class="banner banner-error">' + html + '</div>';
+        }
+        function clearBanner() { document.getElementById('banner').innerHTML = ''; }
+
+        /* ---------- place lookup ---------- */
+        let searchTimer = null;
+        const placeInput = document.getElementById('fPlace');
+        const suggestBox = document.getElementById('suggestions');
+        const coordsBox = document.getElementById('coords');
+
+        placeInput.addEventListener('input', () => {
+            picked = null;
+            coordsBox.hidden = true;
+            clearTimeout(searchTimer);
+            const q = placeInput.value.trim();
+            if (q.length < 2) { suggestBox.innerHTML = ''; return; }
+            // Nominatim asks for at most one request a second; 600ms of quiet
+            // keeps us well inside that while still feeling immediate.
+            searchTimer = setTimeout(() => searchPlace(q), 600);
+        });
+
+        async function searchPlace(q) {
+            try {
+                const resp = await fetch('/api/public/geocode?q=' + encodeURIComponent(q));
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const results = data.results || [];
+                if (!results.length) { suggestBox.innerHTML = ''; return; }
+                suggestBox.innerHTML = '<div class="suggestions">' + results.map((r, i) =>
+                    `<div class="suggestion" data-idx="${i}">${escapeHtml(r.label)}</div>`
+                ).join('') + '</div>';
+                suggestBox.querySelectorAll('.suggestion').forEach(node => {
+                    node.addEventListener('click', () => choosePlace(results[+node.dataset.idx]));
+                });
+            } catch (e) { /* leave the field as typed */ }
+        }
+
+        function choosePlace(r) {
+            picked = { lat: r.lat, lon: r.lon, timezone: r.timezone || 'Europe/Sofia', label: r.label };
+            placeInput.value = r.label;
+            suggestBox.innerHTML = '';
+            coordsBox.hidden = false;
+            coordsBox.textContent =
+                Number(r.lat).toFixed(4) + ', ' + Number(r.lon).toFixed(4) +
+                ' · ' + picked.timezone;
+        }
+
+        function escapeHtml(t) {
+            const d = document.createElement('div');
+            d.textContent = t == null ? '' : String(t);
+            return d.innerHTML;
+        }
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.place-group')) suggestBox.innerHTML = '';
+        });
+
+        /* ---------- submit ---------- */
+        document.getElementById('startForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            clearBanner();
+
+            const name = document.getElementById('fName').value.trim();
+            const day = +document.getElementById('fDay').value;
+            const month = +document.getElementById('fMonth').value;
+            const year = +document.getElementById('fYear').value;
+            const email = document.getElementById('fEmail').value.trim();
+
+            if (!name) { showBanner('Въведи име.'); return; }
+            if (!day || !month || !year) { showBanner('Въведи пълна дата на раждане.'); return; }
+            if (!picked) {
+                showBanner('Избери място от списъка, за да вземем координатите и часовата зона.');
+                placeInput.focus();
+                return;
+            }
+            if (email.indexOf('@') < 0) { showBanner('Въведи валиден имейл адрес.'); return; }
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Подготвяме плащането...';
+
+            try {
+                const resp = await fetch('/api/onboard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email, name, year, month, day,
+                        hour: +document.getElementById('fHour').value || 0,
+                        minute: +document.getElementById('fMinute').value || 0,
+                        lat: picked.lat, lon: picked.lon, timezone: picked.timezone,
+                    }),
+                });
+                const data = await resp.json().catch(() => ({}));
+
+                if (resp.status === 409) {
+                    showBanner('Вече има акаунт с този имейл. ' +
+                               '<a href="/login">Влез оттук</a> и създай картата от таблото.');
+                    return;
+                }
+                if (!resp.ok) {
+                    const msg = typeof data.detail === 'string' ? data.detail
+                              : (data.detail && data.detail.message) || 'Нещо се обърка.';
+                    showBanner(escapeHtml(msg));
+                    return;
+                }
+
+                if (data.checkout_url) { window.location.href = data.checkout_url; return; }
+
+                // No payment processor configured: the request was logged instead.
+                await uiAlert('Записахме заявката ти. Ще се свържем с теб на ' + email +
+                              ', за да уредим плащането и да отключим картата.',
+                              { title: 'Готово' });
+                window.location.href = '/';
+            } catch (err) {
+                showBanner('Връзката се разпадна. Опитай пак.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Към плащането';
+            }
+        });
+    </script>
+</body>
+</html>

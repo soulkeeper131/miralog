@@ -291,10 +291,13 @@
                 </div>
                 <button type="submit" class="btn" id="submitBtn">Вход</button>
             </form>
+            <p style="margin-top:14px;text-align:center;font-size:0.9rem;">
+                <a href="/forgot-password" style="color:var(--accent-light);">Забравена парола?</a>
+            </p>
         </div>
 
         <div class="footer">
-            🔐 Един администраторски акаунт
+            Нямаш акаунт? <a href="/register">Регистрация</a>
         </div>
     </div>
 
@@ -351,6 +354,7 @@
                 // Store token and redirect
                 localStorage.setItem('miralog_token', data.token);
                 localStorage.setItem('miralog_email', data.user.email);
+                document.cookie = 'miralog_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=2592000';
                 window.location.replace('/dashboard');
             } catch (err) {
                 errorEl.textContent = err.message;

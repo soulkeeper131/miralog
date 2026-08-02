@@ -1,4 +1,4 @@
-import os, re, sys, json, sqlite3, datetime, urllib.parse
+import os, re, sys, json, sqlite3, datetime, urllib.parse, secrets, hashlib, asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
@@ -36,6 +36,7 @@ from translations import (
 from numerology import compute_numerology
 from bg_text import clean_bg
 from pdf_report import build_reading_pdf
+import billing
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
@@ -274,9 +275,33 @@ def init_db():
             ("note", "ALTER TABLE users ADD COLUMN note TEXT"),
             ("last_login", "ALTER TABLE users ADD COLUMN last_login TIMESTAMP"),
             ("display_name", "ALTER TABLE users ADD COLUMN display_name TEXT"),
+            ("stripe_customer_id", "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"),
+            ("stripe_subscription_id", "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT"),
+            ("digest_opt_in", "ALTER TABLE users ADD COLUMN digest_opt_in INTEGER NOT NULL DEFAULT 0"),
+            ("lifecycle_expiring_for", "ALTER TABLE users ADD COLUMN lifecycle_expiring_for TEXT"),
+            ("lifecycle_expired_for", "ALTER TABLE users ADD COLUMN lifecycle_expired_for TEXT"),
+            ("last_digest_on", "ALTER TABLE users ADD COLUMN last_digest_on TEXT"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS share_links (
+                token TEXT PRIMARY KEY,
+                person_id INTEGER NOT NULL REFERENCES persons(id),
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                cache_key TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
         # The seeded admin predates the role column, so claim it here.
         conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
@@ -314,13 +339,26 @@ def init_db():
                     ("love", 500, 1),
                     ("akashic", 900, 1),
                     ("moon", 300, 1),
-                    # The basics come with every plan, so they are never sold.
-                    ("chart", 0, 0),
+                    # The chart itself is the first purchase; planets and
+                    # aspects are part of it and are never sold separately.
+                    ("chart", 900, 1),
                     ("planets", 0, 0),
                     ("aspects", 0, 0),
                     ("numerology", 400, 1),
                     ("interpretation", 600, 1),
                 ])
+
+        # Older installs gave the demo plan a free chart and numerology.
+        conn.execute(
+            "UPDATE plans SET name = 'Основен', features = ?"
+            " WHERE key = 'demo' AND features LIKE '%chart%'",
+            (json.dumps(["planets", "aspects"]),))
+
+        # The chart used to be free with every plan; it is now the entry
+        # purchase. Existing rows keep their old zero price without this.
+        conn.execute(
+            "UPDATE feature_prices SET price_cents = 900, is_purchasable = 1"
+            " WHERE feature_key = 'chart' AND price_cents = 0")
 
         # Same for the price list: it is only seeded when empty, so later
         # features would have no price and could never be bought on their own.
@@ -351,10 +389,12 @@ def init_db():
                 "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, sort_order)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    # Two charts, so a bought "Съвместимост" has a second person
-                    # to compare against.
-                    ("demo", "Демо", 0, "EUR", "month", 2,
-                     json.dumps(["chart", "planets", "aspects", "numerology"]), 0),
+                    # There is no free tier: every reading is bought outright.
+                    # This plan grants nothing on its own — it only sets how many
+                    # charts an account may hold. "planets" and "aspects" ride
+                    # along with a purchased chart, so they stay listed here.
+                    ("demo", "Основен", 0, "EUR", "month", 2,
+                     json.dumps(["planets", "aspects"]), 0),
                     ("full", "Пълен достъп", 500, "EUR", "month", 50,
                      json.dumps(["chart", "planets", "aspects", "numerology", "profile",
                                  "horoscope", "period", "synastry", "love", "akashic",
@@ -378,8 +418,20 @@ async def lifespan(app: FastAPI):
         log.warning(warning)
     if not IS_PRODUCTION:
         log.info("ENVIRONMENT=%s - proverkite za produkciya sa izklyucheni.", ENVIRONMENT)
+    if billing.stripe_enabled():
+        log.info("Stripe checkout е активен.")
+    else:
+        log.info("Stripe не е конфигуриран — плащанията остават ръчни / заявка.")
     init_db()
-    yield
+    job_task = asyncio.create_task(_background_jobs_loop())
+    try:
+        yield
+    finally:
+        job_task.cancel()
+        try:
+            await job_task
+        except asyncio.CancelledError:
+            pass
 
 templates = Jinja2Templates(directory="templates")
 # Fix for Jinja2 3.1.6 + Starlette 1.0.1: request object is not hashable
@@ -387,6 +439,16 @@ templates.env.cache_size = 0
 
 app = FastAPI(title="МираСкоп", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+async def _background_jobs_loop():
+    """Hourly lifecycle + digest emails. Failures are logged, never crash the app."""
+    await asyncio.sleep(15)
+    while True:
+        try:
+            await asyncio.to_thread(run_scheduled_jobs)
+        except Exception:
+            log.exception("Фоновите задачи за имейли се провалиха")
+        await asyncio.sleep(3600)
 
 # --- Pydantic Models ---
 class BirthDataUpdate(BaseModel):
@@ -973,8 +1035,96 @@ def api_login(data: AuthRequest):
         "user": {"id": user["id"], "email": user["email"]}
     }
 
+class OnboardRequest(BaseModel):
+    """Birth details plus an email, gathered before any account exists."""
+    email: str
+    name: str
+    year: int
+    month: int
+    day: int
+    hour: int = 12
+    minute: int = 0
+    lat: float
+    lon: float
+    timezone: str = "Europe/Sofia"
+
+
+@app.post("/api/onboard")
+def api_onboard(data: OnboardRequest, request: Request):
+    """Take birth details and an email, then send the visitor to checkout.
+
+    The account is created up front with an unusable password: it has to exist
+    for the chart to belong to someone and for Stripe's webhook to have a user
+    to unlock. The visitor sets a real password from the link emailed after
+    payment succeeds.
+    """
+    email = (data.email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
+    if not (data.name or "").strip():
+        raise HTTPException(400, "Моля, въведи име.")
+
+    existing = get_user_by_email(email)
+    if existing:
+        # Never silently attach a chart to somebody else's account.
+        raise HTTPException(409, {
+            "reason": "account_exists",
+            "message": "Вече има акаунт с този имейл. Влез и създай картата оттам.",
+        })
+
+    offer = feature_offer("chart")
+    if not offer:
+        raise HTTPException(503, "Наталната карта не се предлага в момента.")
+
+    # An unusable password: the account cannot be signed into until the visitor
+    # follows the emailed link and chooses one.
+    user = create_user(email, hash_password(secrets.token_urlsafe(32)))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO persons (user_id, name, year, month, day, hour, minute,"
+            " lat, lon, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], data.name.strip(), data.year, data.month, data.day,
+             data.hour, data.minute, data.lat, data.lon, data.timezone))
+        person_id = cur.lastrowid
+        conn.commit()
+
+    if not billing.stripe_enabled():
+        # Without a payment processor the visitor still gets an account and a
+        # chart; unlocking is handled by hand from the admin panel.
+        to = get_setting("smtp_from") or get_setting("smtp_user")
+        if to:
+            try:
+                send_email(to, "Нова заявка за натална карта",
+                           f"{email} създаде карта „{data.name}“ (person {person_id}) "
+                           f"и чака отключване за {offer['price_cents'] / 100:.2f} "
+                           f"{offer['currency']}.")
+            except HTTPException:
+                pass
+        return {"ok": True, "manual": True, "person_id": person_id}
+
+    base = site_base_url(request)
+    try:
+        url = billing.create_feature_checkout(
+            customer_email=email,
+            customer_id=None,
+            user_id=user["id"],
+            feature_key="chart",
+            feature_name=offer["name"],
+            amount_cents=offer["price_cents"],
+            currency=offer["currency"],
+            success_url=f"{base}/welcome?paid=1",
+            cancel_url=f"{base}/?paid=0",
+        )
+    except Exception as e:
+        log.warning("Onboarding checkout се провали за %s: %s", email, e)
+        raise HTTPException(502, "Плащането не можа да се стартира. Опитай пак.")
+
+    return {"ok": True, "checkout_url": url, "person_id": person_id}
+
+
 @app.post("/api/auth/register")
-def api_register(data: AuthRequest):
+def api_register(data: AuthRequest, request: Request):
     """Create an account. Each user only ever sees their own people."""
     email = (data.email or "").strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
@@ -986,6 +1136,12 @@ def api_register(data: AuthRequest):
 
     user = create_user(email, hash_password(data.password))
     token = create_token(user["id"], user["email"])
+    try_send_template(
+        email, "welcome",
+        name=email.split("@")[0],
+        link=f"{site_base_url(request)}/dashboard",
+        expires="",
+    )
     return {"token": token, "user": {"id": user["id"], "email": user["email"]}}
 
 @app.get("/api/auth/me")
@@ -1548,9 +1704,9 @@ def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
     }
 
 @app.post("/api/features/{feature_key}/request")
-def api_request_feature(feature_key: str, user: Tuple[int, str] = Depends(get_current_user)):
-    """Ask to buy a feature. There is no payment processor yet, so this emails
-    the admin address and tells the user someone will get back to them."""
+def api_request_feature(feature_key: str, request: Request,
+                        user: Tuple[int, str] = Depends(get_current_user)):
+    """Start Stripe checkout when configured; otherwise email the admin."""
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
@@ -1561,6 +1717,26 @@ def api_request_feature(feature_key: str, user: Tuple[int, str] = Depends(get_cu
     offer = feature_offer(feature_key)
     if not offer:
         raise HTTPException(404, "Тази функция не се продава отделно.")
+
+    if billing.stripe_enabled():
+        base = site_base_url(request)
+        success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        try:
+            url = billing.create_feature_checkout(
+                customer_email=email,
+                customer_id=row.get("stripe_customer_id"),
+                user_id=user_id,
+                feature_key=feature_key,
+                feature_name=offer["name"],
+                amount_cents=offer["price_cents"],
+                currency=offer["currency"],
+                success_url=success,
+                cancel_url=cancel,
+            )
+            return {"ok": True, "checkout_url": url, "offer": offer}
+        except Exception as e:
+            log.warning("Stripe checkout за %s се провали: %s", feature_key, e)
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
@@ -1574,7 +1750,7 @@ def api_request_feature(feature_key: str, user: Tuple[int, str] = Depends(get_cu
         except HTTPException:
             # A missing SMTP config must not make the button look broken.
             pass
-    return {"ok": True, "offer": offer}
+    return {"ok": True, "offer": offer, "manual": True}
 
 @app.get("/api/admin/settings")
 def api_admin_settings(admin: dict = Depends(require_admin)):
@@ -1700,7 +1876,551 @@ def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
                "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
     return {"ok": True}
 
-# --- Settings API Routes (AUTH REQUIRED) ---
+# --- Site URL, lifecycle emails, billing fulfillment, password reset, share ---
+
+def site_base_url(request: Optional[Request] = None) -> str:
+    configured = (seo_settings().get("seo_site_url") or "").rstrip("/")
+    if configured:
+        return configured
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return "http://127.0.0.1:8000"
+
+def render_email_template(kind: str, **fields) -> Tuple[str, str]:
+    """kind is welcome|expiring|expired. Returns (subject, body)."""
+    subject = get_setting(f"tpl_{kind}_subject") or EMAIL_TEMPLATES[f"{kind}_subject"]
+    body = get_setting(f"tpl_{kind}_body") or EMAIL_TEMPLATES[f"{kind}_body"]
+    safe = {k: ("" if v is None else str(v)) for k, v in fields.items()}
+    try:
+        return subject.format(**safe), body.format(**safe)
+    except Exception:
+        return subject, body
+
+def try_send_template(to: str, kind: str, **fields) -> bool:
+    """Send a templated email; returns False when SMTP is missing or send fails."""
+    if not to or not get_setting("smtp_host"):
+        return False
+    subject, body = render_email_template(kind, **fields)
+    try:
+        send_email(to, subject, body)
+        return True
+    except Exception as e:
+        log.warning("Неуспешен %s имейл до %s: %s", kind, to, e)
+        return False
+
+def add_months(base: datetime.date, months: int) -> datetime.date:
+    month = base.month - 1 + months
+    year = base.year + month // 12
+    month = month % 12 + 1
+    day = min(base.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+                         31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
+    return datetime.date(year, month, day)
+
+def extend_user_plan(user_id: int, plan_key: str, months: int = 1,
+                     subscription_id: Optional[str] = None,
+                     customer_id: Optional[str] = None) -> None:
+    target = get_user_by_id(user_id)
+    if not target:
+        return
+    base = datetime.date.today()
+    if target.get("plan_expires"):
+        try:
+            current = datetime.date.fromisoformat(str(target["plan_expires"])[:10])
+            base = max(base, current)
+        except ValueError:
+            pass
+    new_date = add_months(base, max(1, months))
+    sets = ["plan_key = ?", "plan_expires = ?"]
+    params: list = [plan_key, new_date.isoformat()]
+    if subscription_id:
+        sets.append("stripe_subscription_id = ?")
+        params.append(subscription_id)
+    if customer_id:
+        sets.append("stripe_customer_id = ?")
+        params.append(customer_id)
+    params.append(user_id)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+
+def record_payment(user_id: int, *, plan_key: Optional[str], amount_cents: int,
+                   currency: str, method: str, note: str) -> int:
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO payments (user_id, plan_key, amount_cents, currency, method, note)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, plan_key, amount_cents, currency, method, note))
+        conn.commit()
+        return cur.lastrowid
+
+def grant_feature_purchase(user_id: int, feature_key: str, price_cents: int,
+                           currency: str = "EUR", payment_id: Optional[int] = None) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO feature_purchases (user_id, feature_key, price_cents, currency, payment_id)"
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(user_id, feature_key) DO UPDATE SET"
+            " price_cents = excluded.price_cents, currency = excluded.currency,"
+            " payment_id = COALESCE(excluded.payment_id, feature_purchases.payment_id)",
+            (user_id, feature_key, price_cents, currency, payment_id))
+        conn.commit()
+
+def fulfill_checkout_session(session: dict) -> None:
+    """Apply a completed Stripe Checkout session to the local DB."""
+    meta = session.get("metadata") or {}
+    kind = meta.get("kind") or ""
+    try:
+        user_id = int(meta.get("user_id") or session.get("client_reference_id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+    if not user_id:
+        log.warning("Stripe session без user_id: %s", session.get("id"))
+        return
+
+    amount = int(session.get("amount_total") or 0)
+    currency = (session.get("currency") or "eur").upper()
+    customer_id = session.get("customer")
+    if isinstance(customer_id, dict):
+        customer_id = customer_id.get("id")
+    subscription_id = session.get("subscription")
+    if isinstance(subscription_id, dict):
+        subscription_id = subscription_id.get("id")
+
+    if kind == "subscription" or session.get("mode") == "subscription":
+        plan_key = meta.get("plan_key") or "full"
+        pay_id = record_payment(
+            user_id, plan_key=plan_key, amount_cents=amount, currency=currency,
+            method="stripe", note=f"checkout {session.get('id')}")
+        extend_user_plan(user_id, plan_key, months=1,
+                         subscription_id=subscription_id, customer_id=customer_id)
+        log.info("Stripe абонамент активиран за user=%s payment=%s", user_id, pay_id)
+        return
+
+    feature_key = meta.get("feature_key")
+    if kind == "feature" and feature_key:
+        pay_id = record_payment(
+            user_id, plan_key=None, amount_cents=amount, currency=currency,
+            method="stripe", note=f"feature:{feature_key} {session.get('id')}")
+        grant_feature_purchase(user_id, feature_key, amount, currency, pay_id)
+        if customer_id:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute(
+                    "UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, ?) WHERE id = ?",
+                    (customer_id, user_id))
+                conn.commit()
+        log.info("Stripe отключване %s за user=%s", feature_key, user_id)
+        # A chart bought through onboarding belongs to an account that has no
+        # usable password yet; this is the visitor's way in.
+        if feature_key == "chart":
+            send_welcome_set_password(user_id)
+
+def handle_subscription_deleted(subscription: dict) -> None:
+    sub_id = subscription.get("id")
+    if not sub_id:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE users SET plan_key = 'demo', stripe_subscription_id = NULL"
+            " WHERE stripe_subscription_id = ?",
+            (sub_id,))
+        conn.commit()
+
+def handle_subscription_updated(subscription: dict) -> None:
+    """Keep plan_expires in sync with Stripe's current_period_end."""
+    sub_id = subscription.get("id")
+    meta = subscription.get("metadata") or {}
+    try:
+        user_id = int(meta.get("user_id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+    period_end = subscription.get("current_period_end")
+    if not sub_id:
+        return
+    expires = None
+    if period_end:
+        expires = datetime.datetime.utcfromtimestamp(int(period_end)).date().isoformat()
+    status = subscription.get("status")
+    with sqlite3.connect(DB_PATH) as conn:
+        if user_id:
+            if status in ("active", "trialing", "past_due"):
+                conn.execute(
+                    "UPDATE users SET plan_key = 'full', plan_expires = COALESCE(?, plan_expires),"
+                    " stripe_subscription_id = ? WHERE id = ?",
+                    (expires, sub_id, user_id))
+            elif status in ("canceled", "unpaid", "incomplete_expired"):
+                conn.execute(
+                    "UPDATE users SET plan_key = 'demo', stripe_subscription_id = NULL WHERE id = ?",
+                    (user_id,))
+        elif expires:
+            conn.execute(
+                "UPDATE users SET plan_expires = ? WHERE stripe_subscription_id = ?",
+                (expires, sub_id))
+        conn.commit()
+
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+def create_password_reset(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    expires = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+        conn.execute(
+            "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+            (hash_reset_token(token), user_id, expires.isoformat()))
+        conn.commit()
+    return token
+
+def send_welcome_set_password(user_id: int) -> None:
+    """Email a set-password link to someone who just bought their first chart.
+
+    Silent on failure: the payment already went through, and a missing email
+    must not look like a failed purchase. The visitor can still use
+    "forgot password" to get in.
+    """
+    row = get_user_by_id(user_id)
+    if not row:
+        return
+    try:
+        token = create_password_reset(user_id)
+        base = (get_setting("seo_site_url") or "").rstrip("/")
+        link = base + "/reset-password?token=" + token
+        body = (
+            "Здравей!\n\n"
+            "Плащането мина и наталната ти карта е изчислена.\n"
+            "Задай парола, за да влизаш в профила си:\n\n"
+            + link + "\n\n"
+            "Връзката е валидна 2 часа. Ако изтече, използвай "
+            "„Забравена парола“ на страницата за вход.\n\n"
+            "— МираСкоп"
+        )
+        send_email(row["email"], "Картата ти е готова — задай парола", body)
+    except Exception as e:
+        log.warning("Welcome mail за user=%s се провали: %s", user_id, e)
+
+
+def consume_password_reset(token: str) -> Optional[int]:
+    th = hash_reset_token(token)
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?",
+            (th,)).fetchone()
+        if not row:
+            return None
+        user_id, expires_at = row
+        try:
+            exp = datetime.datetime.fromisoformat(str(expires_at))
+        except ValueError:
+            exp = datetime.datetime.utcnow()
+        conn.execute("DELETE FROM password_resets WHERE token_hash = ?", (th,))
+        conn.commit()
+        if exp < datetime.datetime.utcnow():
+            return None
+        return int(user_id)
+
+def run_lifecycle_emails() -> None:
+    today = datetime.date.today()
+    warn_before = today + datetime.timedelta(days=3)
+    base = site_base_url()
+    link = f"{base}/settings"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT id, email, display_name, plan_key, plan_expires,"
+            " lifecycle_expiring_for, lifecycle_expired_for FROM users"
+            " WHERE plan_expires IS NOT NULL AND role != 'admin'")]
+    for u in rows:
+        try:
+            expires = datetime.date.fromisoformat(str(u["plan_expires"])[:10])
+        except ValueError:
+            continue
+        name = u.get("display_name") or (u.get("email") or "").split("@")[0]
+        expires_s = expires.isoformat()
+        if expires == warn_before and u.get("lifecycle_expiring_for") != expires_s:
+            if try_send_template(u["email"], "expiring", name=name, link=link, expires=expires_s):
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute(
+                        "UPDATE users SET lifecycle_expiring_for = ? WHERE id = ?",
+                        (expires_s, u["id"]))
+                    conn.commit()
+        if expires < today and u.get("lifecycle_expired_for") != expires_s:
+            if try_send_template(u["email"], "expired", name=name, link=link, expires=expires_s):
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute(
+                        "UPDATE users SET lifecycle_expired_for = ? WHERE id = ?",
+                        (expires_s, u["id"]))
+                    conn.commit()
+
+def run_digest_emails() -> None:
+    """Opt-in daily nudge. Uses cached horoscope text when available; never calls AI."""
+    today = datetime.date.today().isoformat()
+    base = site_base_url()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        users = [dict(r) for r in conn.execute(
+            "SELECT id, email, display_name, last_digest_on, plan_key, plan_expires, role"
+            " FROM users WHERE digest_opt_in = 1 AND is_blocked = 0")]
+    for u in users:
+        if u.get("last_digest_on") == today:
+            continue
+        if "horoscope" not in unlocked_features(u):
+            continue
+        persons = get_all_persons(u["id"])
+        if not persons:
+            continue
+        person = persons[0]
+        cache_key = f"horoscope:{today}"
+        cached = get_ai_cache(person["id"], cache_key)
+        name = u.get("display_name") or (u.get("email") or "").split("@")[0]
+        chart_link = f"{base}/chart/{person['id']}"
+        if cached and cached.get("content"):
+            _, prose = split_summary(cached["content"])
+            excerpt = (prose or cached["content"]).strip()
+            if len(excerpt) > 900:
+                excerpt = excerpt[:900].rsplit(" ", 1)[0] + "…"
+            body = (
+                f"Здравей, {name}!\n\n"
+                f"Дневното разчитане за {person['name']}:\n\n{excerpt}\n\n"
+                f"Пълният текст: {chart_link}\n\n"
+                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\nМираСкоп"
+            )
+        else:
+            body = (
+                f"Здравей, {name}!\n\n"
+                f"Дневният хороскоп за {person['name']} те чака в МираСкоп:\n"
+                f"{chart_link}\n\n"
+                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\nМираСкоп"
+            )
+        if not get_setting("smtp_host"):
+            return
+        try:
+            send_email(u["email"], f"Денят ти в МираСкоп — {today}", body)
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?",
+                             (today, u["id"]))
+                conn.commit()
+        except Exception as e:
+            log.warning("Digest до %s се провали: %s", u["email"], e)
+
+def run_scheduled_jobs() -> None:
+    run_lifecycle_emails()
+    run_digest_emails()
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+class DigestUpdate(BaseModel):
+    digest_opt_in: bool
+
+class ShareCreate(BaseModel):
+    cache_key: str
+
+@app.post("/api/auth/forgot-password")
+def api_forgot_password(data: ForgotPasswordRequest, request: Request):
+    """Always returns ok to avoid email enumeration. Sends a reset link when possible."""
+    email = (data.email or "").strip().lower()
+    user = get_user_by_email(email) if email else None
+    if user:
+        token = create_password_reset(user["id"])
+        link = f"{site_base_url(request)}/reset-password?token={urllib.parse.quote(token)}"
+        name = user.get("display_name") or email.split("@")[0]
+        if get_setting("smtp_host"):
+            try:
+                send_email(
+                    email,
+                    "Нулиране на парола — МираСкоп",
+                    f"Здравей, {name}!\n\n"
+                    f"Заяви нулиране на паролата си. Линкът е валиден 2 часа:\n\n"
+                    f"{link}\n\nАко не си го заявили, игнорирай това писмо.\n\nМираСкоп",
+                )
+            except Exception as e:
+                log.warning("Forgot-password имейл се провали: %s", e)
+    return {"ok": True}
+
+@app.post("/api/auth/reset-password")
+def api_reset_password(data: ResetPasswordRequest):
+    if len(data.new_password or "") < 6:
+        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    user_id = consume_password_reset((data.token or "").strip())
+    if not user_id:
+        raise HTTPException(400, "Линкът е невалиден или е изтекъл. Заяви нов.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                     (hash_password(data.new_password), user_id))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/billing/status")
+def api_billing_status(user: Tuple[int, str] = Depends(get_current_user)):
+    row = get_user_by_id(user[0])
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    plan = get_plan("full") or {}
+    return {
+        "stripe_enabled": billing.stripe_enabled(),
+        "has_subscription": bool(row.get("stripe_subscription_id")),
+        "subscription_id": row.get("stripe_subscription_id"),
+        "plan_key": row.get("plan_key"),
+        "plan_expires": row.get("plan_expires"),
+        "full_price_cents": plan.get("price_cents", 500),
+        "currency": plan.get("currency", "EUR"),
+        "digest_opt_in": bool(row.get("digest_opt_in")),
+    }
+
+@app.post("/api/billing/checkout/subscription")
+def api_checkout_subscription(request: Request, user: Tuple[int, str] = Depends(get_current_user)):
+    if not billing.stripe_enabled():
+        raise HTTPException(503, "Онлайн плащанията още не са включени.")
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    plan = get_plan("full")
+    if not plan:
+        raise HTTPException(500, "Пакетът „Пълен достъп“ липсва.")
+    base = site_base_url(request)
+    success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+    cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+    try:
+        url = billing.create_subscription_checkout(
+            customer_email=email,
+            customer_id=row.get("stripe_customer_id"),
+            user_id=user_id,
+            amount_cents=int(plan.get("price_cents") or 500),
+            currency=plan.get("currency") or "EUR",
+            product_name=f"МираСкоп — {plan.get('name') or 'Пълен достъп'}",
+            success_url=success,
+            cancel_url=cancel,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Stripe грешка: {e}") from e
+    return {"url": url}
+
+@app.post("/api/billing/checkout/feature/{feature_key}")
+def api_checkout_feature(feature_key: str, request: Request,
+                         user: Tuple[int, str] = Depends(get_current_user)):
+    if not billing.stripe_enabled():
+        raise HTTPException(503, "Онлайн плащанията още не са включени.")
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if feature_key in unlocked_features(row):
+        return {"ok": True, "already": True}
+    offer = feature_offer(feature_key)
+    if not offer:
+        raise HTTPException(404, "Тази функция не се продава отделно.")
+    base = site_base_url(request)
+    success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+    cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+    try:
+        url = billing.create_feature_checkout(
+            customer_email=email,
+            customer_id=row.get("stripe_customer_id"),
+            user_id=user_id,
+            feature_key=feature_key,
+            feature_name=offer["name"],
+            amount_cents=offer["price_cents"],
+            currency=offer["currency"],
+            success_url=success,
+            cancel_url=cancel,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Stripe грешка: {e}") from e
+    return {"url": url}
+
+@app.post("/api/billing/cancel")
+def api_billing_cancel(user: Tuple[int, str] = Depends(get_current_user)):
+    if not billing.stripe_enabled():
+        raise HTTPException(503, "Онлайн плащанията още не са включени.")
+    row = get_user_by_id(user[0])
+    if not row or not row.get("stripe_subscription_id"):
+        raise HTTPException(400, "Няма активен Stripe абонамент за отказ.")
+    try:
+        info = billing.cancel_subscription_at_period_end(row["stripe_subscription_id"])
+    except Exception as e:
+        raise HTTPException(502, f"Stripe грешка: {e}") from e
+    return {"ok": True, "subscription": info}
+
+@app.post("/api/stripe/webhook")
+async def api_stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = billing.construct_webhook_event(payload, sig)
+    except Exception as e:
+        raise HTTPException(400, f"Webhook грешка: {e}") from e
+
+    etype = event["type"]
+    obj = event["data"]["object"]
+    try:
+        if etype == "checkout.session.completed":
+            fulfill_checkout_session(obj)
+        elif etype == "customer.subscription.updated":
+            handle_subscription_updated(obj)
+        elif etype == "customer.subscription.deleted":
+            handle_subscription_deleted(obj)
+    except Exception:
+        log.exception("Обработка на Stripe event %s се провали", etype)
+        raise HTTPException(500, "Вътрешна грешка при webhook.")
+    return {"ok": True}
+
+@app.post("/api/account/digest")
+def api_account_digest(data: DigestUpdate, user: Tuple[int, str] = Depends(get_current_user)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET digest_opt_in = ? WHERE id = ?",
+                     (1 if data.digest_opt_in else 0, user[0]))
+        conn.commit()
+    return {"ok": True, "digest_opt_in": bool(data.digest_opt_in)}
+
+@app.post("/api/persons/{person_id}/share")
+def api_create_share(person_id: int, data: ShareCreate, request: Request,
+                     user: Tuple[int, str] = Depends(get_current_user)):
+    user_id, _ = user
+    p = get_person(person_id, user_id)
+    if not p:
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+    cache_key = (data.cache_key or "").strip()
+    if not cache_key or not get_ai_cache(person_id, cache_key):
+        raise HTTPException(404, "Няма запазено разчитане за споделяне.")
+    token = secrets.token_urlsafe(24)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO share_links (token, person_id, user_id, cache_key) VALUES (?, ?, ?, ?)",
+            (token, person_id, user_id, cache_key))
+        conn.commit()
+    base = site_base_url(request)
+    return {"token": token, "url": f"{base}/share/{token}"}
+
+@app.get("/api/share/{token}")
+def api_get_share(token: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT s.*, p.name AS person_name FROM share_links s"
+            " JOIN persons p ON p.id = s.person_id WHERE s.token = ?",
+            (token,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Линкът за споделяне не е намерен.")
+    cached = get_ai_cache(row["person_id"], row["cache_key"])
+    if not cached:
+        raise HTTPException(404, "Разчитането вече не е налично.")
+    summary, prose = split_summary(cached["content"])
+    title_key = row["cache_key"].split(":")[0]
+    title = READING_TITLES.get(title_key, READING_TITLES.get(row["cache_key"], "Разчитане"))
+    return {
+        "person_name": row["person_name"],
+        "title": title,
+        "cache_key": row["cache_key"],
+        "summary": summary,
+        "content": prose or cached["content"],
+        "generated_at": cached.get("generated_at"),
+    }
+
 # --- Account settings (the signed-in user's own profile) ---
 # The AI provider and key are installation-wide and live in the admin panel;
 # nothing here may touch them.
@@ -1735,6 +2455,9 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
             "expires": row.get("plan_expires"),
             "active": plan_is_active(row),
         },
+        "digest_opt_in": bool(row.get("digest_opt_in")),
+        "stripe_enabled": billing.stripe_enabled(),
+        "has_subscription": bool(row.get("stripe_subscription_id")),
     }
 
 @app.post("/api/account")
@@ -1873,6 +2596,17 @@ def api_geocode(q: str, user: Tuple[int, str] = Depends(get_current_user)):
         return {"results": []}
     return {"results": geocode_place(q)}
 
+@app.get("/api/public/geocode")
+def api_public_geocode(q: str):
+    """Same lookup for the pre-signup chart form, which has no token yet.
+
+    Results are cached and rate-limited inside geocode_place, and a place name
+    reveals nothing about anyone, so this is safe to leave open.
+    """
+    if len(q.strip()) < 2:
+        return {"results": []}
+    return {"results": geocode_place(q)}
+
 # --- API Routes (AUTH REQUIRED) ---
 @app.get("/api/persons")
 def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
@@ -1955,7 +2689,8 @@ def api_delete_person(person_id: int, user: Tuple[int, str] = Depends(get_curren
     return {"deleted": person_id}
 
 @app.get("/api/persons/{person_id}/natal")
-def api_natal_chart(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_natal_chart(person_id: int,
+                    user: Tuple[int, str] = Depends(require_feature("chart"))):
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
@@ -1966,7 +2701,7 @@ def api_natal_chart(person_id: int, user: Tuple[int, str] = Depends(get_current_
 def api_natal_chart_update(
     person_id: int,
     data: BirthDataUpdate,
-    user: Tuple[int, str] = Depends(get_current_user),
+    user: Tuple[int, str] = Depends(require_feature("chart")),
 ):
     """Update birth data and return recalculated natal chart."""
     user_id, email = user
@@ -1980,7 +2715,8 @@ def api_natal_chart_update(
     return compute_natal(p)
 
 @app.get("/api/persons/{person_id}/natal.txt")
-def api_natal_chart_text(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_natal_chart_text(person_id: int,
+                         user: Tuple[int, str] = Depends(require_feature("chart"))):
     """Return natal chart as plain text."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -1991,7 +2727,8 @@ def api_natal_chart_text(person_id: int, user: Tuple[int, str] = Depends(get_cur
     return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
 
 @app.get("/api/persons/{person_id}/chart.svg")
-def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_chart_svg(person_id: int,
+                  user: Tuple[int, str] = Depends(require_feature("chart"))):
     """Return natal chart as SVG."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -2959,7 +3696,7 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
     return {"interpretation": AI_UNAVAILABLE}
 
 @app.post("/api/transits")
-def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_current_user)):
+def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
     """Compute transits for a person at a given target date."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
@@ -3085,7 +3822,7 @@ PERIOD_TRANSIT_BODIES = {
 }
 
 @app.post("/api/period-influence")
-def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(get_current_user)):
+def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(require_feature("period"))):
     """Scan a date range day-by-day and report only days where a major transit
     aspect to the natal chart newly forms or dissolves (changes vs. the previous day)."""
     user_id, email = user
@@ -3577,6 +4314,16 @@ def sitemap_xml(request: Request):
            f"{urls}</urlset>")
     return Response(content=xml, media_type="application/xml")
 
+@app.get("/start", response_class=HTMLResponse)
+async def start_page(request: Request):
+    """Birth details + email, before any account exists."""
+    return HTMLResponse(templates.get_template("start.html").render({"request": request}))
+
+@app.get("/welcome", response_class=HTMLResponse)
+async def welcome_page(request: Request):
+    """Landing spot after a successful first purchase."""
+    return HTMLResponse(templates.get_template("welcome.html").render({"request": request}))
+
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     return HTMLResponse(templates.get_template("register.html").render({"request": request}))
@@ -3585,17 +4332,45 @@ async def register_page(request: Request):
 async def login_page(request: Request):
     return HTMLResponse(templates.get_template("login.html").render({"request": request}))
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request):
+    return HTMLResponse(templates.get_template("forgot_password.html").render({"request": request}))
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(request: Request):
+    return HTMLResponse(templates.get_template("reset_password.html").render({"request": request}))
+
+@app.get("/share/{token}", response_class=HTMLResponse)
+async def share_page(request: Request, token: str):
+    return HTMLResponse(templates.get_template("share.html").render({
+        "request": request,
+        "token": token,
+    }))
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request):
+    return HTMLResponse(templates.get_template("privacy.html").render({"request": request}))
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page(request: Request):
+    return HTMLResponse(templates.get_template("terms.html").render({"request": request}))
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     """Dashboard — client-side JS handles auth check via localStorage token."""
     return HTMLResponse(templates.get_template("dashboard.html").render({"request": request}))
 
+def _token_from_request(request: Request) -> Optional[str]:
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return request.cookies.get("miralog_token") or request.query_params.get("token") or None
+
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
-    """Chart view — uses token from localStorage on client side."""
-    # Try to get user from Bearer token in request (header, falling back to query string for plain navigation)
+    """Chart view — JWT from cookie, Authorization header, or legacy ?token=."""
     user_id = None
-    token = request.headers.get("Authorization", "").replace("Bearer ", "") or request.query_params.get("token", "")
+    token = _token_from_request(request)
     if token:
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

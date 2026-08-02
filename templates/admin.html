@@ -518,7 +518,15 @@
         /* ---------- auth ---------- */
         function getToken() {
             const params = new URLSearchParams(window.location.search);
-            return params.get('token') || localStorage.getItem('miralog_token');
+            const fromUrl = params.get('token');
+            if (fromUrl) {
+                localStorage.setItem('miralog_token', fromUrl);
+                document.cookie = 'miralog_token=' + encodeURIComponent(fromUrl) + '; path=/; SameSite=Lax; max-age=2592000';
+                params.delete('token');
+                const q = params.toString();
+                history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
+            }
+            return localStorage.getItem('miralog_token');
         }
         function authHeaders() {
             const token = getToken();
@@ -528,7 +536,7 @@
             return Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
         }
         if (!getToken()) window.location.replace('/login');
-        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken() || '');
+        document.getElementById('backLink').href = '/dashboard';
 
         /* ---------- theme ---------- */
         function updateThemeToggleIcon() {
@@ -601,8 +609,8 @@
             document.getElementById('panel').hidden = true;
             document.getElementById('gate').innerHTML =
                 '<div class="section"><div class="error">Нужни са администраторски права.</div>' +
-                '<div class="btn-row"><a class="btn" href="/dashboard?token=' +
-                escapeHtml(getToken() || '') + '">Към таблото</a></div></div>';
+                '<div class="btn-row"><a class="btn" href="/dashboard">' +
+                'Към таблото</a></div></div>';
         }
 
         /* ---------- tabs ---------- */

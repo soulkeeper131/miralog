@@ -307,14 +307,22 @@
     <script>
         function getToken() {
             const params = new URLSearchParams(window.location.search);
-            return params.get('token') || localStorage.getItem('miralog_token');
+            const fromUrl = params.get('token');
+            if (fromUrl) {
+                localStorage.setItem('miralog_token', fromUrl);
+                document.cookie = 'miralog_token=' + encodeURIComponent(fromUrl) + '; path=/; SameSite=Lax; max-age=2592000';
+                params.delete('token');
+                const q = params.toString();
+                history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
+            }
+            return localStorage.getItem('miralog_token');
         }
         function authHeaders() {
             const token = getToken();
             return token ? { 'Authorization': 'Bearer ' + token } : {};
         }
         if (!getToken()) window.location.replace('/login');
-        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken());
+        document.getElementById('backLink').href = '/dashboard';
 
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';

@@ -581,6 +581,7 @@
         function logout() {
             localStorage.removeItem('miralog_token');
             localStorage.removeItem('miralog_email');
+            document.cookie = 'miralog_token=; path=/; Max-Age=0';
             window.location.replace('/login');
         }
 
@@ -592,9 +593,9 @@
         // Show email
         const email = localStorage.getItem('miralog_email') || '...';
         document.getElementById('userEmail').textContent = email;
-        document.getElementById('settingsLink').href = '/settings?token=' + encodeURIComponent(getToken());
-        document.getElementById('synastryLink').href = '/synastry?token=' + encodeURIComponent(getToken());
-        document.getElementById('moonLink').href = '/moon?token=' + encodeURIComponent(getToken());
+        document.getElementById('settingsLink').href = '/settings';
+        document.getElementById('synastryLink').href = '/synastry';
+        document.getElementById('moonLink').href = '/moon';
 
         // The admin link only appears for accounts that actually hold the role.
         (async function revealAdminLink() {
@@ -604,7 +605,7 @@
                 const me = await resp.json();
                 if (me.is_admin) {
                     const link = document.getElementById('adminLink');
-                    link.href = '/admin?token=' + encodeURIComponent(getToken());
+                    link.href = '/admin';
                     link.hidden = false;
                 }
             } catch (e) { /* the panel stays hidden; nothing else depends on this */ }
@@ -662,7 +663,7 @@
                                 </div>
                             </div>
                             <div class="person-actions">
-                                <a href="/chart/${p.id}?token=${encodeURIComponent(getToken())}" class="btn btn-primary">Карта</a>
+                                <a href="/chart/${p.id}" class="btn btn-primary">Карта</a>
                                 <button class="btn btn-danger btn-icon" onclick="deletePerson(${p.id})" title="Изтрий">✕</button>
                             </div>
                         </div>`;

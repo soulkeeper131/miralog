@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Споделено разчитане — МираСкоп</title>
+    <meta name="robots" content="noindex">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --font-body: 'Inter', system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --bg: #0a0a1a; --bg-card: #1a1a2e; --border: #2a2a4a;
+            --text: #e0e0e0; --text-heading: #c9b1ff; --text-muted: #888; --accent: #7c3aed;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb; --bg-card: #fff; --border: #e5d4ec;
+            --text: #2d2438; --text-heading: #6d4a89; --text-muted: #7a6d8a; --accent: #8659a3;
+        }
+        body { font-family: var(--font-body); background: var(--bg); color: var(--text); min-height: 100vh; padding: 32px 16px 64px; }
+        .wrap { max-width: 720px; margin: 0 auto; }
+        .brand { font-family: var(--font-display); color: var(--text-heading); font-size: 1.4rem; margin-bottom: 24px; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
+        h1 { font-family: var(--font-display); color: var(--text-heading); font-size: 2rem; margin-bottom: 6px; }
+        .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px; }
+        .content { line-height: 1.75; white-space: pre-wrap; font-size: 1rem; }
+        .cta { margin-top: 28px; }
+        .cta a { color: #fff; background: var(--accent); text-decoration: none; padding: 12px 18px; border-radius: 10px; display: inline-block; }
+        .err { color: var(--text-muted); padding: 40px 0; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="brand">МираСкоп</div>
+        <div id="root" class="card"><p class="err">Зареждане…</p></div>
+    </div>
+    <script>
+        (async function() {
+            const root = document.getElementById('root');
+            try {
+                const resp = await fetch('/api/share/{{ token }}');
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Линкът не е валиден');
+                document.title = (data.title || 'Разчитане') + ' — МираСкоп';
+                root.innerHTML =
+                    '<h1>' + escapeHtml(data.title || 'Разчитане') + '</h1>' +
+                    '<div class="meta">за ' + escapeHtml(data.person_name || '') +
+                    (data.generated_at ? ' · ' + escapeHtml(String(data.generated_at).slice(0, 10)) : '') +
+                    '</div>' +
+                    '<div class="content">' + escapeHtml(data.content || '') + '</div>' +
+                    '<div class="cta"><a href="/register">Създай своята карта</a></div>';
+            } catch (e) {
+                root.innerHTML = '<p class="err">' + escapeHtml(e.message) + '</p>';
+            }
+        })();
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s == null ? '' : String(s);
+            return d.innerHTML;
+        }
+    </script>
+</body>
+</html>

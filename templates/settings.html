@@ -326,6 +326,18 @@
                 <h2>Абонамент</h2>
                 <div class="desc">Текущият ти пакет и какво включва той.</div>
                 <div id="planInfo"></div>
+                <div id="billingActions" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;"></div>
+            </div>
+
+            <div class="section">
+                <h2>Дневен имейл</h2>
+                <div class="desc">
+                    Получавай напомняне за дневния хороскоп (или откъс, ако вече е генериран).
+                    Изисква отключен дневен хороскоп и конфигуриран SMTP.
+                </div>
+                <label class="check" for="digestOptIn" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" id="digestOptIn"> Искам дневен digest по имейл
+                </label>
             </div>
 
             <div class="section" id="adminSection" hidden>
@@ -359,7 +371,19 @@
 
         function getToken() {
             const params = new URLSearchParams(window.location.search);
-            return params.get('token') || localStorage.getItem('miralog_token');
+            const fromUrl = params.get('token');
+            if (fromUrl) {
+                localStorage.setItem('miralog_token', fromUrl);
+                document.cookie = 'miralog_token=' + encodeURIComponent(fromUrl) + '; path=/; SameSite=Lax; max-age=2592000';
+                params.delete('token');
+                const q = params.toString();
+                history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
+            }
+            const token = localStorage.getItem('miralog_token');
+            if (token) {
+                document.cookie = 'miralog_token=' + encodeURIComponent(token) + '; path=/; SameSite=Lax; max-age=2592000';
+            }
+            return token;
         }
         function authHeaders() {
             const token = getToken();
@@ -368,7 +392,7 @@
         if (!getToken()) {
             window.location.replace('/login');
         }
-        document.getElementById('backLink').href = '/dashboard?token=' + encodeURIComponent(getToken());
+        document.getElementById('backLink').href = '/dashboard';
 
         function showBanner(msg, kind) {
             const el = document.getElementById('banner');
@@ -416,6 +440,60 @@
                     <span class="info-label">Регистриран на</span>
                     <span class="info-value">${escapeHtml(formatDate(acc.created_at))}</span>
                 </div>`;
+
+            const actions = document.getElementById('billingActions');
+            actions.innerHTML = '';
+            if (!acc.is_admin && acc.stripe_enabled) {
+                if (p.key !== 'full' || !p.active) {
+                    const pay = document.createElement('button');
+                    pay.className = 'btn btn-primary';
+                    pay.textContent = 'Абонирай се за 5 €/мес';
+                    pay.onclick = () => startSubscriptionCheckout(pay);
+                    actions.appendChild(pay);
+                } else if (acc.has_subscription) {
+                    const cancel = document.createElement('button');
+                    cancel.className = 'btn btn-primary';
+                    cancel.textContent = 'Откажи абонамента в края на периода';
+                    cancel.onclick = () => cancelSubscription(cancel);
+                    actions.appendChild(cancel);
+                }
+            } else if (!acc.is_admin && !acc.stripe_enabled) {
+                actions.innerHTML = '<div class="hint">Онлайн плащането още не е включено. Пиши ни за абонамент.</div>';
+            }
+
+            document.getElementById('digestOptIn').checked = !!acc.digest_opt_in;
+        }
+
+        async function startSubscriptionCheckout(btn) {
+            btn.disabled = true;
+            try {
+                const resp = await fetch('/api/billing/checkout/subscription', {
+                    method: 'POST', headers: authHeaders(),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка');
+                if (data.url) window.location.href = data.url;
+            } catch (e) {
+                showBanner(e.message, 'error');
+                btn.disabled = false;
+            }
+        }
+
+        async function cancelSubscription(btn) {
+            if (!confirm('Абонаментът ще остане активен до края на платения период. Продължаваме?')) return;
+            btn.disabled = true;
+            try {
+                const resp = await fetch('/api/billing/cancel', {
+                    method: 'POST', headers: authHeaders(),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка');
+                showBanner('Абонаментът ще се прекрати в края на периода.', 'success');
+                loadAccount();
+            } catch (e) {
+                showBanner(e.message, 'error');
+                btn.disabled = false;
+            }
         }
 
         async function loadAccount() {
@@ -428,15 +506,37 @@
                 renderPlan(acc);
                 if (acc.is_admin) {
                     document.getElementById('adminSection').hidden = false;
-                    document.getElementById('adminLink').href =
-                        '/admin?token=' + encodeURIComponent(getToken());
+                    document.getElementById('adminLink').href = '/admin';
                 }
                 revealSettings();
+                const paid = new URLSearchParams(location.search).get('paid');
+                if (paid === '1') showBanner('Плащането е прието. Ако достъпът още не е обновен, изчакай няколко секунди и презареди.', 'success');
+                if (paid === '0') showBanner('Плащането беше отказано.', 'error');
+                if (new URLSearchParams(location.search).get('subscribe') === '1' && acc.stripe_enabled && (acc.plan || {}).key !== 'full') {
+                    const btn = document.querySelector('#billingActions .btn-primary');
+                    if (btn) btn.click();
+                }
             } catch (e) {
                 revealSettings();
                 showBanner('Грешка при зареждане на профила: ' + e.message, 'error');
             }
         }
+
+        document.getElementById('digestOptIn').addEventListener('change', async (e) => {
+            try {
+                const resp = await fetch('/api/account/digest', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ digest_opt_in: e.target.checked }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка');
+                showBanner(e.target.checked ? 'Дневният digest е включен.' : 'Дневният digest е изключен.', 'success');
+            } catch (err) {
+                e.target.checked = !e.target.checked;
+                showBanner(err.message, 'error');
+            }
+        });
 
         document.getElementById('profileForm').addEventListener('submit', async (e) => {
             e.preventDefault();
