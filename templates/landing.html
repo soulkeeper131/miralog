@@ -404,49 +404,206 @@
             .cards { grid-template-columns: 1fr; }
         }
         .card {
-            position: relative; overflow: hidden;
+            position: relative; overflow: hidden; isolation: isolate;
             background: var(--bg-card); border: 1px solid var(--border-soft);
             border-radius: 16px; padding: 26px 24px 24px;
             display: flex; flex-direction: column;
             box-shadow: var(--shadow-card);
-            transition: transform .22s cubic-bezier(.2,.7,.3,1),
-                        border-color .22s ease, box-shadow .22s ease;
+            transition: transform .3s cubic-bezier(.2,.7,.3,1),
+                        border-color .3s ease, box-shadow .3s ease;
         }
-        /* A faint arc in the corner — the rim of a chart wheel catching light. */
-        .card::after {
-            content: ""; position: absolute; right: -58px; top: -58px;
-            width: 148px; height: 148px; border-radius: 50%;
-            border: 1px solid var(--border); opacity: .5;
-            transition: opacity .22s ease, transform .22s ease;
+        /* Each card carries its own scene, drawn in CSS behind the text and
+           tinted to the card's own hue. They idle slowly and wake on hover —
+           a background that says what the card is about. */
+        .card-scene {
+            position: absolute; inset: 0; z-index: -1;
+            overflow: hidden; border-radius: inherit;
             pointer-events: none;
+            /* Each scene inherits its card's own hue via currentColor. */
+            color: var(--on-thistle);
+            /* Fade the scene out over the text column so nothing competes with
+               the copy — the art belongs to the top-right corner. */
+            -webkit-mask-image: linear-gradient(200deg, #000 0%, rgba(0,0,0,.55) 38%, transparent 62%);
+            mask-image: linear-gradient(200deg, #000 0%, rgba(0,0,0,.55) 38%, transparent 62%);
         }
-        .card:hover {
-            transform: translateY(-3px);
-            border-color: var(--accent-light);
-            box-shadow: var(--shadow-card), 0 14px 40px rgba(124,58,237,0.16);
+        .s-day { color: var(--on-icy); }
+        .s-chart { color: var(--on-pink); }
+        .s-period { color: var(--on-sky); }
+        .s-match { color: var(--on-pink); }
+        .s-karma { color: var(--gilt); }
+        .card-scene i {
+            position: absolute; display: block;
+            border-radius: 50%;
         }
-        .card:hover::after { opacity: .9; transform: scale(1.06); }
+
+        /* 1 — За мен: three concentric rings, the natal wheel's own structure. */
+        .s-self i {
+            border: 1px solid currentColor; opacity: .16;
+            right: -30px; top: -30px;
+            animation: drift-spin 42s linear infinite;
+        }
+        .s-self i:nth-child(1) { width: 190px; height: 190px; }
+        .s-self i:nth-child(2) { width: 140px; height: 140px; right: -5px; top: -5px;
+                                 animation-duration: 34s; animation-direction: reverse; }
+        .s-self i:nth-child(3) { width: 92px; height: 92px; right: 19px; top: 19px;
+                                 border-style: dashed; animation-duration: 26s; }
+
+        /* 2 — Денят ти: a moon crossing, with its phase carved by a second disc. */
+        .s-day i:nth-child(1) {
+            width: 104px; height: 104px; right: 22px; top: -18px;
+            background: currentColor; opacity: .13;
+            animation: moon-cross 26s ease-in-out infinite;
+        }
+        .s-day i:nth-child(2) {
+            width: 104px; height: 104px; right: 46px; top: -18px;
+            background: var(--bg-card); opacity: 1;
+            animation: moon-cross 26s ease-in-out infinite;
+        }
+
+        /* 3 — Натална карта: a wheel with house spokes, slowly turning. */
+        .s-chart i:nth-child(1) {
+            width: 168px; height: 168px; right: -34px; top: -34px;
+            border: 1px solid currentColor; opacity: .18;
+            animation: drift-spin 60s linear infinite;
+        }
+        .s-chart i:nth-child(2) {
+            width: 168px; height: 168px; right: -34px; top: -34px;
+            opacity: .14;
+            background:
+                conic-gradient(from 0deg, currentColor 0 1deg, transparent 1deg 30deg,
+                    currentColor 30deg 31deg, transparent 31deg 60deg,
+                    currentColor 60deg 61deg, transparent 61deg 90deg,
+                    currentColor 90deg 91deg, transparent 91deg 120deg,
+                    currentColor 120deg 121deg, transparent 121deg 150deg,
+                    currentColor 150deg 151deg, transparent 151deg 180deg,
+                    currentColor 180deg 181deg, transparent 181deg 210deg,
+                    currentColor 210deg 211deg, transparent 211deg 240deg,
+                    currentColor 240deg 241deg, transparent 241deg 270deg,
+                    currentColor 270deg 271deg, transparent 271deg 300deg,
+                    currentColor 300deg 301deg, transparent 301deg 330deg,
+                    currentColor 330deg 331deg, transparent 331deg 360deg);
+            -webkit-mask: radial-gradient(circle, transparent 40%, #000 41%);
+            mask: radial-gradient(circle, transparent 40%, #000 41%);
+            animation: drift-spin 60s linear infinite;
+        }
+
+        /* 4 — Периоди: a timeline of transit bars sliding past. */
+        .s-period i {
+            border-radius: 2px; height: 3px; background: currentColor;
+            right: 0; opacity: .16;
+            animation: bar-slide 18s ease-in-out infinite;
+        }
+        .s-period i:nth-child(1) { width: 96px; top: 22px; }
+        .s-period i:nth-child(2) { width: 64px; top: 40px; animation-delay: -6s; opacity: .12; }
+        .s-period i:nth-child(3) { width: 110px; top: 58px; animation-delay: -12s; opacity: .14; }
+        .s-period i:nth-child(4) { width: 48px; top: 76px; animation-delay: -3s; opacity: .1; }
+
+        /* 5 — Съвместимост: two charts overlapping, breathing toward each other. */
+        .s-match i {
+            width: 116px; height: 116px; border: 1px solid currentColor; opacity: .18;
+            top: -22px;
+            animation: pair-breathe 11s ease-in-out infinite;
+        }
+        .s-match i:nth-child(1) { right: 44px; }
+        .s-match i:nth-child(2) { right: -18px; animation-direction: reverse; }
+
+        /* 6 — Акашови записи: a slow starfield, the oldest record there is. */
+        .s-karma i {
+            width: 3px; height: 3px; background: currentColor;
+            animation: star-pulse 5s ease-in-out infinite;
+        }
+        .s-karma i:nth-child(1) { right: 30px; top: 24px; opacity: .5; }
+        .s-karma i:nth-child(2) { right: 68px; top: 46px; animation-delay: -1.2s; opacity: .35; }
+        .s-karma i:nth-child(3) { right: 46px; top: 78px; animation-delay: -2.4s; opacity: .45; }
+        .s-karma i:nth-child(4) { right: 96px; top: 30px; animation-delay: -3.1s; opacity: .3; }
+        .s-karma i:nth-child(5) { right: 22px; top: 104px; animation-delay: -4s; opacity: .4; }
+        .s-karma i:nth-child(6) {
+            width: 132px; height: 132px; right: 6px; top: 6px;
+            background: none; border: 1px dashed currentColor; opacity: .12;
+            animation: drift-spin 70s linear infinite;
+        }
+
+        @keyframes drift-spin { to { transform: rotate(360deg); } }
+        @keyframes moon-cross {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-26px); }
+        }
+        @keyframes bar-slide {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-22px); }
+        }
+        @keyframes pair-breathe {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(14px); }
+        }
+        @keyframes star-pulse {
+            0%, 100% { opacity: .2; transform: scale(.85); }
+            50% { opacity: .75; transform: scale(1.25); }
+        }
+
+        /* Hover wakes the scene rather than adding a separate effect. */
+        .card:hover .card-scene { opacity: 1; }
+        .card .card-scene { opacity: .72; transition: opacity .3s ease; }
+
+        /* --- card glyphs: real astrological marks, not app-drawer icons --- */
         .card-ico {
-            width: 44px; height: 44px; border-radius: 13px; margin-bottom: 16px;
+            position: relative;
+            width: 52px; height: 52px; border-radius: 50%; margin-bottom: 18px;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            border: 1px solid var(--border-soft);
+            transition: border-color .3s ease, transform .3s cubic-bezier(.2,.7,.3,1);
         }
-        .card-ico svg { width: 22px; height: 22px; }
+        /* A hairline orbit around the glyph, drawn only on hover. */
+        .card-ico::after {
+            content: ""; position: absolute; inset: -5px; border-radius: 50%;
+            border: 1px solid var(--accent-light); opacity: 0;
+            transition: opacity .3s ease, transform .5s cubic-bezier(.2,.7,.3,1);
+            transform: scale(.9);
+        }
+        .card:hover .card-ico { transform: translateY(-1px); }
+        .card:hover .card-ico::after { opacity: .55; transform: scale(1); }
+        .card-glyph {
+            /* Astrological glyphs vary a lot in drawn width between fonts, so
+               they get a fixed optical box and centre inside it. */
+            display: flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px;
+            font-size: 1.45rem; line-height: 1;
+            transition: transform .45s cubic-bezier(.2,.7,.3,1);
+        }
+        .card:hover .card-glyph { transform: rotate(8deg) scale(1.08); }
+
         .i-thistle { background: var(--surface-thistle); color: var(--on-thistle); }
         .i-icy { background: var(--surface-icy); color: var(--on-icy); }
         .i-petal { background: var(--surface-petal); color: var(--on-pink); }
         .i-sky { background: var(--surface-sky); color: var(--on-sky); }
         .i-pink { background: var(--surface-pink); color: var(--on-pink); }
+        .i-gilt { background: var(--gilt-soft); color: var(--gilt); }
+
         .card h3 {
-            font-size: 1.06rem; font-weight: 600; letter-spacing: -0.01em;
-            color: var(--text-heading); margin-bottom: 7px; line-height: 1.35;
+            font-family: var(--font-display); font-weight: 600;
+            font-variation-settings: 'opsz' 30, 'SOFT' 20;
+            font-size: 1.22rem; letter-spacing: -0.012em;
+            color: var(--text-heading); margin-bottom: 8px; line-height: 1.25;
+        }
+        /* The mono line under each title names the source of the reading —
+           it is the strongest honesty signal the page has. */
+        .card-src {
+            font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--gilt); opacity: .85;
+            margin-bottom: 10px;
         }
         .card p {
             font-size: 0.9rem; color: var(--text-soft); line-height: 1.65;
-            /* Push nothing to the bottom — ragged bottoms read as sloppy when
-               the grid forces equal heights. */
             margin-bottom: 0;
         }
         .card h3 + p { margin-top: 0; }
+        @media (prefers-reduced-motion: reduce) {
+            .card, .card-ico, .card-ico::after, .card-glyph { transition: none; }
+            .card:hover { transform: none; }
+            .card:hover .card-glyph { transform: none; }
+            /* The scenes stay — they just stop moving. */
+            .card-scene i { animation: none !important; }
+        }
 
         /* --- steps: a genuine sequence, so the numbers earn their place --- */
         .steps {
@@ -487,7 +644,10 @@
             box-shadow: var(--shadow-card);
         }
         .trust-item { display: flex; gap: 12px; align-items: flex-start; }
-        .trust-ico { font-size: 1.1rem; flex-shrink: 0; line-height: 1.5; }
+        .trust-ico {
+            font-size: 1.15rem; flex-shrink: 0; line-height: 1.4;
+            color: var(--gilt); width: 24px; text-align: center;
+        }
         .trust-item h4 { font-size: 0.95rem; font-weight: 600; color: var(--text-heading); margin-bottom: 3px; }
         .trust-item p { font-size: 0.86rem; color: var(--text-soft); line-height: 1.6; }
 
@@ -542,18 +702,24 @@
         }
         .plan-list li:last-child { border-bottom: none; }
         .plan-list li strong { color: var(--text-heading); font-weight: 600; }
+        /* Aspect glyphs instead of tick and dash: the trine is the astrologer's
+           mark for what flows, the square for what is blocked. The vocabulary
+           is the subject's own. */
         .plan-list li::before {
-            position: absolute; left: 2px; top: 8px;
-            width: 20px; height: 20px; border-radius: 50%;
+            position: absolute; left: 0; top: 7px;
+            width: 22px; height: 22px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-size: 0.68rem; font-weight: 700;
+            font-size: 0.72rem; line-height: 1;
+            transition: transform .2s ease;
         }
         .plan-list li.yes::before {
-            content: "✓"; background: var(--surface-icy); color: var(--on-icy);
+            content: "△"; background: var(--surface-icy); color: var(--on-icy);
         }
         .plan-list li.no::before {
-            content: "–"; background: var(--surface-thistle); color: var(--text-dim);
+            content: "□"; background: transparent; color: var(--text-dim);
+            border: 1px solid var(--border-soft);
         }
+        .plan-list li.yes:hover::before { transform: scale(1.12); }
         .plan-list li.no { color: var(--text-dim); }
         .plan-btn { width: 100%; }
         .plans-foot {
@@ -729,33 +895,45 @@
             </div>
             <div class="cards">
                 <article class="card">
-                    <div class="card-ico i-thistle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></div>
+                    <div class="card-scene s-self" aria-hidden="true"><i></i><i></i><i></i></div>
+                    <div class="card-ico i-thistle"><span class="card-glyph">☉</span></div>
                     <h3>За мен</h3>
+                    <p class="card-src">Слънце · Луна · Асцендент</p>
                     <p>Кой си ти в едно изречение — и после подробно. Същност, емоции, как те виждат другите, силните ти страни и слабите места, казани честно и без плашене.</p>
                 </article>
                 <article class="card">
-                    <div class="card-ico i-icy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.8A8.5 8.5 0 1 1 9.2 3.5a6.8 6.8 0 0 0 11.3 11.3Z"/></svg></div>
+                    <div class="card-scene s-day" aria-hidden="true"><i></i><i></i></div>
+                    <div class="card-ico i-icy"><span class="card-glyph">☽</span></div>
                     <h3>Денят ти</h3>
+                    <p class="card-src">Транзити за днес</p>
                     <p>Какво е благоприятно днес и какво не. Конкретно: какво да свършиш, какво да отложиш, в какво да внимаваш — всяко от тях изведено от реален транзит.</p>
                 </article>
                 <article class="card">
-                    <div class="card-ico i-petal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.4"/><path d="M12 3v3.6M12 17.4V21M3 12h3.6M17.4 12H21"/></svg></div>
+                    <div class="card-scene s-chart" aria-hidden="true"><i></i><i></i></div>
+                    <div class="card-ico i-petal"><span class="card-glyph">⊕</span></div>
                     <h3>Натална карта</h3>
+                    <p class="card-src">Плацидус · 12 дома</p>
                     <p>Истинско колело с домовете по Плацидус, аспектите и всяка планета. Плюс обяснение до всяка позиция какво означава — на български.</p>
                 </article>
                 <article class="card">
-                    <div class="card-ico i-sky"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/><circle cx="12" cy="15" r="1.6"/></svg></div>
+                    <div class="card-scene s-period" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                    <div class="card-ico i-sky"><span class="card-glyph">♃</span></div>
                     <h3>Периоди напред</h3>
+                    <p class="card-src">До 62 дни напред</p>
                     <p>Избираш дати и виждаш кои дни носят промяна: кой транзит започва, кой отпада и какво означава това за седмиците пред теб.</p>
                 </article>
                 <article class="card">
-                    <div class="card-ico i-pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7.2-4.4-9.1-8.6A5.2 5.2 0 0 1 12 6.4a5.2 5.2 0 0 1 9.1 5c-1.9 4.2-9.1 8.6-9.1 8.6Z"/></svg></div>
+                    <div class="card-scene s-match" aria-hidden="true"><i></i><i></i></div>
+                    <div class="card-ico i-pink"><span class="card-glyph">♀</span></div>
                     <h3>Съвместимост</h3>
+                    <p class="card-src">Синастрия · Композит</p>
                     <p>Синастрия между двама души: как се разбирате емоционално, къде има химия, къде има търкания и какъв е дългосрочният потенциал.</p>
                 </article>
                 <article class="card">
-                    <div class="card-ico i-thistle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 14.6 9l6.9.5-5.3 4.4 1.7 6.6L12 16.9 6.1 20.5l1.7-6.6L2.5 9.5 9.4 9Z"/></svg></div>
+                    <div class="card-scene s-karma" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                    <div class="card-ico i-gilt"><span class="card-glyph">☊</span></div>
                     <h3>Акашови записи и нумерология</h3>
+                    <p class="card-src">Лунни възли · Хирон · Сатурн</p>
                     <p>Кармичните теми от лунните възли, Хирон и Сатурн — и числата на съдбата ти, изчислени по питагоровата система.</p>
                 </article>
             </div>
@@ -792,21 +970,21 @@
         <div class="wrap">
             <div class="trust">
                 <div class="trust-item">
-                    <span class="trust-ico">✦</span>
+                    <span class="trust-ico">⚹</span>
                     <div>
                         <h4>Точни изчисления, не догадки</h4>
                         <p>Позициите идват от Swiss Ephemeris — астрономическият стандарт. Разчитането обяснява данните, не ги измисля.</p>
                     </div>
                 </div>
                 <div class="trust-item">
-                    <span class="trust-ico">✦</span>
+                    <span class="trust-ico">☌</span>
                     <div>
                         <h4>Изцяло на български</h4>
                         <p>Знаци, планети, домове, аспекти — всичко преведено, с кратко обяснение до всеки термин.</p>
                     </div>
                 </div>
                 <div class="trust-item">
-                    <span class="trust-ico">✦</span>
+                    <span class="trust-ico">♄</span>
                     <div>
                         <h4>Данните ти остават твои</h4>
                         <p>Всеки вижда само своите хора. Нищо не се споделя и не се продава на трети страни.</p>
