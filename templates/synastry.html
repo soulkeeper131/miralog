@@ -16,8 +16,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Any display value beats the hidden attribute, so state it explicitly —
+           otherwise a hidden button with display:inline-flex stays on screen. */
+        [hidden] { display: none !important; }
         :root {
             --font-body: 'Inter', -apple-system, system-ui, sans-serif;
             --font-display: 'Cormorant Garamond', Georgia, serif;
@@ -31,7 +36,7 @@
             --text: #e0e0e0;
             --text-heading: #c9b1ff;
             --text-muted: #888;
-            --text-dim: #666;
+            --text-dim: #9090a4;
             --text-soft: #aaa;
             --accent: #7c3aed;
             --accent-hover: #6d28d9;
@@ -69,7 +74,7 @@
             --text: #2d2438;
             --text-heading: #6d4a89;
             --text-muted: #7a6d8a;
-            --text-dim: #a595b0;
+            --text-dim: #7d6888;
             --text-soft: #7a6d8a;
             --accent: #8659a3;
             --accent-hover: #744a90;
@@ -316,6 +321,8 @@
         </div>
     </div>
 
+    <script src="/static/locked.js"></script>
+    <script src="/static/ui.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -435,11 +442,6 @@
         function clearBanner() {
             document.getElementById('banner').innerHTML = '';
         }
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
 
         let persons = [];
 
@@ -485,7 +487,7 @@
             document.getElementById('interpretBtn').style.display = 'none';
             document.getElementById('interpretationBox').style.display = 'none';
             try {
-                const resp = await fetch('/api/synastry', {
+                const resp = await guardedFetch('/api/synastry', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person1_id: Number(id1), person2_id: Number(id2) })
@@ -499,6 +501,13 @@
                 synastryPerson2Id = Number(id2);
                 renderResult(data);
             } catch (e) {
+                if (e instanceof LockedFeature) {
+                    document.getElementById('resultStats').innerHTML = '';
+                    renderLocked(document.getElementById('resultAspects'), e.detail, computeSynastry);
+                    btn.disabled = false;
+                    btn.textContent = 'Изчисли съвместимост';
+                    return;
+                }
                 document.getElementById('resultSection').style.display = 'none';
                 document.getElementById('resultAspects').innerHTML = '';
                 showBanner('Грешка при изчисляване: ' + e.message);
@@ -548,12 +557,12 @@
             const btn = document.getElementById('interpretBtn');
             const box = document.getElementById('interpretationBox');
             btn.disabled = true;
-            btn.textContent = 'Генериране...';
+            btn.textContent = 'Разчитаме...';
             box.style.display = 'block';
-            box.innerHTML = crystalLoader('Генериране на интерпретация чрез AI...');
+            box.innerHTML = crystalLoader('Разчитаме картите...');
 
             try {
-                const resp = await fetch('/api/synastry/interpretation', {
+                const resp = await guardedFetch('/api/synastry/interpretation', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person1_id: synastryPerson1Id, person2_id: synastryPerson2Id })
@@ -565,10 +574,14 @@
                         box.innerHTML += '<div class="cache-note">📋 Заредено от кеш</div>';
                     }
                 } else {
-                    box.innerHTML = '<div class="error-banner">Не можа да се генерира интерпретация.</div>';
+                    box.innerHTML = '<div class="error-banner">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
-                box.innerHTML = '<div class="error-banner">Грешка: ' + e.message + '</div>';
+                if (e instanceof LockedFeature) {
+                    renderLocked(box, e.detail, getInterpretation);
+                } else {
+                    box.innerHTML = '<div class="error-banner">Грешка: ' + e.message + '</div>';
+                }
             } finally {
                 btn.disabled = false;
                 btn.textContent = '🔄 Ново четене';

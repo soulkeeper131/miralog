@@ -18,6 +18,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Any display value beats the hidden attribute, so state it explicitly —
+           otherwise a hidden button with display:inline-flex stays on screen. */
+        [hidden] { display: none !important; }
         :root {
             --font-body: 'Inter', -apple-system, system-ui, sans-serif;
             --font-display: 'Cormorant Garamond', Georgia, serif;
@@ -30,7 +33,7 @@
             --text: #e0e0e0;
             --text-heading: #c9b1ff;
             --text-muted: #888;
-            --text-dim: #999;
+            --text-dim: #9090a4;
             --text-off: #666;
             --accent: #7c3aed;
             --accent-hover: #6d28d9;
@@ -69,7 +72,7 @@
             --text: #2d2438;
             --text-heading: #6d4a89;
             --text-muted: #7a6d8a;
-            --text-dim: #a595b0;
+            --text-dim: #7d6888;
             --text-off: #c9b8d4;
             --accent: #8659a3;
             --accent-hover: #744a90;
@@ -160,6 +163,8 @@
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
         }
+        /* display:flex would otherwise beat the hidden attribute */
+        .crystal-loader[hidden] { display: none; }
         .crystal-loader .orb-wrap {
             position: relative; width: 56px; height: 56px;
         }
@@ -234,6 +239,28 @@
         }
         .error-banner { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger-text); }
         .success-banner { background: var(--success-bg); border: 1px solid var(--success); color: var(--success-text); }
+
+        /* read-only rows describing the account and its plan */
+        .info-row {
+            display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+            padding: 10px 0; border-bottom: 1px solid var(--border);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: var(--text-muted); font-size: 0.85rem; }
+        .info-value { color: var(--text); font-size: 0.9rem; font-weight: 500; text-align: right; }
+        .pill {
+            display: inline-block; padding: 2px 10px; border-radius: 999px;
+            font-size: 0.75rem; font-weight: 600;
+            background: var(--surface-thistle); color: var(--on-thistle);
+        }
+        .pill.warn { background: var(--danger-bg); color: var(--danger-text); }
+        .admin-link {
+            display: inline-flex; align-items: center; gap: 8px;
+            min-height: 44px; padding: 10px 18px; border-radius: 10px;
+            background: var(--accent); color: #fff; text-decoration: none;
+            font-size: 0.95rem; font-weight: 500;
+        }
+        .admin-link:hover { background: var(--accent-hover); }
     </style>
 </head>
 <body>
@@ -243,45 +270,71 @@
             <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
             <a href="#" id="backLink" class="back-link">← Табло</a>
         </div>
-        <h1>Настройки</h1>
-        <div class="subtitle">Конфигурация на приложението</div>
+        <h1>Моят акаунт</h1>
+        <div class="subtitle">Данни за профила и абонамента</div>
 
         <div id="banner"></div>
 
-        <div class="section">
-            <h2>AI Интерпретация</h2>
-            <div class="desc">
-                API ключ за генериране на AI интерпретация на натални карти.
-                Ключът се пази в базата данни на приложението.
-            </div>
+        <div id="settingsLoader" class="crystal-loader">
+            <div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>
+            Зареждане на профила...
+        </div>
 
-            <div id="settingsLoader" class="crystal-loader">
-                <div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>
-                Зареждане на настройките...
-            </div>
-
-            <div id="settingsBody" hidden>
-            <div class="status-row">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText"></span>
-            </div>
-
-            <form id="settingsForm">
-                <div class="form-group">
-                    <label>Доставчик</label>
-                    <select id="aiProvider">
-                        <option value="anthropic">Anthropic (Claude)</option>
-                        <option value="deepseek">DeepSeek</option>
-                        <option value="openai">OpenAI</option>
-                    </select>
+        <div id="settingsBody" hidden>
+            <div class="section">
+                <h2>Профил</h2>
+                <div class="desc">
+                    Името се използва при обръщение в разчитанията, а имейлът — за вход
+                    и за изпращане на хороскопите.
                 </div>
-                <div class="form-group">
-                    <label>API ключ</label>
-                    <input type="password" id="aiApiKey" placeholder="Оставете празно, за да не променяте текущия ключ" autocomplete="off">
-                    <div class="hint" id="keyHint"></div>
+                <form id="profileForm">
+                    <div class="form-group">
+                        <label for="displayName">Име</label>
+                        <input type="text" id="displayName" placeholder="Как да се обръщаме към теб" autocomplete="name">
+                    </div>
+                    <div class="form-group">
+                        <label for="accountEmail">Имейл</label>
+                        <input type="email" id="accountEmail" autocomplete="email" required>
+                        <div class="hint">При смяна на имейла оставаш вписан — сесията се подновява автоматично.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="profileBtn">Запази</button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h2>Парола</h2>
+                <div class="desc">За смяна на паролата въведи текущата и новата.</div>
+                <form id="passwordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Текуща парола</label>
+                        <input type="password" id="currentPassword" autocomplete="current-password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">Нова парола</label>
+                        <input type="password" id="newPassword" autocomplete="new-password" minlength="6" required>
+                        <div class="hint">Поне 6 символа.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Повтори новата парола</label>
+                        <input type="password" id="confirmPassword" autocomplete="new-password" minlength="6" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="passwordBtn">Смени паролата</button>
+                </form>
+            </div>
+
+            <div class="section">
+                <h2>Абонамент</h2>
+                <div class="desc">Текущият ти пакет и какво включва той.</div>
+                <div id="planInfo"></div>
+            </div>
+
+            <div class="section" id="adminSection" hidden>
+                <h2>Администрация</h2>
+                <div class="desc">
+                    Ключовете за AI, SMTP настройките, пакетите и потребителите се
+                    управляват от админ панела.
                 </div>
-                <button type="submit" class="btn btn-primary" id="saveBtn">Запази</button>
-            </form>
+                <a class="admin-link" id="adminLink" href="/admin">⚙ Отвори админ панела</a>
             </div>
         </div>
     </div>
@@ -328,53 +381,84 @@
             document.getElementById('settingsBody').hidden = false;
         }
 
-        async function loadSettings() {
+        function escapeHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '—';
+            const d = new Date(String(iso).replace(' ', 'T'));
+            return isNaN(d) ? iso : d.toLocaleDateString('bg-BG',
+                { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        function renderPlan(acc) {
+            const p = acc.plan || {};
+            const limit = p.max_persons ? p.max_persons + ' карти' : 'без ограничение';
+            const state = (acc.is_admin || p.active)
+                ? '<span class="pill">активен</span>'
+                : '<span class="pill warn">изтекъл</span>';
+            document.getElementById('planInfo').innerHTML = `
+                <div class="info-row">
+                    <span class="info-label">Пакет</span>
+                    <span class="info-value">${escapeHtml(p.name || p.key || '—')} ${state}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Включва</span>
+                    <span class="info-value">${escapeHtml(limit)}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Валиден до</span>
+                    <span class="info-value">${acc.is_admin ? 'безсрочно' : escapeHtml(formatDate(p.expires))}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Регистриран на</span>
+                    <span class="info-value">${escapeHtml(formatDate(acc.created_at))}</span>
+                </div>`;
+        }
+
+        async function loadAccount() {
             try {
-                const resp = await fetch('/api/settings', { headers: authHeaders() });
+                const resp = await fetch('/api/account', { headers: authHeaders() });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
-                const data = await resp.json();
-                document.getElementById('aiProvider').value = data.ai_provider || 'deepseek';
-                const dot = document.getElementById('statusDot');
-                const text = document.getElementById('statusText');
-                const hint = document.getElementById('keyHint');
-                dot.classList.remove('on', 'off');
-                if (data.ai_api_key_set) {
-                    dot.classList.add('on');
-                    text.textContent = 'AI ключ е конфигуриран (' + data.ai_api_key_masked + ')';
-                    hint.textContent = 'Текущ ключ е зададен. Въведете нов, за да го смените.';
-                } else {
-                    dot.classList.add('off');
-                    text.textContent = 'Няма конфигуриран AI ключ';
-                    hint.textContent = '';
+                const acc = await resp.json();
+                document.getElementById('displayName').value = acc.display_name || '';
+                document.getElementById('accountEmail').value = acc.email || '';
+                renderPlan(acc);
+                if (acc.is_admin) {
+                    document.getElementById('adminSection').hidden = false;
+                    document.getElementById('adminLink').href =
+                        '/admin?token=' + encodeURIComponent(getToken());
                 }
                 revealSettings();
             } catch (e) {
                 revealSettings();
-                showBanner('Грешка при зареждане на настройките: ' + e.message, 'error');
+                showBanner('Грешка при зареждане на профила: ' + e.message, 'error');
             }
         }
 
-        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+        document.getElementById('profileForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const btn = document.getElementById('saveBtn');
+            const btn = document.getElementById('profileBtn');
             btn.disabled = true;
             btn.textContent = 'Запазване...';
             try {
-                const key = document.getElementById('aiApiKey').value.trim();
-                const provider = document.getElementById('aiProvider').value;
-                const resp = await fetch('/api/settings', {
+                const resp = await fetch('/api/account', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ai_api_key: key || null, ai_provider: provider })
+                    body: JSON.stringify({
+                        display_name: document.getElementById('displayName').value,
+                        email: document.getElementById('accountEmail').value.trim(),
+                    })
                 });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
-                if (!resp.ok) {
-                    const data = await resp.json().catch(() => ({}));
-                    throw new Error(data.detail || 'Грешка при запазване');
-                }
-                document.getElementById('aiApiKey').value = '';
-                showBanner('Настройките са запазени успешно.', 'success');
-                loadSettings();
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка при запазване');
+                // A new email invalidates the old token's claim; keep the session alive.
+                if (data.token) localStorage.setItem('miralog_token', data.token);
+                showBanner('Профилът е запазен.', 'success');
+                loadAccount();
             } catch (err) {
                 showBanner(err.message, 'error');
             } finally {
@@ -383,7 +467,38 @@
             }
         });
 
-        loadSettings();
+        document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const current = document.getElementById('currentPassword').value;
+            const next = document.getElementById('newPassword').value;
+            const again = document.getElementById('confirmPassword').value;
+            if (next !== again) {
+                showBanner('Двете нови пароли не съвпадат.', 'error');
+                return;
+            }
+            const btn = document.getElementById('passwordBtn');
+            btn.disabled = true;
+            btn.textContent = 'Запазване...';
+            try {
+                const resp = await fetch('/api/account/password', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: current, new_password: next })
+                });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка при смяна на паролата');
+                document.getElementById('passwordForm').reset();
+                showBanner('Паролата е сменена.', 'success');
+            } catch (err) {
+                showBanner(err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Смени паролата';
+            }
+        });
+
+        loadAccount();
     </script>
 </body>
 </html>

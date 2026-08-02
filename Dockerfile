@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl tzdata && \
+    curl tzdata fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python deps
@@ -16,6 +16,8 @@ COPY app.py .
 COPY chart_svg.py .
 COPY translations.py .
 COPY numerology.py .
+COPY bg_text.py .
+COPY pdf_report.py .
 COPY templates/ templates/
 COPY static/ static/
 
@@ -29,6 +31,10 @@ RUN mkdir -p /app/static /app/ephe /app/data && \
 
 ENV SE_EPHE_PATH=/app/ephe
 ENV HOSTNAME=0.0.0.0
+
+# The SQLite file must outlive the container. Mount a persistent volume here,
+# otherwise every deploy starts with an empty database.
+VOLUME ["/app/data"]
 
 EXPOSE 8000
 

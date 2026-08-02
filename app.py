@@ -1,4 +1,4 @@
-import os, json, sqlite3, datetime
+import os, re, sys, json, sqlite3, datetime, urllib.parse
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
@@ -29,18 +29,110 @@ from translations import (
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
     sign_symbol, sign_element, sign_modality,
     sign_aspect, element_pair_meaning, modality_pair_meaning,
+    moon_phase_advice, moon_sign_advice,
     ELEMENTS_BG, MODALITIES_BG, ELEMENT_MEANINGS, MODALITY_MEANINGS,
     SIGNS, ZODIAC_ORDER,
 )
 from numerology import compute_numerology
+from bg_text import clean_bg
+from pdf_report import build_reading_pdf
 
 # --- App Setup ---
-DB_PATH = Path(__file__).parent / "data" / "persons.db"
-SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production-secret-key")
+BASE_DIR = Path(__file__).parent
+# Overridable so a deployment can point the database at a mounted volume;
+# without that the file lives inside the container and dies with it.
+DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR / "data" / "persons.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+
+# ENVIRONMENT=production refuses to start on an insecure default, so a live
+# deployment can never silently run with the credentials published in the repo.
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
+
+DEV_SECRET_KEY = "change-me-in-production-secret-key"
+DEV_ADMIN_PASSWORD = "admin123"
+DEV_DEMO_PASSWORD = "demo123"
+
+SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@miralog.bg")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", DEV_ADMIN_PASSWORD)
+# A standing demo account, so the locked/paywalled views can be checked without
+# touching a real user. Set DEMO_EMAIL="" to skip creating it in production.
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "").strip()
+# In production the demo account is opt-in: it appears only when a password is
+# supplied. Relying on DEMO_EMAIL="" would not work, because some platforms
+# (Coolify among them) drop empty environment variables entirely.
+if IS_PRODUCTION:
+    DEMO_EMAIL = (os.environ.get("DEMO_EMAIL", "").strip() or "demo@miraskop.bg") \
+        if DEMO_PASSWORD else ""
+else:
+    DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@miralog.bg").strip()
+    DEMO_PASSWORD = DEMO_PASSWORD or DEV_DEMO_PASSWORD
+
+
+import logging
+log = logging.getLogger("miraskop")
+
+# A Windows console defaults to cp1251 and raises on Cyrillic. Reconfigure the
+# streams where possible so startup messages are readable instead of fatal.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+class ConfigError(RuntimeError):
+    """Raised when the deployment is configured in a way that is not safe to run."""
+
+
+def check_config() -> list:
+    """Validate the environment. Returns warnings; raises on anything unsafe.
+
+    Only production is strict — development keeps working with the defaults so
+    nobody has to set variables just to run the app locally.
+    """
+    problems, warnings = [], []
+
+    def demand(name, value, insecure, hint):
+        if value == insecure:
+            (problems if IS_PRODUCTION else warnings).append(
+                f"{name} е с примерната стойност от кода. {hint}")
+
+    demand("SECRET_KEY", SECRET_KEY, DEV_SECRET_KEY,
+           "Задай дълъг случаен низ — иначе всеки може да си направи валиден токен "
+           "и да влезе като администратор.")
+    demand("ADMIN_PASSWORD", ADMIN_PASSWORD, DEV_ADMIN_PASSWORD,
+           "Паролата „admin123“ е публикувана в кода на проекта.")
+
+    if len(SECRET_KEY) < 32 and SECRET_KEY != DEV_SECRET_KEY:
+        (problems if IS_PRODUCTION else warnings).append(
+            "SECRET_KEY е по-къс от 32 знака. Използвай поне 32 случайни знака.")
+
+    # The account is opt-in above, so the only thing left to guard is a weak
+    # password on an account somebody deliberately turned on.
+    if IS_PRODUCTION and DEMO_EMAIL:
+        if DEMO_PASSWORD == DEV_DEMO_PASSWORD:
+            problems.append(
+                "DEMO_PASSWORD е „demo123“ — паролата е публикувана в кода. "
+                "Задай друга или премахни DEMO_PASSWORD, за да няма демо акаунт.")
+        elif len(DEMO_PASSWORD) < 8:
+            problems.append(
+                "DEMO_PASSWORD е по-къса от 8 знака. Демо акаунтът е публично "
+                "достъпен — дай му истинска парола.")
+
+    if problems:
+        lines = "\n".join(f"  • {p}" for p in problems)
+        raise ConfigError(
+            "Приложението не може да стартира с тези настройки:\n\n"
+            f"{lines}\n\n"
+            "Задай променливите в средата (в Coolify: Environment Variables) и рестартирай.\n"
+            "Виж .env.example за пълния списък. Генериране на ключ:\n"
+            "  python -c \"import secrets; print(secrets.token_urlsafe(48))\"\n"
+        )
+    return warnings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -119,10 +211,173 @@ def init_db():
                 PRIMARY KEY (person_id, cache_key)
             )
         """)
+
+        # --- Accounts, plans and billing ---
+        # A plan is a named bundle of features; a user points at one and has an
+        # expiry date. Everything below is administered by hand for now.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plans (
+                key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                period TEXT NOT NULL DEFAULT 'month',
+                max_persons INTEGER NOT NULL DEFAULT 1,
+                features TEXT NOT NULL DEFAULT '[]',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        # One-off purchases: a user buys a single feature outright, on top of
+        # whatever plan they hold. Unlike a plan these never expire.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feature_purchases (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                feature_key TEXT NOT NULL,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                payment_id INTEGER REFERENCES payments(id),
+                PRIMARY KEY (user_id, feature_key)
+            )
+        """)
+        # Per-feature one-off price list, keyed by the FEATURE_CATALOGUE keys.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feature_prices (
+                feature_key TEXT PRIMARY KEY,
+                price_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                is_purchasable INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                plan_key TEXT,
+                amount_cents INTEGER NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'EUR',
+                method TEXT,
+                note TEXT,
+                paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                recorded_by INTEGER REFERENCES users(id)
+            )
+        """)
+
+        # Columns added to users after the first release.
+        user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        for col, ddl in [
+            ("role", "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"),
+            ("plan_key", "ALTER TABLE users ADD COLUMN plan_key TEXT DEFAULT 'demo'"),
+            ("plan_expires", "ALTER TABLE users ADD COLUMN plan_expires TIMESTAMP"),
+            ("is_blocked", "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0"),
+            ("note", "ALTER TABLE users ADD COLUMN note TEXT"),
+            ("last_login", "ALTER TABLE users ADD COLUMN last_login TIMESTAMP"),
+            ("display_name", "ALTER TABLE users ADD COLUMN display_name TEXT"),
+        ]:
+            if col not in user_cols:
+                conn.execute(ddl)
+
+        # The seeded admin predates the role column, so claim it here.
+        conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
+                     (ADMIN_EMAIL,))
+
+        # A demo account on the demo plan, for checking what a paying customer
+        # does and does not see. It is deliberately never an admin.
+        if DEMO_EMAIL:
+            exists = conn.execute("SELECT COUNT(*) FROM users WHERE email = ?",
+                                  (DEMO_EMAIL,)).fetchone()[0]
+            if not exists:
+                cur = conn.execute(
+                    "INSERT INTO users (email, password_hash, role, plan_key, note)"
+                    " VALUES (?, ?, 'user', 'demo', ?)",
+                    (DEMO_EMAIL, hash_password(DEMO_PASSWORD),
+                     "Тестов акаунт за проверка на заключените функции."))
+                # Give it a chart so every tab has something to render.
+                conn.execute(
+                    "INSERT INTO persons (user_id, name, year, month, day, hour, minute,"
+                    " lat, lon, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (cur.lastrowid, "Демо Профил", 1990, 6, 15, 12, 30,
+                     42.6977, 23.3219, "Europe/Sofia"))
+
+        # Seed the one-off price list. Everything in the paid plan can also be
+        # bought on its own, at a price that only makes sense for one feature.
+        if conn.execute("SELECT COUNT(*) FROM feature_prices").fetchone()[0] == 0:
+            conn.executemany(
+                "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
+                " VALUES (?, ?, 'EUR', ?)",
+                [
+                    ("profile", 500, 1),
+                    ("horoscope", 300, 1),
+                    ("period", 500, 1),
+                    ("synastry", 700, 1),
+                    ("love", 500, 1),
+                    ("akashic", 900, 1),
+                    ("moon", 300, 1),
+                    # The basics come with every plan, so they are never sold.
+                    ("chart", 0, 0),
+                    ("planets", 0, 0),
+                    ("aspects", 0, 0),
+                    ("numerology", 400, 1),
+                    ("interpretation", 600, 1),
+                ])
+
+        # Same for the price list: it is only seeded when empty, so later
+        # features would have no price and could never be bought on their own.
+        for feature_key, cents in [("interpretation", 600)]:
+            conn.execute(
+                "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
+                " VALUES (?, ?, 'EUR', 1) ON CONFLICT(feature_key) DO NOTHING",
+                (feature_key, cents))
+
+        # Features added after a plan was first seeded do not appear in existing
+        # rows, so the paid plan would silently lose access to them.
+        for key, feature in [("full", "interpretation")]:
+            row = conn.execute("SELECT features FROM plans WHERE key = ?", (key,)).fetchone()
+            if not row:
+                continue
+            try:
+                feats = json.loads(row[0])
+            except Exception:
+                continue
+            if feature not in feats:
+                feats.append(feature)
+                conn.execute("UPDATE plans SET features = ? WHERE key = ?",
+                             (json.dumps(feats), key))
+
+        # Seed the two plans the landing page advertises.
+        if conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0:
+            conn.executemany(
+                "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, sort_order)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    # Two charts, so a bought "Съвместимост" has a second person
+                    # to compare against.
+                    ("demo", "Демо", 0, "EUR", "month", 2,
+                     json.dumps(["chart", "planets", "aspects", "numerology"]), 0),
+                    ("full", "Пълен достъп", 500, "EUR", "month", 50,
+                     json.dumps(["chart", "planets", "aspects", "numerology", "profile",
+                                 "horoscope", "period", "synastry", "love", "akashic",
+                                 "moon", "interpretation"]), 1),
+                ]
+            )
+
+        # The first account created is the administrator.
+        conn.execute(
+            "UPDATE users SET role = 'admin', plan_key = 'full' WHERE email = ?",
+            (ADMIN_EMAIL,)
+        )
         conn.commit()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail loudly before serving a single request rather than running insecurely.
+    # Logging, not print(): a Windows console defaults to cp1251 and would
+    # raise UnicodeEncodeError on Cyrillic.
+    for warning in check_config():
+        log.warning(warning)
+    if not IS_PRODUCTION:
+        log.info("ENVIRONMENT=%s - proverkite za produkciya sa izklyucheni.", ENVIRONMENT)
     init_db()
     yield
 
@@ -150,7 +405,31 @@ class SynastryRequest(BaseModel):
 
 class LoveMatchRequest(BaseModel):
     person_id: int
-    partner_sign: str  # English sign name, e.g. "Taurus"
+    # Sign-only mode: all we know is the partner's sun sign.
+    partner_sign: Optional[str] = None  # English sign name, e.g. "Taurus"
+    # Full-chart mode: real birth data, so the reading can use their whole chart.
+    partner_name: Optional[str] = None
+    partner_year: Optional[int] = None
+    partner_month: Optional[int] = None
+    partner_day: Optional[int] = None
+    partner_hour: Optional[int] = 12
+    partner_minute: Optional[int] = 0
+    partner_lat: Optional[float] = None
+    partner_lon: Optional[float] = None
+    partner_timezone: Optional[str] = "Europe/Sofia"
+
+    def has_full_chart(self) -> bool:
+        return None not in (self.partner_year, self.partner_month, self.partner_day,
+                            self.partner_lat, self.partner_lon)
+
+    def as_person(self) -> dict:
+        return {
+            "name": (self.partner_name or "Партньор").strip() or "Партньор",
+            "year": self.partner_year, "month": self.partner_month, "day": self.partner_day,
+            "hour": self.partner_hour or 0, "minute": self.partner_minute or 0,
+            "lat": self.partner_lat, "lon": self.partner_lon,
+            "timezone": self.partner_timezone or "Europe/Sofia",
+        }
 
 class TransitsRequest(BaseModel):
     person_id: int
@@ -164,10 +443,6 @@ class PeriodRequest(BaseModel):
 class AuthRequest(BaseModel):
     email: str
     password: str
-
-class SettingsUpdate(BaseModel):
-    ai_api_key: Optional[str] = None
-    ai_provider: Optional[str] = None
 
 # --- Auth Helpers ---
 def hash_password(password: str) -> str:
@@ -188,14 +463,131 @@ def create_token(user_id: int, email: str) -> str:
 def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> Tuple[int, str]:
     """Dependency that returns (user_id, email) from valid JWT token."""
     if not token:
-        raise HTTPException(401, "Not authenticated. Use Bearer token in Authorization header.")
+        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
         email = payload["email"]
         return user_id, email
     except JWTError:
-        raise HTTPException(401, "Invalid or expired token")
+        raise HTTPException(401, "Сесията изтече. Влез отново.")
+
+def get_user_by_id(user_id: int) -> Optional[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+def get_plan(plan_key: Optional[str]) -> Optional[dict]:
+    if not plan_key:
+        return None
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM plans WHERE key = ?", (plan_key,)).fetchone()
+        if not row:
+            return None
+        plan = dict(row)
+        try:
+            plan["features"] = json.loads(plan["features"])
+        except Exception:
+            plan["features"] = []
+        return plan
+
+def plan_is_active(user: dict) -> bool:
+    """A paid plan lapses on its expiry date; demo never expires."""
+    if not user.get("plan_expires"):
+        return True
+    try:
+        expires = datetime.datetime.fromisoformat(str(user["plan_expires"]))
+    except ValueError:
+        return True
+    return expires.date() >= datetime.date.today()
+
+def effective_plan(user: dict) -> dict:
+    """The plan actually in force — falls back to demo once a paid one expires."""
+    plan = get_plan(user.get("plan_key")) if plan_is_active(user) else None
+    return plan or get_plan("demo") or {
+        "key": "demo", "name": "Демо", "max_persons": 2,
+        "features": ["chart", "planets", "aspects", "numerology"],
+    }
+
+def purchased_features(user_id: int) -> list:
+    """Feature keys the user bought outright. These never expire."""
+    with sqlite3.connect(DB_PATH) as conn:
+        return [r[0] for r in conn.execute(
+            "SELECT feature_key FROM feature_purchases WHERE user_id = ?", (user_id,))]
+
+def unlocked_features(user: dict) -> list:
+    """Everything the user may reach: the plan's features plus one-off purchases.
+
+    Admins get the whole catalogue.
+    """
+    if user.get("role") == "admin":
+        return [f["key"] for f in FEATURE_CATALOGUE]
+    keys = list(effective_plan(user).get("features", []))
+    for key in purchased_features(user["id"]):
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+def get_feature_prices() -> dict:
+    """The one-off price list, keyed by feature. Missing rows mean 'not for sale'."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return {r["feature_key"]: dict(r) for r in
+                conn.execute("SELECT * FROM feature_prices")}
+
+def feature_offer(feature_key: str) -> Optional[dict]:
+    """What a single feature costs, or None when it isn't sold separately."""
+    row = get_feature_prices().get(feature_key)
+    if not row or not row["is_purchasable"] or row["price_cents"] <= 0:
+        return None
+    meta = next((f for f in FEATURE_CATALOGUE if f["key"] == feature_key), {})
+    return {
+        "key": feature_key,
+        "name": meta.get("name", feature_key),
+        "note": meta.get("note", ""),
+        "price_cents": row["price_cents"],
+        "currency": row["currency"],
+    }
+
+def require_admin(user: Tuple[int, str] = Depends(get_current_user)) -> dict:
+    """Dependency for the admin area."""
+    row = get_user_by_id(user[0])
+    if not row or row.get("role") != "admin":
+        raise HTTPException(403, "Нужни са администраторски права.")
+    return row
+
+def require_feature(feature: str):
+    """Dependency factory gating a feature behind the user's plan."""
+    def _check(user: Tuple[int, str] = Depends(get_current_user)) -> Tuple[int, str]:
+        row = get_user_by_id(user[0])
+        if not row:
+            raise HTTPException(401, "Невалиден акаунт.")
+        if row.get("is_blocked"):
+            raise HTTPException(403, "Акаунтът е блокиран.")
+        if row.get("role") == "admin":
+            return user
+        if feature not in unlocked_features(row):
+            # 402 carries the offer, so the UI can show the price on the blurred
+            # panel instead of a bare refusal.
+            offer = feature_offer(feature)
+            meta = next((f for f in FEATURE_CATALOGUE if f["key"] == feature), {})
+            detail = {
+                "reason": "locked",
+                "feature": feature,
+                "feature_name": meta.get("name", feature),
+                "message": (
+                    f"„{meta.get('name', feature)}“ не е включена в пакета ти."
+                    if not offer else
+                    f"„{offer['name']}“ не е включена в пакета ти, "
+                    f"но можеш да я отключиш еднократно."
+                ),
+                "offer": offer,
+            }
+            raise HTTPException(402, detail)
+        return user
+    return _check
 
 # --- DB Helpers ---
 def get_user_by_email(email: str) -> Optional[dict]:
@@ -268,6 +660,22 @@ def clear_ai_cache(person_id: int) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (person_id,))
         conn.commit()
+
+# Shown when the AI service is not configured or fails. Customers cannot fix
+# either, so the message says what it means for them, not what is broken.
+AI_UNAVAILABLE = (
+    "Разчитането не се получи този път. Позициите в картата ти са изчислени "
+    "и запазени — опитай пак след няколко минути."
+)
+
+def ai_failure_message(exc: Exception) -> str:
+    """A customer-facing message for a failed AI call.
+
+    The real error goes to the log for whoever runs the service; the reader
+    gets something honest and actionable instead of a stack trace.
+    """
+    log.warning("AI call failed: %s: %s", type(exc).__name__, exc)
+    return AI_UNAVAILABLE
 
 def get_ai_config() -> Tuple[Optional[str], str]:
     """Returns (api_key, provider) where provider is 'deepseek', 'openai' or 'anthropic'.
@@ -534,7 +942,7 @@ def api_login(data: AuthRequest):
     """Login with email/password. Returns JWT token + user info."""
     user = get_user_by_email(data.email)
     if not user or not verify_password(data.password, user["password_hash"]):
-        raise HTTPException(401, "Invalid email or password")
+        raise HTTPException(401, "Грешен имейл или парола.")
     token = create_token(user["id"], user["email"])
     return {
         "token": token,
@@ -558,26 +966,793 @@ def api_register(data: AuthRequest):
 
 @app.get("/api/auth/me")
 def api_me(user: Tuple[int, str] = Depends(get_current_user)):
-    """Get current authenticated user from token."""
+    """Current account, with the plan and features the UI should honour."""
     user_id, email = user
-    return {"id": user_id, "email": email}
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    plan = effective_plan(row)
+    is_admin = row.get("role") == "admin"
+    return {
+        "id": user_id,
+        "email": email,
+        "role": row.get("role", "user"),
+        "is_admin": is_admin,
+        "is_blocked": bool(row.get("is_blocked")),
+        "plan": {
+            "key": plan.get("key"),
+            "name": plan.get("name"),
+            "max_persons": plan.get("max_persons"),
+            # Admins are never gated by plan.
+            "features": [f["key"] for f in FEATURE_CATALOGUE] if is_admin else plan.get("features", []),
+            "expires": row.get("plan_expires"),
+            "active": plan_is_active(row),
+        },
+        # What the account may actually open, and what the rest would cost.
+        "features": unlocked_features(row),
+        "purchased": purchased_features(user_id),
+        "offers": [] if is_admin else [
+            offer for offer in (feature_offer(f["key"]) for f in FEATURE_CATALOGUE)
+            if offer and offer["key"] not in unlocked_features(row)
+        ],
+    }
+
+# Everything a plan can unlock. Keys are what require_feature() checks against.
+FEATURE_CATALOGUE = [
+    {"key": "chart", "name": "Натална карта", "note": "Колелото и позициите"},
+    {"key": "planets", "name": "Планети", "note": "Списък с обяснения"},
+    {"key": "aspects", "name": "Аспекти", "note": "Аспектите в картата"},
+    {"key": "numerology", "name": "Нумерология", "note": "Числата и какво означават"},
+    {"key": "profile", "name": "За мен", "note": "Личен портрет от картата"},
+    {"key": "horoscope", "name": "Дневен хороскоп", "note": "Разчитане на деня"},
+    {"key": "period", "name": "Период", "note": "Транзити за диапазон от дати"},
+    {"key": "synastry", "name": "Съвместимост", "note": "Синастрия между двама"},
+    {"key": "love", "name": "Любовен хороскоп", "note": "Съвместимост по зодия"},
+    {"key": "akashic", "name": "Акашови записи", "note": "Кармично разчитане"},
+    {"key": "moon", "name": "Лунен календар", "note": "Фазите и какво носят"},
+    {"key": "interpretation", "name": "Пълно разчитане", "note": "Цялата карта, тълкувана подробно"},
+]
+
+# Default wording for the automated emails; admins can edit these.
+EMAIL_TEMPLATES = {
+    "welcome_subject": "Добре дошъл в МираСкоп",
+    "welcome_body": (
+        "Здравей, {name}!\n\n"
+        "Акаунтът ти в МираСкоп е готов. Влез и създай първата си натална карта.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+    ),
+    "expiring_subject": "Абонаментът ти изтича скоро",
+    "expiring_body": (
+        "Здравей, {name}!\n\n"
+        "Абонаментът ти за МираСкоп изтича на {expires}. "
+        "След това акаунтът остава активен, но с демо достъп.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+    ),
+    "expired_subject": "Абонаментът ти изтече",
+    "expired_body": (
+        "Здравей, {name}!\n\n"
+        "Абонаментът ти изтече и акаунтът мина на демо достъп. "
+        "Картите и разчитанията ти остават запазени.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+    ),
+}
+
+# Search-engine settings the admin can edit; these are the defaults the public
+# pages fall back to when nothing has been saved yet.
+SEO_DEFAULTS = {
+    "seo_site_url": "",
+    "seo_title": "МираСкоп — твоята натална карта, разчетена на разбираем език",
+    "seo_description": (
+        "Точна натална карта по Swiss Ephemeris, разчетена на български: кой си, "
+        "какво ти предстои днес, кармичните ти теми и нумерологията ти."
+    ),
+    "seo_keywords": "натална карта, хороскоп, астрология, зодия, нумерология, лунен календар",
+    "seo_og_image": "/static/logo-header.png",
+    "seo_robots": "index,follow",
+    "seo_verification": "",
+}
+
+def seo_settings() -> dict:
+    """Current SEO values, falling back to the defaults for anything unset."""
+    return {key: (get_setting(key) or default) for key, default in SEO_DEFAULTS.items()}
+
+def sky_today() -> list:
+    """Where the main bodies actually are right now, for the landing strip.
+
+    The point of the strip is that these are live figures, not decoration —
+    so a failure returns nothing and the strip is simply left out.
+    """
+    try:
+        now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+        subject = charts.Subject(
+            date_time=now.replace(tzinfo=None),
+            latitude=42.6977, longitude=23.3219, timezone="Europe/Sofia",
+        )
+        chart_now = charts.Natal(subject)
+        wanted = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
+        found = {}
+        for obj in chart_now.objects.values():
+            name = getattr(obj, "name", None)
+            if name in wanted and name not in found:
+                sign = str(obj.sign.name)
+                found[name] = {
+                    "name": tr_object(name),
+                    "symbol": sign_symbol(sign),
+                    "sign": tr_sign(sign),
+                    "degree": int(obj.sign_longitude.degrees),
+                    "retrograde": getattr(obj, "movement", None)
+                                  and str(obj.movement) == "Retrograde",
+                }
+        return [found[n] for n in wanted if n in found]
+    except Exception:
+        log.warning("sky_today failed; the landing strip will be omitted", exc_info=True)
+        return []
+
+def seo_context(request: Request, *, path: str = "/") -> dict:
+    """Everything the public templates need to render their meta tags."""
+    seo = seo_settings()
+    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    image = seo["seo_og_image"] or ""
+    if image.startswith("/"):
+        image = base + image
+    return {
+        "seo_title": seo["seo_title"],
+        "seo_description": seo["seo_description"],
+        "seo_keywords": seo["seo_keywords"],
+        "seo_robots": seo["seo_robots"],
+        "seo_verification": seo["seo_verification"],
+        "seo_image": image,
+        "seo_url": base + path,
+    }
+
+# --- Admin API (ADMIN ONLY) ---
+class AdminUserCreate(BaseModel):
+    email: str
+    password: str
+    plan_key: Optional[str] = "demo"
+    plan_expires: Optional[str] = None  # ISO date
+    role: str = "user"
+    note: Optional[str] = None
+
+class AdminUserUpdate(BaseModel):
+    plan_key: Optional[str] = None
+    plan_expires: Optional[str] = None  # ISO date, or "" to clear
+    role: Optional[str] = None
+    is_blocked: Optional[bool] = None
+    note: Optional[str] = None
+    password: Optional[str] = None      # set a new password
+
+class AdminPlanUpsert(BaseModel):
+    key: str
+    name: str
+    price_cents: int = 0
+    currency: str = "EUR"
+    period: str = "month"
+    max_persons: int = 1
+    features: list = []
+    is_active: bool = True
+    sort_order: int = 0
+
+class AdminPaymentCreate(BaseModel):
+    user_id: int
+    plan_key: Optional[str] = None
+    amount_cents: int
+    currency: str = "EUR"
+    method: Optional[str] = None
+    note: Optional[str] = None
+    extend_months: int = 0  # also push the user's expiry out by this many months
+
+@app.get("/api/admin/overview")
+def api_admin_overview(admin: dict = Depends(require_admin)):
+    """Headline numbers for the admin dashboard."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        users = conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
+        blocked = conn.execute("SELECT COUNT(*) c FROM users WHERE is_blocked = 1").fetchone()["c"]
+        persons = conn.execute("SELECT COUNT(*) c FROM persons").fetchone()["c"]
+        by_plan = [dict(r) for r in conn.execute(
+            "SELECT COALESCE(plan_key, 'demo') AS plan_key, COUNT(*) AS c FROM users GROUP BY 1"
+        )]
+        revenue = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments"
+        ).fetchone()["s"]
+        month_start = datetime.date.today().replace(day=1).isoformat()
+        revenue_month = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments WHERE paid_at >= ?",
+            (month_start,)
+        ).fetchone()["s"]
+        expiring = [dict(r) for r in conn.execute(
+            "SELECT id, email, plan_key, plan_expires FROM users "
+            "WHERE plan_expires IS NOT NULL AND date(plan_expires) <= date('now', '+14 day') "
+            "ORDER BY plan_expires LIMIT 20"
+        )]
+        recent = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.amount_cents, p.currency, p.paid_at, p.plan_key, u.email "
+            "FROM payments p JOIN users u ON u.id = p.user_id "
+            "ORDER BY p.paid_at DESC LIMIT 10"
+        )]
+    return {
+        "users": users, "blocked": blocked, "persons": persons,
+        "by_plan": by_plan,
+        "revenue_cents": revenue, "revenue_month_cents": revenue_month,
+        "expiring": expiring, "recent_payments": recent,
+    }
+
+@app.get("/api/admin/users")
+def api_admin_users(q: Optional[str] = None, admin: dict = Depends(require_admin)):
+    """All accounts, with their plan and usage."""
+    sql = ("SELECT u.id, u.email, u.role, u.plan_key, u.plan_expires, u.is_blocked, u.note, "
+           "u.created_at, u.last_login, "
+           "(SELECT COUNT(*) FROM persons p WHERE p.user_id = u.id) AS persons, "
+           "(SELECT COALESCE(SUM(amount_cents),0) FROM payments pm WHERE pm.user_id = u.id) AS paid_cents "
+           "FROM users u")
+    params: list = []
+    if q:
+        sql += " WHERE u.email LIKE ?"
+        params.append(f"%{q}%")
+    sql += " ORDER BY u.created_at DESC"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, params)]
+    return {"users": rows}
+
+@app.post("/api/admin/users")
+def api_admin_create_user(data: AdminUserCreate, admin: dict = Depends(require_admin)):
+    """Create an account by hand, with its plan set straight away."""
+    email = (data.email or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
+    if len((data.password or "").strip()) < 6:
+        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    if get_user_by_email(email):
+        raise HTTPException(409, "Вече съществува акаунт с този имейл.")
+    if data.role not in ("user", "admin"):
+        raise HTTPException(400, "Ролята трябва да е 'user' или 'admin'.")
+    if data.plan_key and not get_plan(data.plan_key):
+        raise HTTPException(400, "Няма такъв пакет.")
+
+    expires = (data.plan_expires or "").strip() or None
+    if expires:
+        try:
+            datetime.date.fromisoformat(expires)
+        except ValueError:
+            raise HTTPException(400, "Датата трябва да е във формат ГГГГ-ММ-ДД.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO users (email, password_hash, role, plan_key, plan_expires, note)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (email, hash_password(data.password.strip()), data.role,
+             data.plan_key or "demo", expires, (data.note or "").strip() or None)
+        )
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid, "email": email}
+
+@app.patch("/api/admin/users/{user_id}")
+def api_admin_update_user(user_id: int, data: AdminUserUpdate, admin: dict = Depends(require_admin)):
+    """Change a user's plan, role, block state, note or password."""
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "Потребителят не е намерен.")
+
+    sets, params = [], []
+    if data.plan_key is not None:
+        if not get_plan(data.plan_key):
+            raise HTTPException(400, "Няма такъв пакет.")
+        sets.append("plan_key = ?"); params.append(data.plan_key)
+    if data.plan_expires is not None:
+        value = data.plan_expires.strip() or None
+        if value:
+            try:
+                datetime.date.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(400, "Датата трябва да е във формат ГГГГ-ММ-ДД.")
+        sets.append("plan_expires = ?"); params.append(value)
+    if data.role is not None:
+        if data.role not in ("user", "admin"):
+            raise HTTPException(400, "Ролята трябва да е 'user' или 'admin'.")
+        # Don't let the last administrator demote themselves out of the panel.
+        if target["role"] == "admin" and data.role != "admin":
+            with sqlite3.connect(DB_PATH) as conn:
+                admins = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
+            if admins <= 1:
+                raise HTTPException(400, "Това е единственият администратор.")
+        sets.append("role = ?"); params.append(data.role)
+    if data.is_blocked is not None:
+        if target["id"] == admin["id"] and data.is_blocked:
+            raise HTTPException(400, "Не можеш да блокираш собствения си акаунт.")
+        sets.append("is_blocked = ?"); params.append(1 if data.is_blocked else 0)
+    if data.note is not None:
+        sets.append("note = ?"); params.append(data.note.strip() or None)
+    if data.password is not None and data.password.strip():
+        if len(data.password.strip()) < 6:
+            raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+        sets.append("password_hash = ?"); params.append(hash_password(data.password.strip()))
+
+    if not sets:
+        return {"ok": True, "changed": False}
+
+    params.append(user_id)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+    return {"ok": True, "changed": True}
+
+@app.delete("/api/admin/users/{user_id}")
+def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
+    """Remove an account together with everything it owns."""
+    if user_id == admin["id"]:
+        raise HTTPException(400, "Не можеш да изтриеш собствения си акаунт.")
+    if not get_user_by_id(user_id):
+        raise HTTPException(404, "Потребителят не е намерен.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM ai_cache WHERE person_id IN (SELECT id FROM persons WHERE user_id = ?)",
+            (user_id,))
+        conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/plans")
+def api_admin_plans(admin: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = []
+        for r in conn.execute("SELECT * FROM plans ORDER BY sort_order, key"):
+            p = dict(r)
+            try:
+                p["features"] = json.loads(p["features"])
+            except Exception:
+                p["features"] = []
+            p["users"] = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE COALESCE(plan_key,'demo') = ?", (p["key"],)
+            ).fetchone()[0]
+            rows.append(p)
+    return {"plans": rows, "all_features": FEATURE_CATALOGUE}
+
+@app.put("/api/admin/plans/{plan_key}")
+def api_admin_upsert_plan(plan_key: str, data: AdminPlanUpsert, admin: dict = Depends(require_admin)):
+    """Create or update a plan and what it unlocks."""
+    unknown = [f for f in data.features if f not in {f["key"] for f in FEATURE_CATALOGUE}]
+    if unknown:
+        raise HTTPException(400, f"Непознати функции: {', '.join(unknown)}")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, is_active, sort_order)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET name=excluded.name, price_cents=excluded.price_cents,"
+            " currency=excluded.currency, period=excluded.period, max_persons=excluded.max_persons,"
+            " features=excluded.features, is_active=excluded.is_active, sort_order=excluded.sort_order",
+            (plan_key, data.name, data.price_cents, data.currency, data.period,
+             data.max_persons, json.dumps(data.features), 1 if data.is_active else 0, data.sort_order)
+        )
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/plans/{plan_key}")
+def api_admin_delete_plan(plan_key: str, admin: dict = Depends(require_admin)):
+    if plan_key == "demo":
+        raise HTTPException(400, "Демо пакетът не може да се изтрие — той е резервният.")
+    with sqlite3.connect(DB_PATH) as conn:
+        in_use = conn.execute("SELECT COUNT(*) FROM users WHERE plan_key = ?", (plan_key,)).fetchone()[0]
+        if in_use:
+            raise HTTPException(400, f"Пакетът се ползва от {in_use} потребител(и).")
+        conn.execute("DELETE FROM plans WHERE key = ?", (plan_key,))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/payments")
+def api_admin_payments(user_id: Optional[int] = None, admin: dict = Depends(require_admin)):
+    sql = ("SELECT p.*, u.email FROM payments p JOIN users u ON u.id = p.user_id")
+    params: list = []
+    if user_id:
+        sql += " WHERE p.user_id = ?"
+        params.append(user_id)
+    sql += " ORDER BY p.paid_at DESC LIMIT 200"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, params)]
+    return {"payments": rows}
+
+@app.post("/api/admin/payments")
+def api_admin_record_payment(data: AdminPaymentCreate, admin: dict = Depends(require_admin)):
+    """Log a payment, optionally extending the user's plan at the same time."""
+    target = get_user_by_id(data.user_id)
+    if not target:
+        raise HTTPException(404, "Потребителят не е намерен.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO payments (user_id, plan_key, amount_cents, currency, method, note, recorded_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (data.user_id, data.plan_key, data.amount_cents, data.currency,
+             data.method, data.note, admin["id"])
+        )
+        if data.extend_months > 0:
+            # Extend from the current expiry if it is still ahead, otherwise from today.
+            base = datetime.date.today()
+            if target.get("plan_expires"):
+                try:
+                    current = datetime.date.fromisoformat(str(target["plan_expires"])[:10])
+                    base = max(base, current)
+                except ValueError:
+                    pass
+            month = base.month - 1 + data.extend_months
+            new_date = base.replace(
+                year=base.year + month // 12,
+                month=month % 12 + 1,
+                day=min(base.day, [31, 29 if (base.year + month // 12) % 4 == 0 else 28,
+                                   31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month % 12]),
+            )
+            sets = ["plan_expires = ?"]
+            params: list = [new_date.isoformat()]
+            if data.plan_key:
+                sets.append("plan_key = ?"); params.append(data.plan_key)
+            params.append(data.user_id)
+            conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/payments/{payment_id}")
+def api_admin_delete_payment(payment_id: int, admin: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+        conn.commit()
+    return {"ok": True}
+
+# --- One-off feature purchases ---
+
+class FeaturePriceUpdate(BaseModel):
+    price_cents: int = 0
+    currency: str = "EUR"
+    is_purchasable: bool = True
+
+class FeatureGrant(BaseModel):
+    user_id: int
+    feature_key: str
+    price_cents: Optional[int] = None
+    note: Optional[str] = None
+
+@app.get("/api/admin/feature-prices")
+def api_admin_feature_prices(admin: dict = Depends(require_admin)):
+    """The one-off price list, with every catalogue feature represented."""
+    prices = get_feature_prices()
+    return {"features": [
+        {
+            **f,
+            "price_cents": prices.get(f["key"], {}).get("price_cents", 0),
+            "currency": prices.get(f["key"], {}).get("currency", "EUR"),
+            "is_purchasable": bool(prices.get(f["key"], {}).get("is_purchasable", 0)),
+        }
+        for f in FEATURE_CATALOGUE
+    ]}
+
+@app.put("/api/admin/feature-prices/{feature_key}")
+def api_admin_set_feature_price(feature_key: str, data: FeaturePriceUpdate,
+                                admin: dict = Depends(require_admin)):
+    """Set what a single feature costs as a one-off unlock."""
+    if not any(f["key"] == feature_key for f in FEATURE_CATALOGUE):
+        raise HTTPException(404, "Няма такава функция.")
+    if data.price_cents < 0:
+        raise HTTPException(400, "Цената не може да е отрицателна.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
+            " VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(feature_key) DO UPDATE SET price_cents = excluded.price_cents,"
+            " currency = excluded.currency, is_purchasable = excluded.is_purchasable",
+            (feature_key, data.price_cents, data.currency, 1 if data.is_purchasable else 0))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/feature-purchases")
+def api_admin_feature_purchases(user_id: Optional[int] = None,
+                                admin: dict = Depends(require_admin)):
+    """Who bought what."""
+    sql = ("SELECT fp.*, u.email FROM feature_purchases fp"
+           " JOIN users u ON u.id = fp.user_id")
+    params: list = []
+    if user_id:
+        sql += " WHERE fp.user_id = ?"
+        params.append(user_id)
+    sql += " ORDER BY fp.purchased_at DESC"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return {"purchases": [dict(r) for r in conn.execute(sql, params)]}
+
+@app.post("/api/admin/feature-purchases")
+def api_admin_grant_feature(data: FeatureGrant, admin: dict = Depends(require_admin)):
+    """Unlock a feature for a user and log the payment behind it."""
+    target = get_user_by_id(data.user_id)
+    if not target:
+        raise HTTPException(404, "Потребителят не е намерен.")
+    meta = next((f for f in FEATURE_CATALOGUE if f["key"] == data.feature_key), None)
+    if not meta:
+        raise HTTPException(404, "Няма такава функция.")
+
+    price_row = get_feature_prices().get(data.feature_key, {})
+    amount = data.price_cents if data.price_cents is not None else price_row.get("price_cents", 0)
+    currency = price_row.get("currency", "EUR")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO payments (user_id, plan_key, amount_cents, currency, method, note, recorded_by)"
+            " VALUES (?, NULL, ?, ?, ?, ?, ?)",
+            (data.user_id, amount, currency, "еднократно",
+             data.note or f"Еднократно отключване: {meta['name']}", admin["id"]))
+        conn.execute(
+            "INSERT INTO feature_purchases (user_id, feature_key, price_cents, currency, payment_id)"
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(user_id, feature_key) DO UPDATE SET price_cents = excluded.price_cents,"
+            " currency = excluded.currency, payment_id = excluded.payment_id,"
+            " purchased_at = CURRENT_TIMESTAMP",
+            (data.user_id, data.feature_key, amount, currency, cur.lastrowid))
+        conn.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/feature-purchases/{user_id}/{feature_key}")
+def api_admin_revoke_feature(user_id: int, feature_key: str,
+                             admin: dict = Depends(require_admin)):
+    """Take a one-off unlock back. The payment record stays for the books."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM feature_purchases WHERE user_id = ? AND feature_key = ?",
+                     (user_id, feature_key))
+        conn.commit()
+    return {"ok": True}
+
+@app.get("/api/features")
+def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
+    """What the signed-in account can open, and the price of everything else."""
+    user_id, _ = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    unlocked = unlocked_features(row)
+    return {
+        "unlocked": unlocked,
+        "purchased": purchased_features(user_id),
+        "catalogue": [
+            {
+                **f,
+                "unlocked": f["key"] in unlocked,
+                "offer": None if f["key"] in unlocked else feature_offer(f["key"]),
+            }
+            for f in FEATURE_CATALOGUE
+        ],
+    }
+
+@app.post("/api/features/{feature_key}/request")
+def api_request_feature(feature_key: str, user: Tuple[int, str] = Depends(get_current_user)):
+    """Ask to buy a feature. There is no payment processor yet, so this emails
+    the admin address and tells the user someone will get back to them."""
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if feature_key in unlocked_features(row):
+        return {"ok": True, "already": True}
+
+    offer = feature_offer(feature_key)
+    if not offer:
+        raise HTTPException(404, "Тази функция не се продава отделно.")
+
+    to = get_setting("smtp_from") or get_setting("smtp_user")
+    if to:
+        try:
+            send_email(
+                to,
+                f"Заявка за отключване: {offer['name']}",
+                f"Потребител {email} (ID {user_id}) иска да отключи "
+                f"„{offer['name']}“ за {offer['price_cents'] / 100:.2f} {offer['currency']}.",
+            )
+        except HTTPException:
+            # A missing SMTP config must not make the button look broken.
+            pass
+    return {"ok": True, "offer": offer}
+
+@app.get("/api/admin/settings")
+def api_admin_settings(admin: dict = Depends(require_admin)):
+    """App-wide settings: AI key status, SMTP and email templates."""
+    ai_key = get_setting("ai_api_key")
+    smtp_pass = get_setting("smtp_password")
+    return {
+        "ai": {
+            "provider": get_setting("ai_provider") or "deepseek",
+            "key_set": bool(ai_key),
+            "key_masked": ("•" * 8 + ai_key[-4:]) if ai_key and len(ai_key) > 4 else None,
+        },
+        "smtp": {
+            "host": get_setting("smtp_host") or "",
+            "port": get_setting("smtp_port") or "587",
+            "user": get_setting("smtp_user") or "",
+            "from": get_setting("smtp_from") or "",
+            "use_tls": (get_setting("smtp_use_tls") or "1") == "1",
+            "password_set": bool(smtp_pass),
+        },
+        "templates": {
+            key: get_setting(f"tpl_{key}") or default
+            for key, default in EMAIL_TEMPLATES.items()
+        },
+        "seo": seo_settings(),
+    }
+
+@app.post("/api/admin/settings")
+def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin)):
+    """Save whichever settings were supplied; blank values leave secrets alone."""
+    ai = payload.get("ai") or {}
+    if ai.get("provider"):
+        set_setting("ai_provider", ai["provider"])
+    if (ai.get("key") or "").strip():
+        set_setting("ai_api_key", ai["key"].strip())
+
+    smtp = payload.get("smtp") or {}
+    for field, key in [("host", "smtp_host"), ("port", "smtp_port"),
+                       ("user", "smtp_user"), ("from", "smtp_from")]:
+        if field in smtp:
+            set_setting(key, str(smtp[field] or "").strip())
+    if "use_tls" in smtp:
+        set_setting("smtp_use_tls", "1" if smtp["use_tls"] else "0")
+    if (smtp.get("password") or "").strip():
+        set_setting("smtp_password", smtp["password"].strip())
+
+    for key, value in (payload.get("templates") or {}).items():
+        if key in EMAIL_TEMPLATES:
+            set_setting(f"tpl_{key}", value)
+
+    for key, value in (payload.get("seo") or {}).items():
+        if key in SEO_DEFAULTS:
+            set_setting(key, str(value or "").strip())
+
+    return {"ok": True}
+
+def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> None:
+    """Send a message over the configured SMTP server.
+
+    `attachment` is an optional (filename, bytes, mimetype) triple.
+    Raises HTTPException with a readable message on failure.
+    """
+    import smtplib
+    from email.message import EmailMessage
+
+    host = get_setting("smtp_host")
+    if not host:
+        raise HTTPException(400, "SMTP сървърът не е конфигуриран. Задай го в Настройки.")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = get_setting("smtp_from") or get_setting("smtp_user") or "noreply@miraskop.bg"
+    msg["To"] = to
+    msg.set_content(body)
+
+    if attachment:
+        filename, data, mimetype = attachment
+        maintype, _, subtype = mimetype.partition("/")
+        msg.add_attachment(data, maintype=maintype, subtype=subtype or "octet-stream",
+                           filename=filename)
+
+    user = get_setting("smtp_user")
+    password = get_setting("smtp_password") or ""
+    port = int(get_setting("smtp_port") or 587)
+    use_tls = (get_setting("smtp_use_tls") or "1") == "1"
+
+    try:
+        if use_tls:
+            with smtplib.SMTP(host, port, timeout=30) as s:
+                s.starttls()
+                if user:
+                    s.login(user, password)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP_SSL(host, port, timeout=30) as s:
+                if user:
+                    s.login(user, password)
+                s.send_message(msg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Изпращането се провали: {e}")
+
+@app.post("/api/admin/settings/test-email")
+def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
+    """Send a test message through the configured SMTP server."""
+    to = (payload.get("to") or "").strip()
+    if "@" not in to:
+        raise HTTPException(400, "Въведи валиден имейл адрес.")
+    send_email(to, "Тестов имейл от МираСкоп",
+               "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
+    return {"ok": True}
 
 # --- Settings API Routes (AUTH REQUIRED) ---
-@app.get("/api/settings")
-def api_get_settings(user: Tuple[int, str] = Depends(get_current_user)):
-    """Return current settings. The API key is masked, never sent back in full."""
-    key = get_setting("ai_api_key")
-    provider = get_setting("ai_provider") or "deepseek"
-    masked = ("•" * 8 + key[-4:]) if key and len(key) > 4 else ("•" * 8 if key else None)
-    return {"ai_provider": provider, "ai_api_key_set": bool(key), "ai_api_key_masked": masked}
+# --- Account settings (the signed-in user's own profile) ---
+# The AI provider and key are installation-wide and live in the admin panel;
+# nothing here may touch them.
 
-@app.post("/api/settings")
-def api_update_settings(data: SettingsUpdate, user: Tuple[int, str] = Depends(get_current_user)):
-    """Update settings. Only non-empty fields are changed."""
-    if data.ai_api_key is not None and data.ai_api_key.strip():
-        set_setting("ai_api_key", data.ai_api_key.strip())
-    if data.ai_provider is not None and data.ai_provider.strip():
-        set_setting("ai_provider", data.ai_provider.strip())
+class AccountUpdate(BaseModel):
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.get("/api/account")
+def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
+    """The signed-in user's own profile and plan."""
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    plan = effective_plan(row)
+    return {
+        "id": user_id,
+        "email": row.get("email") or email,
+        "display_name": row.get("display_name") or "",
+        "role": row.get("role", "user"),
+        "is_admin": row.get("role") == "admin",
+        "created_at": row.get("created_at"),
+        "plan": {
+            "key": plan.get("key"),
+            "name": plan.get("name"),
+            "max_persons": plan.get("max_persons"),
+            "expires": row.get("plan_expires"),
+            "active": plan_is_active(row),
+        },
+    }
+
+@app.post("/api/account")
+def api_update_account(data: AccountUpdate, user: Tuple[int, str] = Depends(get_current_user)):
+    """Update the user's own name and email. Only supplied fields change."""
+    user_id, _ = user
+
+    fields, values = [], []
+    if data.display_name is not None:
+        fields.append("display_name = ?")
+        values.append(data.display_name.strip()[:80])
+
+    new_email = None
+    if data.email is not None and data.email.strip():
+        new_email = data.email.strip().lower()
+        if "@" not in new_email or "." not in new_email.split("@")[-1]:
+            raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
+        existing = get_user_by_email(new_email)
+        if existing and existing["id"] != user_id:
+            raise HTTPException(409, "Вече съществува акаунт с този имейл.")
+        fields.append("email = ?")
+        values.append(new_email)
+
+    if not fields:
+        return {"ok": True}
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", (*values, user_id))
+        conn.commit()
+
+    # Changing the email invalidates the old token's claim, so issue a fresh one.
+    row = get_user_by_id(user_id)
+    result = {"ok": True, "email": row.get("email"), "display_name": row.get("display_name") or ""}
+    if new_email:
+        result["token"] = create_token(user_id, row["email"])
+    return result
+
+@app.post("/api/account/password")
+def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(get_current_user)):
+    """Change the user's own password, verifying the current one first."""
+    user_id, _ = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if not verify_password(data.current_password or "", row["password_hash"]):
+        raise HTTPException(403, "Текущата парола не е вярна.")
+    if len(data.new_password or "") < 6:
+        raise HTTPException(400, "Новата парола трябва да е поне 6 символа.")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                     (hash_password(data.new_password), user_id))
+        conn.commit()
+    # The old token stays valid; it carries no password claim.
     return {"ok": True}
 
 # --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
@@ -666,14 +1841,25 @@ def api_geocode(q: str, user: Tuple[int, str] = Depends(get_current_user)):
 @app.get("/api/persons")
 def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
-    return {"persons": get_all_persons(user_id)}
+    persons = get_all_persons(user_id)
+    row = get_user_by_id(user_id)
+    is_admin = bool(row and row.get("role") == "admin")
+    limit = None if is_admin else (effective_plan(row).get("max_persons") if row else None)
+    return {
+        "persons": persons,
+        "quota": {
+            "used": len(persons),
+            "limit": limit,  # null means unlimited
+            "can_add": is_admin or not limit or len(persons) < limit,
+        },
+    }
 
 @app.get("/api/persons/{person_id}")
 def api_get_person(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return p
 
 @app.post("/api/persons")
@@ -690,6 +1876,27 @@ def api_create_person(
     user: Tuple[int, str] = Depends(get_current_user),
 ):
     user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if row.get("is_blocked"):
+        raise HTTPException(403, "Акаунтът е блокиран.")
+
+    # Plans cap how many people an account may keep; admins are exempt.
+    if row.get("role") != "admin":
+        plan = effective_plan(row)
+        limit = plan.get("max_persons") or 0
+        with sqlite3.connect(DB_PATH) as conn:
+            used = conn.execute(
+                "SELECT COUNT(*) FROM persons WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+        if limit and used >= limit:
+            raise HTTPException(
+                402,
+                f"Пакетът „{plan.get('name')}“ позволява до {limit} "
+                f"{'карта' if limit == 1 else 'карти'}. Изтрий някоя или премини на по-голям пакет."
+            )
+
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -708,7 +1915,7 @@ def api_delete_person(person_id: int, user: Tuple[int, str] = Depends(get_curren
         )
         conn.commit()
         if cur.rowcount == 0:
-            raise HTTPException(404, "Person not found")
+            raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return {"deleted": person_id}
 
 @app.get("/api/persons/{person_id}/natal")
@@ -716,7 +1923,7 @@ def api_natal_chart(person_id: int, user: Tuple[int, str] = Depends(get_current_
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return compute_natal(p)
 
 @app.post("/api/persons/{person_id}/natal")
@@ -729,9 +1936,9 @@ def api_natal_chart_update(
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     if not update_person(person_id, user_id, data):
-        raise HTTPException(500, "Failed to update person")
+        raise HTTPException(500, "Данните не можаха да се запазят. Опитай пак.")
     clear_ai_cache(person_id)
     p = get_person(person_id, user_id)
     return compute_natal(p)
@@ -742,7 +1949,7 @@ def api_natal_chart_text(person_id: int, user: Tuple[int, str] = Depends(get_cur
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     chart_data = compute_natal(p)
     text = natal_to_text(p, chart_data)
     return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
@@ -753,7 +1960,7 @@ def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_us
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     chart_data = compute_natal(p)
     from chart_svg import generate_chart_svg
     svg = generate_chart_svg(chart_data)
@@ -771,6 +1978,11 @@ STYLE_RULES = """
 - ДЪЛЖИНА: бъди подробен — всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи.
 - Бъди конкретен, избягвай клишета. Обяснявай астрологичните термини накратко, за да е разбираемо и за човек без познания.
 - Основавай се единствено на подадените данни, без да добавяш измислени детайли.
+- ГЛАС: пиши като астролог, който чете конкретната карта пред себе си. Не се
+  представяй, не описвай процеса си и не споменавай, че си модел, асистент или
+  програма. Никакви уводи от рода на "като изкуствен интелект", "въз основа на
+  предоставените данни ще генерирам" или "надявам се това да е полезно".
+- Започвай направо с разчитането. Без "Разбира се", "Ето", "С удоволствие".
 
 === ПРАВОПИС (задължително) ===
 Пиши на книжовен български. Внимавай особено за:
@@ -914,28 +2126,29 @@ def build_profile(chart_data: dict) -> dict:
     }
 
 @app.get("/api/persons/{person_id}/profile")
-def api_profile(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_profile(person_id: int, user: Tuple[int, str] = Depends(require_feature("profile"))):
     """Computed 'about me' profile — deterministic, no AI."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return build_profile(compute_natal(p))
 
 @app.get("/api/persons/{person_id}/profile/interpretation")
 def api_profile_interpretation(person_id: int, refresh: bool = False,
-                               user: Tuple[int, str] = Depends(get_current_user)):
+                               user: Tuple[int, str] = Depends(require_feature("profile"))):
     """AI 'about me' reading — strengths, weaknesses and what makes this chart distinctive."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
+    cache_key = "profile"
     if not refresh:
-        cached = get_ai_cache(person_id, "profile")
+        cached = get_ai_cache(person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     chart_data = compute_natal(p)
     prof = build_profile(chart_data)
@@ -1000,14 +2213,14 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
-            set_ai_cache(person_id, "profile", interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 KARMIC_POINTS = ("True North Node", "True South Node", "Chiron", "Saturn", "Pluto", "True Lilith")
 
@@ -1052,18 +2265,18 @@ def build_karmic(chart_data: dict, numerology: dict) -> dict:
     }
 
 @app.get("/api/persons/{person_id}/akashic")
-def api_akashic(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_akashic(person_id: int, user: Tuple[int, str] = Depends(require_feature("akashic"))):
     """The karmic markers the akashic reading is built on (computed, no AI)."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
     return build_karmic(compute_natal(p), numerology)
 
 @app.get("/api/persons/{person_id}/akashic/interpretation")
 def api_akashic_interpretation(person_id: int, refresh: bool = False,
-                               user: Tuple[int, str] = Depends(get_current_user)):
+                               user: Tuple[int, str] = Depends(require_feature("akashic"))):
     """Akashic-records style reading of the chart's karmic markers.
 
     Framed as contemplative interpretation, not as retrieved record: there is no
@@ -1072,13 +2285,14 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
+    cache_key = "akashic"
     if not refresh:
-        cached = get_ai_cache(person_id, "akashic")
+        cached = get_ai_cache(person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     chart_data = compute_natal(p)
     numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
@@ -1182,38 +2396,39 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000)
-            set_ai_cache(person_id, "akashic", interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 @app.get("/api/persons/{person_id}/numerology")
-def api_numerology(person_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+def api_numerology(person_id: int, user: Tuple[int, str] = Depends(require_feature("numerology"))):
     """Compute the Pythagorean numerology profile for a person (deterministic, no AI)."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return compute_numerology(p["name"], p["year"], p["month"], p["day"])
 
 @app.get("/api/persons/{person_id}/numerology/interpretation")
-def api_numerology_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_numerology_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("numerology"))):
     """Generate AI interpretation of a person's numerology profile. Cached per year — pass ?refresh=true to regenerate."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     current_year = datetime.date.today().year
     cache_key = f"numerology:{current_year}"
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
-            return {"interpretation": cached["content"], "cached": True, "generated_at": cached["generated_at"]}
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     profile = compute_numerology(p["name"], p["year"], p["month"], p["day"])
 
@@ -1244,16 +2459,69 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
             set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 
 LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
+
+@app.get("/api/lunar-calendar")
+def api_lunar_calendar(year: Optional[int] = None, month: Optional[int] = None,
+                       user: Tuple[int, str] = Depends(require_feature("moon"))):
+    """Moon phase and sign for every day of a month, with what each favours.
+
+    Computed from ephemeris data, so it holds for any month, past or future.
+    """
+    tz = ZoneInfo("Europe/Sofia")
+    today = datetime.datetime.now(tz).date()
+    year = year or today.year
+    month = month or today.month
+    if not (1 <= month <= 12):
+        raise HTTPException(400, "Невалиден месец.")
+    if not (1900 <= year <= 2100):
+        raise HTTPException(400, "Невалидна година.")
+
+    import calendar as _cal
+    days_in_month = _cal.monthrange(year, month)[1]
+
+    # Sofia is used as the reference location; the Moon's sign barely moves
+    # across European longitudes, and the phase does not depend on place at all.
+    lat, lon = 42.6977, 23.3219
+
+    days = []
+    prev_phase = None
+    for day in range(1, days_in_month + 1):
+        dt = datetime.datetime(year, month, day, 12, 0, tzinfo=tz)
+        chart = charts.Natal(charts.Subject(dt, lat, lon))
+        phase = chart.moon_phase.formatted if getattr(chart, "moon_phase", None) else None
+        moon = next((o for o in chart.objects.values() if o.name == "Moon"), None)
+        sign = moon.sign.name if moon else None
+        advice = moon_phase_advice(phase) or {}
+        days.append({
+            "date": f"{year}-{month:02d}-{day:02d}",
+            "day": day,
+            "weekday": dt.weekday(),
+            "is_today": dt.date() == today,
+            "phase": phase,
+            "phase_bg": tr_moon_phase(phase),
+            "phase_changed": phase != prev_phase,
+            "phase_meaning": meaning_moon_phase(phase),
+            "moon_sign": sign,
+            "moon_sign_bg": tr_sign(sign),
+            "moon_symbol": sign_symbol(sign),
+            "moon_sign_advice": moon_sign_advice(sign),
+            "do": advice.get("do", []),
+            "avoid": advice.get("avoid", []),
+            "note": advice.get("note", ""),
+        })
+        prev_phase = phase
+
+    return {"year": year, "month": month, "days": days}
 
 @app.get("/api/zodiac-signs")
 def api_zodiac_signs(user: Tuple[int, str] = Depends(get_current_user)):
@@ -1329,48 +2597,189 @@ def build_love_match(person: dict, partner_sign: str) -> dict:
         "points": pairs,
     }
 
+def build_love_match_full(person: dict, partner: dict) -> dict:
+    """Compatibility when the partner's full birth data is known.
+
+    Compares the two charts placement by placement and reports the real
+    cross-aspects between their love-relevant points, not just sign to sign.
+    """
+    my_chart = compute_natal(person)
+    their_chart = compute_natal(partner)
+    mine = {o["name"]: o for o in my_chart["objects"].values()}
+    theirs = {o["name"]: o for o in their_chart["objects"].values()}
+
+    labels = {
+        "Sun": "Слънце (същност)",
+        "Moon": "Луна (емоции)",
+        "Venus": "Венера (любов)",
+        "Mars": "Марс (страст)",
+        "Asc": "Асцендент (първо впечатление)",
+    }
+
+    def deg(obj):
+        """Absolute ecliptic longitude, parsed from the formatted value."""
+        try:
+            parts = obj["longitude"].replace("°", " ").replace("'", " ").replace('"', " ").split()
+            return float(parts[0]) + float(parts[1]) / 60 + float(parts[2]) / 3600
+        except Exception:
+            return None
+
+    # Cross-aspects: every love point of one chart against every love point of the other.
+    orbs = {0: ("Съвпад", 8), 60: ("Секстил", 5), 90: ("Квадрат", 6),
+            120: ("Тригон", 7), 180: ("Опозиция", 8)}
+    cross = []
+    for a_name in LOVE_POINTS:
+        a = mine.get(a_name)
+        if not a:
+            continue
+        a_deg = deg(a)
+        if a_deg is None:
+            continue
+        for b_name in LOVE_POINTS:
+            b = theirs.get(b_name)
+            if not b:
+                continue
+            b_deg = deg(b)
+            if b_deg is None:
+                continue
+            sep = abs(a_deg - b_deg) % 360
+            if sep > 180:
+                sep = 360 - sep
+            for angle, (asp_bg, max_orb) in orbs.items():
+                orb = abs(sep - angle)
+                if orb <= max_orb:
+                    cross.append({
+                        "mine_bg": a["name_bg"], "mine_sign_bg": a["sign_bg"],
+                        "mine_symbol": a["sign_symbol"],
+                        "theirs_bg": b["name_bg"], "theirs_sign_bg": b["sign_bg"],
+                        "theirs_symbol": b["sign_symbol"],
+                        "aspect": asp_bg, "orb": round(orb, 1),
+                        "meaning": meaning_aspect(
+                            {"Съвпад": "Conjunction", "Секстил": "Sextile", "Квадрат": "Square",
+                             "Тригон": "Trine", "Опозиция": "Opposition"}[asp_bg]),
+                    })
+                    break
+    cross.sort(key=lambda c: c["orb"])
+
+    my_sun = mine.get("Sun")
+    their_sun = theirs.get("Sun")
+    my_venus, their_venus = mine.get("Venus"), theirs.get("Venus")
+    el_a = sign_element(my_sun["sign"]) if my_sun else None
+    el_b = sign_element(their_sun["sign"]) if their_sun else None
+    mo_a = sign_modality(my_sun["sign"]) if my_sun else None
+    mo_b = sign_modality(their_sun["sign"]) if their_sun else None
+
+    return {
+        "mode": "full",
+        "partner": {
+            "name": partner["name"],
+            "sign_bg": their_sun["sign_bg"] if their_sun else None,
+            "symbol": their_sun["sign_symbol"] if their_sun else "✦",
+            "moon_bg": theirs["Moon"]["sign_bg"] if theirs.get("Moon") else None,
+            "venus_bg": their_venus["sign_bg"] if their_venus else None,
+            "asc_bg": theirs["Asc"]["sign_bg"] if theirs.get("Asc") else None,
+            "element_bg": ELEMENTS_BG.get(el_b),
+            "modality_bg": MODALITIES_BG.get(mo_b),
+        },
+        "you": {
+            "sun_bg": my_sun["sign_bg"] if my_sun else None,
+            "sun_symbol": my_sun["sign_symbol"] if my_sun else "✦",
+            "venus_bg": my_venus["sign_bg"] if my_venus else None,
+            "venus_symbol": my_venus["sign_symbol"] if my_venus else "✦",
+            "element_bg": ELEMENTS_BG.get(el_a),
+            "modality_bg": MODALITIES_BG.get(mo_a),
+        },
+        "sun_aspect": (lambda a: {"name": a[0], "meaning": a[1]} if a else None)(
+            sign_aspect(my_sun["sign"], their_sun["sign"]) if my_sun and their_sun else None),
+        "elements": element_pair_meaning(el_a, el_b),
+        "modalities": modality_pair_meaning(mo_a, mo_b),
+        "cross_aspects": cross[:14],
+        "partner_points": [
+            {"label": labels[n], "name_bg": theirs[n]["name_bg"],
+             "sign_bg": theirs[n]["sign_bg"], "sign_symbol": theirs[n]["sign_symbol"],
+             "house_bg": theirs[n]["house_bg"]}
+            for n in LOVE_POINTS if theirs.get(n)
+        ],
+    }
+
+def resolve_love_match(data: "LoveMatchRequest", person: dict) -> dict:
+    """Pick full-chart or sign-only compatibility based on what was supplied."""
+    if data.has_full_chart():
+        return build_love_match_full(person, data.as_person())
+    if data.partner_sign not in ZODIAC_ORDER:
+        raise HTTPException(400, "Изберете зодия или въведете пълни данни за партньора.")
+    m = build_love_match(person, data.partner_sign)
+    m["mode"] = "sign"
+    return m
+
 @app.post("/api/love-match")
-def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(get_current_user)):
-    """Sign-level love compatibility (computed, no AI)."""
+def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(require_feature("love"))):
+    """Love compatibility — full charts when birth data is given, otherwise sign to sign."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
-    if data.partner_sign not in ZODIAC_ORDER:
-        raise HTTPException(400, "Невалиден зодиакален знак.")
-    return build_love_match(p, data.partner_sign)
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+    return resolve_love_match(data, p)
 
 @app.post("/api/love-match/interpretation")
 def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
-                                  user: Tuple[int, str] = Depends(get_current_user)):
-    """AI love reading for the person against a partner's sun sign."""
+                                  user: Tuple[int, str] = Depends(require_feature("love"))):
+    """AI love reading — uses the partner's full chart when available."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
-    if data.partner_sign not in ZODIAC_ORDER:
-        raise HTTPException(400, "Невалиден зодиакален знак.")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
-    cache_key = f"love:{data.partner_sign}"
+    full = data.has_full_chart()
+    if full:
+        cache_key = (f"love-full:{data.partner_year}-{data.partner_month}-{data.partner_day}"
+                     f"-{data.partner_hour}-{data.partner_minute}"
+                     f"-{round(data.partner_lat or 0, 3)}-{round(data.partner_lon or 0, 3)}")
+    else:
+        if data.partner_sign not in ZODIAC_ORDER:
+            raise HTTPException(400, "Изберете зодия или въведете пълни данни за партньора.")
+        cache_key = f"love:{data.partner_sign}"
+
     if not refresh:
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
-    m = build_love_match(p, data.partner_sign)
+    m = resolve_love_match(data, p)
 
-    points_txt = "\n".join(
-        f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
-        f" ({pt['aspect_meaning']})"
-        for pt in m["points"] if pt["aspect"]
-    )
+    if full:
+        partner_txt = "\n".join(
+            f"- {pt['label']}: {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}"
+            for pt in m["partner_points"]
+        )
+        cross_txt = "\n".join(
+            f"- твоят {c['mine_bg']} ({c['mine_sign_bg']}) {c['aspect']} неговата/нейната "
+            f"{c['theirs_bg']} ({c['theirs_sign_bg']}), орб {c['orb']}° — {c['meaning']}"
+            for c in m["cross_aspects"]
+        ) or "няма аспекти в рамките на орба"
+        context = f"""=== ТВОЯТА КАРТА (точно изчислена) ===
+Слънце: {m['you']['sun_bg']} · Венера: {m['you']['venus_bg']}
+Стихия: {m['you']['element_bg']} · Качество: {m['you']['modality_bg']}
 
-    prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между конкретен човек и партньор от даден зодиакален знак.
+=== КАРТАТА НА ПАРТНЬОРА ({m['partner']['name']}) — точно изчислена ===
+{partner_txt}
+Стихия: {m['partner']['element_bg']} · Качество: {m['partner']['modality_bg']}
 
-Малко име (обръщай се само с него): {first_name(p['name'])}
+=== РЕАЛНИ АСПЕКТИ МЕЖДУ ДВЕТЕ КАРТИ (по-малък орб = по-силен) ===
+{cross_txt}
 
-=== ТВОЯТА КАРТА (точно изчислена) ===
+Стихии: {m['elements']}
+Качества: {m['modalities']}
+
+Имаш пълните рождени данни и на двамата, затова говори конкретно за техните карти — не общо за зодиите."""
+    else:
+        points_txt = "\n".join(
+            f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
+            f" ({pt['aspect_meaning']})"
+            for pt in m["points"] if pt["aspect"]
+        )
+        context = f"""=== ТВОЯТА КАРТА (точно изчислена) ===
 Слънце: {m['you']['sun_bg']} · Венера: {m['you']['venus_bg']}
 Стихия: {m['you']['element_bg']} · Качество: {m['you']['modality_bg']}
 
@@ -1385,7 +2794,13 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 Стихии: {m['elements']}
 Качества: {m['modalities']}
 
-ВАЖНО: знаем само зодията на партньора, не и точния му час на раждане. Затова говори за тенденции на ниво знак, а не за неговата пълна карта. Ако някъде е нужно повече, кажи честно, че за по-точен прочит трябват и неговите час и място на раждане.
+ВАЖНО: знаем само зодията на партньора, не и точния му час на раждане. Затова говори за тенденции на ниво знак, а не за неговата пълна карта. Ако някъде е нужно повече, кажи честно, че за по-точен прочит трябват и неговите час и място на раждане."""
+
+    prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между двама души.
+
+Малко име (обръщай се само с него): {first_name(p['name'])}
+
+{context}
 
 === ЗАДАЧА ===
 Напиши любовен хороскоп в следната структура:
@@ -1408,17 +2823,17 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
             set_ai_cache(data.person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 
 @app.post("/api/synastry")
-def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_current_user)):
+def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_feature("synastry"))):
     """Compute synastry (composite) chart between two persons."""
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)
@@ -1431,7 +2846,7 @@ def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(get_curr
 
 
 @app.post("/api/synastry/interpretation")
-def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("synastry"))):
     """Generate an AI interpretation of synastry between two persons."""
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)
@@ -1499,13 +2914,13 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=3000)
             set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 @app.post("/api/transits")
 def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_current_user)):
@@ -1525,17 +2940,17 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_curr
         if target_date.tzinfo is None:
             target_date = target_date.replace(tzinfo=tz)
     except ValueError:
-        raise HTTPException(400, "Invalid target_date format. Use ISO format: YYYY-MM-DDTHH:MM:SS")
+        raise HTTPException(400, "Невалидна дата. Очакваният формат е ГГГГ-ММ-ДД или ГГГГ-ММ-ДДTЧЧ:ММ:СС.")
     return compute_transits(p, target_date)
 
 @app.get("/api/persons/{person_id}/daily-horoscope")
-def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
     """Generate an AI-written interpretation of today's transits to the person's natal chart.
     Cached per calendar day — pass ?refresh=true to force a new generation for today."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     tz_name = p.get("timezone", "Europe/Sofia")
     try:
@@ -1550,7 +2965,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
         if cached:
             summary, body = split_summary(cached["content"])
             return {"interpretation": body, "summary": summary,
-                    "date": now.strftime("%d.%m.%Y"), "cached": True}
+                    "date": now.strftime("%d.%m.%Y"), "cached": True, "cache_key": cache_key}
 
     transit_data = compute_transits(p, now)
 
@@ -1616,13 +3031,14 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
             raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(person_id, cache_key, raw)
             summary, body = split_summary(raw)
-            return {"interpretation": body, "summary": summary, "date": date_bg, "cached": False}
+            return {"interpretation": body, "summary": summary, "date": date_bg,
+                    "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}", "date": date_bg}
+            return {"interpretation": ai_failure_message(e), "date": date_bg}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}", "date": date_bg}
+            return {"interpretation": ai_failure_message(e), "date": date_bg}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки.", "date": date_bg}
+    return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
 
 MAJOR_ASPECT_TYPES = {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
 # Fast-moving transit bodies (Moon, and daily-recalculated angles like Asc/MC) create
@@ -1645,12 +3061,12 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(ge
         start = datetime.date.fromisoformat(data.start_date)
         end = datetime.date.fromisoformat(data.end_date)
     except ValueError:
-        raise HTTPException(400, "Invalid date format. Use ISO format: YYYY-MM-DD")
+        raise HTTPException(400, "Невалидна дата. Очакваният формат е ГГГГ-ММ-ДД.")
 
     if start > end:
-        raise HTTPException(400, "start_date must be before end_date")
+        raise HTTPException(400, "Началната дата трябва да е преди крайната.")
     if (end - start).days > 62:
-        raise HTTPException(400, "Period too long. Maximum range is 62 days.")
+        raise HTTPException(400, "Периодът е твърде дълъг. Максимумът е 62 дни — раздели го на части.")
 
     tz_name = p.get("timezone", "Europe/Sofia")
     try:
@@ -1700,7 +3116,7 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(ge
 
 @app.post("/api/period-interpretation")
 def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
-                              user: Tuple[int, str] = Depends(get_current_user)):
+                              user: Tuple[int, str] = Depends(require_feature("period"))):
     """AI reading of a date range's transits. Cached per person + date range."""
     user_id, email = user
     p = get_person(data.person_id, user_id)
@@ -1712,7 +3128,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
             return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"]}
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     period = api_period_influence(data, user)
     days = period.get("days", [])
@@ -1755,13 +3171,13 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
             set_ai_cache(data.person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 class AIError(Exception):
     """Raised with a user-facing Bulgarian explanation of what went wrong with an AI call."""
@@ -1813,7 +3229,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
             )
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
-                return result["content"][0]["text"]
+                return clean_bg(result["content"][0]["text"])
 
         if provider == "deepseek":
             url = "https://api.deepseek.com/chat/completions"
@@ -1837,7 +3253,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
         )
         with urllib.request.urlopen(req, timeout=180) as resp:
             result = json.loads(resp.read())
-            return result["choices"][0]["message"]["content"]
+            return clean_bg(result["choices"][0]["message"]["content"])
     except urllib.error.HTTPError as e:
         raise AIError(_explain_http_error(provider, e)) from e
     except TimeoutError:
@@ -1846,17 +3262,20 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
         raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
 
 @app.get("/api/persons/{person_id}/interpretation")
-def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_interpretation(person_id: int, refresh: bool = False,
+                       user: Tuple[int, str] = Depends(require_feature("interpretation"))):
     """Generate AI interpretation of a natal chart. Cached — pass ?refresh=true to regenerate."""
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
+    cache_key = "natal"
     if not refresh:
-        cached = get_ai_cache(person_id, "natal")
+        cached = get_ai_cache(person_id, cache_key)
         if cached:
-            return {"interpretation": cached["content"], "cached": True, "generated_at": cached["generated_at"]}
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     chart_data = compute_natal(p)
 
@@ -1926,20 +3345,202 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
     if ai_key:
         try:
             interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
-            set_ai_cache(person_id, "natal", interpretation)
-            return {"interpretation": interpretation, "cached": False}
+            set_ai_cache(person_id, cache_key, interpretation)
+            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
+
+# --- PDF export and email delivery ---
+
+# Every reading the user can export. The label becomes the PDF's title, and the
+# cache key is either fixed or a prefix the client completes (date, period, sign).
+READING_TITLES = {
+    "natal":      "Тълкуване на наталната карта",
+    "profile":    "Личен портрет",
+    "akashic":    "Акашови записи",
+    "numerology": "Нумерологичен анализ",
+    "horoscope":  "Дневен хороскоп",
+    "period":     "Анализ на период",
+    "love":       "Любовен хороскоп",
+    "love-full":  "Любовен хороскоп",
+}
+
+def reading_title(cache_key: str) -> str:
+    """Human title for a cache key, which may carry a ':suffix' (date, period, sign)."""
+    base = (cache_key or "").split(":", 1)[0]
+    return READING_TITLES.get(base, "Разчитане")
+
+def reading_subtitle(cache_key: str) -> str:
+    """Turn the cache key's suffix into a readable line under the title."""
+    base, _, rest = (cache_key or "").partition(":")
+    if not rest:
+        return ""
+    if base == "horoscope":
+        return f"за {bg_date(rest)}"
+    if base == "period":
+        start, _, end = rest.partition(":")
+        return f"за периода {bg_date(start)} – {bg_date(end)}" if end else ""
+    if base == "numerology":
+        return f"за {rest} г."
+    if base == "love":
+        return f"съвместимост с {SIGNS.get(rest, rest)}"
+    if base == "love-full":
+        return "съвместимост по пълни рождени данни"
+    return ""
+
+def bg_date(iso: str) -> str:
+    """YYYY-MM-DD -> DD.MM.YYYY, leaving anything unexpected untouched."""
+    try:
+        return datetime.datetime.strptime(iso, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except Exception:
+        return iso
+
+def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
+    """Render a cached reading as a PDF. Returns (bytes, filename)."""
+    cached = get_ai_cache(person["id"], cache_key)
+    if not cached:
+        raise HTTPException(404, "Това разчитане още не е генерирано. Отвори го в приложението и опитай пак.")
+
+    summary, body = split_summary(cached["content"])
+
+    # The summary block feeds the little cards; without one, fall back to the
+    # chart's own headline positions so the cover page is never empty.
+    facts = []
+    if isinstance(summary, dict):
+        for k, v in list(summary.items())[:4]:
+            if v:
+                facts.append((str(k), str(v)))
+    if not facts:
+        try:
+            by_name = {o["name"]: o for o in compute_natal(person)["objects"].values()}
+            for label, name in (("Слънце", "Sun"), ("Луна", "Moon"), ("Асцендент", "Asc")):
+                if name in by_name:
+                    facts.append((label, by_name[name]["sign"]))
+        except Exception:
+            pass
+
+    birth = f"{person['day']}.{person['month']}.{person['year']} г., " \
+            f"{person['hour']:02d}:{person['minute']:02d} ч."
+    subtitle = reading_subtitle(cache_key)
+    subtitle = f"{subtitle} · {birth}" if subtitle else birth
+
+    logo = BASE_DIR / "static" / "logo-header.png"
+    pdf = build_reading_pdf(
+        title=reading_title(cache_key),
+        person_name=person["name"],
+        subtitle=subtitle,
+        facts=facts,
+        body=body,
+        logo_path=str(logo) if logo.exists() else None,
+    )
+
+    safe = re.sub(r"[^0-9A-Za-zА-Яа-я]+", "-", person["name"]).strip("-") or "razchitane"
+    # Only the first key segment goes in the filename; suffixes like a partner's
+    # full birth data would make it unreadable.
+    base, _, rest = cache_key.partition(":")
+    slug = base if base in ("love-full", "natal", "profile", "akashic") else \
+        re.sub(r"[^0-9A-Za-z-]+", "-", cache_key).strip("-")
+    return pdf, f"MiraSkop-{safe}-{slug}.pdf"
+
+@app.get("/api/persons/{person_id}/reading.pdf")
+def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(get_current_user)):
+    """Download one cached reading as a PDF."""
+    user_id, _ = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+
+    pdf, filename = build_person_pdf(person, key)
+    # The filename holds Cyrillic, so it goes out RFC 5987-encoded.
+    quoted = urllib.parse.quote(filename)
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
+    )
+
+class EmailReadingRequest(BaseModel):
+    key: str
+    to: Optional[str] = None
+
+@app.post("/api/persons/{person_id}/email-reading")
+def api_email_reading(person_id: int, data: EmailReadingRequest,
+                      user: Tuple[int, str] = Depends(get_current_user)):
+    """Email one cached reading as a PDF attachment."""
+    user_id, email = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+
+    to = (data.to or email or "").strip()
+    if "@" not in to:
+        raise HTTPException(400, "Въведи валиден имейл адрес.")
+
+    pdf, filename = build_person_pdf(person, data.key)
+    title = reading_title(data.key)
+    name = first_name(person["name"]) or person["name"]
+
+    send_email(
+        to,
+        f"{title} — {person['name']}",
+        f"Здравей!\n\n"
+        f"Прикачено е разчитането „{title}“ за {name}, изготвено от МираСкоп.\n"
+        f"Позициите в него са изчислени със Swiss Ephemeris.\n\n"
+        f"Приятно четене!\n— МираСкоп",
+        attachment=(filename, pdf, "application/pdf"),
+    )
+    return {"ok": True, "to": to}
 
 # --- Web UI Routes ---
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
-    return HTMLResponse(templates.get_template("landing.html").render({"request": request}))
+    return HTMLResponse(templates.get_template("landing.html").render(
+        {"request": request, "sky": sky_today(), **seo_context(request, path="/")}))
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt(request: Request):
+    """Crawler rules. The private app pages are never worth indexing."""
+    seo = seo_settings()
+    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    if "noindex" in (seo["seo_robots"] or ""):
+        body = "User-agent: *\nDisallow: /\n"
+    else:
+        body = (
+            "User-agent: *\n"
+            "Allow: /$\n"
+            "Disallow: /dashboard\n"
+            "Disallow: /chart/\n"
+            "Disallow: /settings\n"
+            "Disallow: /admin\n"
+            "Disallow: /synastry\n"
+            "Disallow: /api/\n"
+            f"\nSitemap: {base}/sitemap.xml\n"
+        )
+    return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
+
+@app.get("/sitemap.xml")
+def sitemap_xml(request: Request):
+    """Only the publicly reachable pages belong in the sitemap."""
+    seo = seo_settings()
+    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    today = datetime.date.today().isoformat()
+    urls = "".join(
+        f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
+        f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
+        for path, freq, prio in [
+            ("/", "weekly", "1.0"),
+            ("/register", "monthly", "0.6"),
+            ("/login", "monthly", "0.3"),
+        ]
+    )
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f"{urls}</urlset>")
+    return Response(content=xml, media_type="application/xml")
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
@@ -1972,7 +3573,7 @@ async def view_chart(request: Request, person_id: int):
 
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     chart_data = compute_natal(p)
     return HTMLResponse(templates.get_template("chart.html").render({
         "request": request,
@@ -1989,6 +3590,16 @@ async def settings_page(request: Request):
 async def synastry_page(request: Request):
     """Synastry page — client-side JS handles auth check via localStorage token."""
     return HTMLResponse(templates.get_template("synastry.html").render({"request": request}))
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    """Admin panel — the API behind it enforces the admin role."""
+    return HTMLResponse(templates.get_template("admin.html").render({"request": request}))
+
+@app.get("/moon", response_class=HTMLResponse)
+async def moon_page(request: Request):
+    """Lunar calendar — client-side JS handles auth check via localStorage token."""
+    return HTMLResponse(templates.get_template("moon.html").render({"request": request}))
 
 @app.get("/healthz")
 def health():

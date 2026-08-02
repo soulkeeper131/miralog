@@ -9,3 +9,4 @@ bcrypt
 python-jose
 tzdata
 timezonefinder
+reportlab

@@ -1,0 +1,129 @@
+/* Dialogs and toasts for ui.js. Styled from the same tokens as the rest of the
+   app, so a confirmation looks like part of the site instead of the browser. */
+
+.ui-overlay {
+    position: fixed; inset: 0; z-index: 9000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    /* Dark enough that the page behind reads as out of reach, not as clutter
+       showing through the dialog. */
+    background: rgba(6, 5, 18, .82);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity .16s ease;
+}
+.ui-overlay.ui-open { opacity: 1; }
+
+.ui-dialog {
+    width: min(440px, 100%);
+    background: var(--bg-card, #14122e);
+    border: 1px solid var(--border, #2b2752);
+    border-radius: 18px;
+    padding: 26px 26px 22px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+    transform: translateY(8px) scale(.98);
+    transition: transform .18s cubic-bezier(.2, .7, .3, 1);
+}
+.ui-overlay.ui-open .ui-dialog { transform: translateY(0) scale(1); }
+
+.ui-dialog-head {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.ui-dialog-mark {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .9rem;
+    background: var(--surface-thistle, rgba(205, 180, 219, .1));
+    color: var(--on-thistle, #c9b1ff);
+}
+.ui-dialog-danger .ui-dialog-mark {
+    background: var(--danger-bg, #2d1b1b);
+    color: var(--danger-text, #fca5a5);
+}
+.ui-dialog-title {
+    font-family: var(--font-display, Georgia, serif);
+    font-size: 1.22rem; font-weight: 600; line-height: 1.25;
+    color: var(--text-heading, #d6c6ff);
+}
+.ui-dialog-msg {
+    color: var(--text-soft, #b4adcc);
+    font-size: .93rem; line-height: 1.65;
+    margin-bottom: 18px;
+}
+
+.ui-field { display: block; margin-bottom: 16px; }
+.ui-field-label {
+    display: block; margin-bottom: 5px;
+    font-size: .8rem; color: var(--text-muted, #9a93b8);
+}
+.ui-field-input {
+    width: 100%; padding: 11px 13px; border-radius: 10px;
+    border: 1px solid var(--border, #2b2752);
+    background: var(--bg-input, #100f26);
+    color: var(--text, #e6e2f4);
+    font-family: inherit; font-size: 16px; min-height: 44px;
+}
+.ui-field-input:focus {
+    outline: none;
+    border-color: var(--accent, #7c3aed);
+    box-shadow: var(--focus-ring, 0 0 0 3px rgba(124, 58, 237, .28));
+}
+
+.ui-dialog-actions {
+    display: flex; gap: 9px; justify-content: flex-end; flex-wrap: wrap;
+}
+.ui-btn {
+    /* inline-flex, not the default inline-block: the page's line-height was
+       pulling these under the 44px touch minimum. */
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 10px 18px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border, #2b2752);
+    background: transparent;
+    color: var(--text, #e6e2f4);
+    font-family: inherit; font-size: .9rem; font-weight: 500; line-height: 1.2;
+    min-height: 44px;
+    transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.ui-btn:hover { border-color: var(--accent, #7c3aed); transform: translateY(-1px); }
+.ui-btn:focus-visible {
+    outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124, 58, 237, .28));
+}
+.ui-btn-primary {
+    background: var(--accent, #7c3aed); border-color: var(--accent, #7c3aed); color: #fff;
+}
+.ui-btn-primary:hover { background: var(--accent-hover, #6d28d9); }
+.ui-btn-danger {
+    background: var(--danger, #ef4444); border-color: var(--danger, #ef4444); color: #fff;
+}
+.ui-btn-danger:hover { filter: brightness(1.08); }
+
+/* --- toasts --- */
+#ui-toast-stack {
+    position: fixed; z-index: 9100;
+    left: 50%; transform: translateX(-50%);
+    bottom: max(20px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+    width: min(420px, calc(100vw - 32px));
+}
+.ui-toast {
+    padding: 12px 16px; border-radius: 12px;
+    background: var(--bg-card, #14122e);
+    border: 1px solid var(--border, #2b2752);
+    color: var(--text, #e6e2f4);
+    font-size: .89rem; line-height: 1.5;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .18s ease, transform .18s ease;
+}
+.ui-toast.ui-open { opacity: 1; transform: translateY(0); }
+.ui-toast-ok { border-color: color-mix(in srgb, var(--success, #22c55e) 55%, transparent); }
+.ui-toast-err { border-color: color-mix(in srgb, var(--danger, #ef4444) 55%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+    .ui-overlay, .ui-dialog, .ui-toast { transition: none; }
+    .ui-dialog { transform: none; }
+}
+
+:root[data-theme="light"] .ui-overlay { background: rgba(45, 36, 56, .55); }
+:root[data-theme="light"] .ui-dialog { box-shadow: 0 24px 60px rgba(45, 36, 56, .22); }
