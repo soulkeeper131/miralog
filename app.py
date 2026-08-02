@@ -39,7 +39,10 @@ from pdf_report import build_reading_pdf
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
-DB_PATH = BASE_DIR / "data" / "persons.db"
+# Overridable so a deployment can point the database at a mounted volume;
+# without that the file lives inside the container and dies with it.
+DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR / "data" / "persons.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
 
