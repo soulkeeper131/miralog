@@ -34,7 +34,7 @@
             --text: #e0e0e0;
             --text-heading: #c9b1ff;
             --text-muted: #888;
-            --text-dim: #666;
+            --text-dim: #9090a4;
             --text-soft: #aaa;
             --text-softer: #ccc;
             --text-meaning: #b8b0d0;
@@ -75,7 +75,7 @@
             --text: #2d2438;
             --text-heading: #6d4a89;
             --text-muted: #7a6d8a;
-            --text-dim: #a595b0;
+            --text-dim: #7d6888;
             --text-soft: #7a6d8a;
             --text-softer: #4a3f5c;
             --text-meaning: #5c4d70;
@@ -1159,11 +1159,11 @@
                 </p>
                 <div class="period-form">
                     <div class="form-group">
-                        <label>От дата</label>
+                        <label for="periodStart">От дата</label>
                         <input type="date" id="periodStart">
                     </div>
                     <div class="form-group">
-                        <label>До дата</label>
+                        <label for="periodEnd">До дата</label>
                         <input type="date" id="periodEnd">
                     </div>
                     <button class="btn" id="periodBtn" onclick="loadPeriod()">Анализирай период</button>
@@ -1208,46 +1208,46 @@
                     </p>
                     <div id="partnerError" class="error" style="display:none; margin-bottom:14px;"></div>
                     <div class="form-group">
-                        <label>Име</label>
+                        <label for="pName">Име</label>
                         <input type="text" id="pName" placeholder="Име на партньора">
                     </div>
                     <div class="row-3">
                         <div class="form-group">
-                            <label>Година</label>
+                            <label for="pYear">Година</label>
                             <input type="number" id="pYear" placeholder="1990" min="1800" max="2100">
                         </div>
                         <div class="form-group">
-                            <label>Месец</label>
+                            <label for="pMonth">Месец</label>
                             <input type="number" id="pMonth" placeholder="5" min="1" max="12">
                         </div>
                         <div class="form-group">
-                            <label>Ден</label>
+                            <label for="pDay">Ден</label>
                             <input type="number" id="pDay" placeholder="12" min="1" max="31">
                         </div>
                     </div>
                     <div class="row">
                         <div class="form-group">
-                            <label>Час</label>
+                            <label for="pHour">Час</label>
                             <input type="number" id="pHour" value="12" min="0" max="23">
                         </div>
                         <div class="form-group">
-                            <label>Минути</label>
+                            <label for="pMinute">Минути</label>
                             <input type="number" id="pMinute" value="0" min="0" max="59">
                         </div>
                     </div>
                     <div class="form-group place-group">
-                        <label>Място на раждане</label>
+                        <label for="pPlace">Място на раждане</label>
                         <input type="text" id="pPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
                         <div id="pPlaceResults" class="place-results"></div>
                         <div class="hint">Потърси населено място — координатите и часовата зона се попълват сами.</div>
                     </div>
                     <div class="row">
                         <div class="form-group">
-                            <label>Геогр. ширина</label>
+                            <label for="pLat">Геогр. ширина</label>
                             <input type="number" id="pLat" step="any" placeholder="42.6977">
                         </div>
                         <div class="form-group">
-                            <label>Геогр. дължина</label>
+                            <label for="pLon">Геогр. дължина</label>
                             <input type="number" id="pLon" step="any" placeholder="23.3219">
                         </div>
                     </div>

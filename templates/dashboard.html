@@ -32,7 +32,7 @@
             --text: #e0e0e0;
             --text-heading: #c9b1ff;
             --text-muted: #888;
-            --text-dim: #666;
+            --text-dim: #9090a4;
             --accent: #7c3aed;
             --accent-hover: #6d28d9;
             --accent-light: #a78bfa;
@@ -75,7 +75,7 @@
             --text: #2d2438;
             --text-heading: #6d4a89;
             --text-muted: #7a6d8a;
-            --text-dim: #a595b0;
+            --text-dim: #7d6888;
             --accent: #8659a3;
             --accent-hover: #744a90;
             --accent-light: #8659a3;
@@ -484,20 +484,20 @@
             <div id="modalError" class="error-banner" style="display:none;"></div>
             <form id="addPersonForm">
                 <div class="form-group">
-                    <label>Име</label>
+                    <label for="addName">Име</label>
                     <input type="text" id="addName" required placeholder="Име на човека">
                 </div>
                 <div class="row-3">
                     <div class="form-group">
-                        <label>Година</label>
+                        <label for="addYear">Година</label>
                         <input type="number" id="addYear" required placeholder="1988" min="1800" max="2100">
                     </div>
                     <div class="form-group">
-                        <label>Месец</label>
+                        <label for="addMonth">Месец</label>
                         <input type="number" id="addMonth" required placeholder="1" min="1" max="12">
                     </div>
                     <div class="form-group">
-                        <label>Ден</label>
+                        <label for="addDay">Ден</label>
                         <input type="number" id="addDay" required placeholder="8" min="1" max="31">
                     </div>
                 </div>
@@ -507,28 +507,28 @@
                         <input type="number" id="addHour" value="12" min="0" max="23">
                     </div>
                     <div class="form-group">
-                        <label>Минути</label>
+                        <label for="addMinute">Минути</label>
                         <input type="number" id="addMinute" value="0" min="0" max="59">
                     </div>
                 </div>
                 <div class="form-group place-group">
-                    <label>Място на раждане</label>
+                    <label for="addPlace">Място на раждане</label>
                     <input type="text" id="addPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
                     <div id="placeResults" class="place-results"></div>
                     <div class="hint">Потърси населено място — координатите и часовата зона се попълват автоматично.</div>
                 </div>
                 <div class="row">
                     <div class="form-group">
-                        <label>Геогр. ширина</label>
+                        <label for="addLat">Геогр. ширина</label>
                         <input type="number" id="addLat" step="any" required placeholder="42.6977">
                     </div>
                     <div class="form-group">
-                        <label>Геогр. дължина</label>
+                        <label for="addLon">Геогр. дължина</label>
                         <input type="number" id="addLon" step="any" required placeholder="23.3219">
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Часова зона</label>
+                    <label for="addTimezone">Часова зона</label>
                     <input type="text" id="addTimezone" value="Europe/Sofia" placeholder="Europe/Sofia">
                 </div>
                 <div class="modal-actions">
