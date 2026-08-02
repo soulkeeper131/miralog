@@ -53,6 +53,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* The rotating chart wheel sweeps past its own box at some angles.
+           body alone is not enough — the root element grows too. */
+        html { overflow-x: hidden; }
         :root {
             /* Fraunces has an optical size axis and a 'wonk' that reads like an
                engraved star atlas; Outfit keeps the running text quiet beside it.
@@ -60,6 +63,12 @@
             --font-body: 'Outfit', -apple-system, system-ui, sans-serif;
             --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
             --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+            /* Spacing scale. Sections breathe more than the blocks inside them,
+               and the rhythm tightens on small screens rather than scaling down
+               everything uniformly. */
+            --space-section: clamp(56px, 8vw, 104px);
+            --space-block: clamp(28px, 4.5vw, 52px);
+            --space-tight: clamp(14px, 2vw, 22px);
             --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
             --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
             --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
@@ -159,18 +168,26 @@
             display: flex; align-items: center; justify-content: center;
             transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
             z-index: 200;
+            /* It floats over the content as the page scrolls, so it needs a
+               solid ground and a halo — otherwise headings read through it. */
+            box-shadow: 0 0 0 6px var(--bg), var(--shadow-card);
         }
         .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
         .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-        .wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+        .wrap {
+            max-width: 1080px; margin: 0 auto;
+            padding-inline: clamp(20px, 4vw, 40px);
+        }
+        /* The ephemeris is a single line of data and needs room to stay on one. */
+        .ephemeris .wrap { max-width: 1240px; }
 
         /* --- hero --- */
         .hero {
             position: relative;
             /* the wheel is wider than the text column and must not widen the page */
             overflow: hidden;
-            padding: clamp(56px, 11vw, 108px) 0 clamp(40px, 7vw, 72px);
+            padding: clamp(40px, 6vw, 68px) 0 clamp(38px, 5vw, 62px);
             text-align: center;
         }
         .hero::before {
@@ -209,9 +226,11 @@
         /* The logo art is portrait with the wordmark at the bottom; the circle is
            centred on the illustration itself so nothing important gets clipped. */
         .hero-logo {
-            width: auto; height: clamp(230px, 34vw, 330px);
+            /* Smaller than before: at 330px it pushed the buttons past the fold
+               on a 900px-tall screen, which is where most desktops sit. */
+            width: auto; height: clamp(180px, 22vw, 250px);
             max-width: 100%; object-fit: contain;
-            display: block; margin: 0 auto 20px;
+            display: block; margin: 0 auto 14px;
             filter: drop-shadow(0 16px 36px rgba(124,58,237,0.30));
         }
         :root[data-theme="light"] .hero-logo {
@@ -251,7 +270,14 @@
         }
 
         .cta-row {
-            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px;
+            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        @media (max-width: 600px) {
+            /* Stack them and match widths — unequal pills on two lines read as
+               an accident rather than a choice. */
+            .cta-row { flex-direction: column; align-items: stretch; gap: 10px; }
+            .cta-row .btn { width: 100%; }
         }
         .btn {
             display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -276,7 +302,10 @@
         .cta-note { font-size: 0.82rem; color: var(--text-dim); }
 
         /* --- sections --- */
-        section { padding: clamp(44px, 7vw, 76px) 0; }
+        section { padding: var(--space-section) 0; }
+        /* The closing call to action follows the pricing directly; a full
+           section gap between them reads as a dead zone. */
+        section + section:last-of-type { padding-top: 0; }
         /* --- ephemeris strip: today's real positions, set like a data table --- */
         .ephemeris {
             border-top: 1px solid var(--border-soft);
@@ -285,8 +314,22 @@
             padding: 14px 0;
         }
         .eph-inner {
-            display: flex; align-items: center; gap: 18px;
+            display: flex; align-items: center; gap: 10px 22px;
             flex-wrap: wrap; justify-content: center;
+        }
+        @media (min-width: 1000px) {
+            /* One clean line: label anchored left, figures spread evenly. */
+            .eph-inner { flex-wrap: nowrap; justify-content: flex-start; gap: 24px; }
+            .eph-inner .eph-label { flex: 0 0 auto; }
+            .eph-inner .eph-list {
+                flex: 1 1 auto; min-width: 0; flex-wrap: nowrap;
+                justify-content: space-between; gap: 0 16px;
+                /* A long row of figures scrolls inside its own strip rather
+                   than widening the page. */
+                overflow-x: auto; scrollbar-width: none;
+            }
+            .eph-inner .eph-list::-webkit-scrollbar { display: none; }
+            .eph-inner .eph-list li { white-space: nowrap; flex: 0 0 auto; }
         }
         .eph-label {
             font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: .18em;
@@ -306,12 +349,21 @@
             font-family: var(--font-mono); font-variant-numeric: tabular-nums;
             color: var(--text); font-size: 0.78rem;
         }
-        @media (max-width: 640px) {
+        @media (max-width: 600px) {
             /* Too many figures for a phone; keep the first four and the label. */
             .eph-list li:nth-child(n+5) { display: none; }
         }
 
         .sec-head { text-align: center; margin-bottom: clamp(30px, 5vw, 50px); }
+        @media (max-width: 1000px) {
+            /* Below the widest layout there is no free margin at the top right,
+               so the button docks bottom-right where it floats over gutter
+               rather than over headings and buttons. */
+            .theme-toggle {
+                top: auto;
+                bottom: max(16px, env(safe-area-inset-bottom));
+            }
+        }
         .sec-head h2 {
             font-family: var(--font-display); font-weight: 600;
             font-variation-settings: 'opsz' 90, 'SOFT' 24, 'WONK' 1;
@@ -333,16 +385,22 @@
            they carry the two things people actually come for; the rest sit in
            thirds. Even boxes would read as a template. */
         .cards {
-            display: grid; grid-template-columns: repeat(6, 1fr);
+            display: grid; grid-template-columns: repeat(12, 1fr);
             gap: 14px; align-items: stretch;
         }
-        .card { grid-column: span 2; }
-        .card:nth-child(1), .card:nth-child(2) { grid-column: span 3; }
-        @media (max-width: 900px) {
-            .cards { grid-template-columns: repeat(2, 1fr); }
-            .card, .card:nth-child(1), .card:nth-child(2) { grid-column: span 1; }
+        /* Two wide panels on the first row for what people come for, then four
+           quarters. Twelve columns divide evenly both ways, so no card is ever
+           orphaned on a row of its own. */
+        .card { grid-column: span 3; }
+        .card:nth-child(1), .card:nth-child(2) { grid-column: span 6; }
+        @media (max-width: 1000px) {
+            .card { grid-column: span 6; }
+            .card:nth-child(1), .card:nth-child(2) { grid-column: span 6; }
         }
-        @media (max-width: 560px) {
+        @media (max-width: 600px) {
+            .card, .card:nth-child(1), .card:nth-child(2) { grid-column: span 12; }
+        }
+        @media (max-width: 600px) {
             .cards { grid-template-columns: 1fr; }
         }
         .card {
@@ -382,7 +440,13 @@
             font-size: 1.06rem; font-weight: 600; letter-spacing: -0.01em;
             color: var(--text-heading); margin-bottom: 7px; line-height: 1.35;
         }
-        .card p { font-size: 0.9rem; color: var(--text-soft); line-height: 1.65; }
+        .card p {
+            font-size: 0.9rem; color: var(--text-soft); line-height: 1.65;
+            /* Push nothing to the bottom — ragged bottoms read as sloppy when
+               the grid forces equal heights. */
+            margin-bottom: 0;
+        }
+        .card h3 + p { margin-top: 0; }
 
         /* --- steps: a genuine sequence, so the numbers earn their place --- */
         .steps {
@@ -391,7 +455,7 @@
         }
         .step { text-align: center; padding: 0 6px; position: relative; }
         /* Hairline joining the steps, cut short of the discs on either side. */
-        @media (min-width: 760px) {
+        @media (min-width: 700px) {
             .step:not(:last-child)::before {
                 content: ""; position: absolute; top: 25px; left: calc(50% + 34px);
                 right: calc(-50% + 34px); height: 1px;
@@ -513,6 +577,23 @@
         }
         .chip-row {
             display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+        }
+        @media (max-width: 600px) {
+            /* Ragged centred pills across six lines look like spilled change.
+               A two-column list with the price flush right reads as a price list. */
+            .chip-row {
+                display: grid; grid-template-columns: 1fr; gap: 0;
+                max-width: 340px; margin: 0 auto;
+                border: 1px solid var(--border-soft); border-radius: 14px;
+                overflow: hidden; background: var(--bg-card);
+            }
+            .chip {
+                border: none; border-radius: 0; background: transparent;
+                justify-content: space-between; padding: 12px 16px;
+                border-bottom: 1px solid var(--border-soft);
+            }
+            .chip:last-child { border-bottom: none; }
+            .chip:hover { transform: none; border-color: transparent; }
         }
         .chip {
             display: inline-flex; align-items: baseline; gap: 8px;
