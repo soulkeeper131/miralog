@@ -60,8 +60,16 @@ ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@miralog.bg")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", DEV_ADMIN_PASSWORD)
 # A standing demo account, so the locked/paywalled views can be checked without
 # touching a real user. Set DEMO_EMAIL="" to skip creating it in production.
-DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@miralog.bg")
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", DEV_DEMO_PASSWORD)
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "").strip()
+# In production the demo account is opt-in: it appears only when a password is
+# supplied. Relying on DEMO_EMAIL="" would not work, because some platforms
+# (Coolify among them) drop empty environment variables entirely.
+if IS_PRODUCTION:
+    DEMO_EMAIL = (os.environ.get("DEMO_EMAIL", "").strip() or "demo@miraskop.bg") \
+        if DEMO_PASSWORD else ""
+else:
+    DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@miralog.bg").strip()
+    DEMO_PASSWORD = DEMO_PASSWORD or DEV_DEMO_PASSWORD
 
 
 import logging
@@ -103,10 +111,17 @@ def check_config() -> list:
         (problems if IS_PRODUCTION else warnings).append(
             "SECRET_KEY е по-къс от 32 знака. Използвай поне 32 случайни знака.")
 
-    if DEMO_EMAIL and DEMO_PASSWORD == DEV_DEMO_PASSWORD and IS_PRODUCTION:
-        problems.append(
-            "Демо акаунтът е включен с паролата по подразбиране. Или задай "
-            "DEMO_PASSWORD, или изключи акаунта с DEMO_EMAIL=\"\".")
+    # The account is opt-in above, so the only thing left to guard is a weak
+    # password on an account somebody deliberately turned on.
+    if IS_PRODUCTION and DEMO_EMAIL:
+        if DEMO_PASSWORD == DEV_DEMO_PASSWORD:
+            problems.append(
+                "DEMO_PASSWORD е „demo123“ — паролата е публикувана в кода. "
+                "Задай друга или премахни DEMO_PASSWORD, за да няма демо акаунт.")
+        elif len(DEMO_PASSWORD) < 8:
+            problems.append(
+                "DEMO_PASSWORD е по-къса от 8 знака. Демо акаунтът е публично "
+                "достъпен — дай му истинска парола.")
 
     if problems:
         lines = "\n".join(f"  • {p}" for p in problems)
