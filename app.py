@@ -1816,8 +1816,8 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
                 return result["content"][0]["text"]
 
         if provider == "deepseek":
-            url = "https://api.deepseek.com/v1/chat/completions"
-            model = "deepseek-chat"
+            url = "https://api.deepseek.com/chat/completions"
+            model = "deepseek-v4-pro"
         else:
             url = "https://api.openai.com/v1/chat/completions"
             model = "gpt-4o-mini"
