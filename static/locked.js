@@ -70,8 +70,53 @@ function renderLocked(el, detail, retry) {
             ${priceBlock}
         </div>`;
 
+    // A locked feature takes over its whole tab. Leaving the other sections
+    // behind shows empty headings for content the visitor cannot have.
+    hideSiblingSections(el);
+
     const btn = el.querySelector('.locked-btn[data-feature]');
     if (btn) btn.addEventListener('click', () => requestUnlock(btn, btn.dataset.feature, retry));
+}
+
+// Collapse every section in the tab except the one holding the teaser, and
+// strip the heading above it so the panel reads as a single locked page.
+function hideSiblingSections(el) {
+    // Re-locking the same panel must not stack up hidden nodes.
+    restoreLockedSections(el);
+    const panel = el.closest('.tab-content');
+    if (!panel) return;
+    const own = el.closest('.section');
+    panel.querySelectorAll(':scope > .section').forEach(section => {
+        if (section === own) return;
+        section.dataset.lockedHidden = '1';
+        section.hidden = true;
+    });
+    if (own) {
+        own.querySelectorAll(':scope > h2, :scope > p').forEach(node => {
+            node.dataset.lockedHidden = '1';
+            node.hidden = true;
+        });
+    }
+}
+
+// Call this from the page when a panel renders real content: it clears the
+// takeover so the tab's other sections come back without a reload.
+function unlockPanel(el) {
+    if (!el) return;
+    el.classList.remove('locked');
+    restoreLockedSections(el);
+}
+
+// Put back whatever hideSiblingSections took away, so a successful unlock
+// restores the full tab without a reload.
+function restoreLockedSections(panelOrEl) {
+    const panel = panelOrEl && panelOrEl.closest
+        ? (panelOrEl.closest('.tab-content') || panelOrEl)
+        : document;
+    panel.querySelectorAll('[data-locked-hidden="1"]').forEach(node => {
+        node.hidden = false;
+        delete node.dataset.lockedHidden;
+    });
 }
 
 async function requestUnlock(btn, featureKey, retry) {

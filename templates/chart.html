@@ -1772,6 +1772,7 @@
         async function loadProfileAI(refresh) {
             const el = document.getElementById('profile-ai-content');
             el.innerHTML = crystalLoader('Генериране на портрет...');
+            unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/profile/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, { headers: authHeaders() });
@@ -1794,6 +1795,7 @@
         async function loadHoroscopeAI(refresh) {
             const el = document.getElementById('horoscope-ai-content');
             el.innerHTML = crystalLoader('Генериране на разчитане...');
+            unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, { headers: authHeaders() });
@@ -1851,6 +1853,7 @@
             window._interpretationLoaded = true;
             const el = document.getElementById('interpretation-content');
             el.innerHTML = crystalLoader('Генериране на интерпретация...');
+            unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, { headers: authHeaders() });
@@ -1887,6 +1890,7 @@
             btn.disabled = true;
             btn.textContent = 'Анализиране...';
             el.innerHTML = crystalLoader('Изчисляване на периода...');
+            unlockPanel(el);
             try {
                 const resp = await fetch('/api/period-influence', {
                     method: 'POST',
@@ -1930,6 +1934,7 @@
         async function loadPeriodAI(start, end, refresh) {
             const el = document.getElementById('period-ai-content');
             el.innerHTML = crystalLoader('Разчитане на периода...');
+            unlockPanel(el);
             try {
                 const url = '/api/period-interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, {
@@ -2147,6 +2152,7 @@
         async function loadSignPicker() {
             const el = document.getElementById('sign-picker');
             el.innerHTML = crystalLoader('Зареждане...');
+            unlockPanel(el);
             try {
                 const resp = await fetch('/api/zodiac-signs', { headers: authHeaders() });
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -2182,6 +2188,7 @@
         async function loadLoveMatch() {
             const el = document.getElementById('love-content');
             el.innerHTML = crystalLoader('Изчисляване...');
+            unlockPanel(el);
             try {
                 const resp = await guardedFetch('/api/love-match', {
                     method: 'POST',
@@ -2294,6 +2301,7 @@
         async function loadLoveAI(refresh) {
             const el = document.getElementById('love-ai-content');
             el.innerHTML = crystalLoader('Разчитане на връзката...');
+            unlockPanel(el);
             try {
                 const url = '/api/love-match/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, {
@@ -2383,6 +2391,7 @@
         async function loadAkashicAI(refresh) {
             const el = document.getElementById('akashic-ai-content');
             el.innerHTML = crystalLoader('Отваряне на записа...');
+            unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/akashic/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, { headers: authHeaders() });
