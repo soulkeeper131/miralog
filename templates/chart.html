@@ -1756,12 +1756,14 @@
 
                 el.innerHTML = html;
             } catch (e) {
+                // Clear the AI panel first — its loader is in the markup from
+                // the start and would spin forever behind a locked teaser.
+                document.getElementById('profile-ai-content').innerHTML = '';
                 if (e instanceof LockedFeature) {
                     renderLocked(el, e.detail, loadProfile);
                     return;
                 }
                 el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
-                document.getElementById('profile-ai-content').innerHTML = '';
                 return;
             }
             loadProfileAI();
@@ -2009,12 +2011,14 @@
                 el.innerHTML = `<div class="num-grid">${cards}</div>` +
                     (details ? `<div class="num-details">${details}</div>` : '');
             } catch (e) {
+                // Clear the AI panel before returning, or its loader keeps
+                // spinning underneath the locked teaser.
+                aiEl.innerHTML = '';
                 if (e instanceof LockedFeature) {
                     renderLocked(el, e.detail, loadNumerology);
                     return;
                 }
                 el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
-                aiEl.innerHTML = '';
                 return;
             }
 
@@ -2179,14 +2183,17 @@
             const el = document.getElementById('love-content');
             el.innerHTML = crystalLoader('Изчисляване...');
             try {
-                const resp = await fetch('/api/love-match', {
+                const resp = await guardedFetch('/api/love-match', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify(lovePayload)
                 });
                 if (!resp.ok) {
                     const d = await resp.json().catch(() => ({}));
-                    throw new Error(d.detail || ('HTTP ' + resp.status));
+                    // detail can be an object; never interpolate it raw.
+                    const msg = typeof d.detail === 'string' ? d.detail
+                              : (d.detail && d.detail.message) || ('Грешка ' + resp.status);
+                    throw new Error(msg);
                 }
                 const d = await resp.json();
 
@@ -2273,8 +2280,12 @@
 
                 el.innerHTML = html;
             } catch (e) {
-                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
                 document.getElementById('love-ai-content').innerHTML = '';
+                if (e instanceof LockedFeature) {
+                    renderLocked(el, e.detail, loadLoveMatch);
+                    return;
+                }
+                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
                 return;
             }
             loadLoveAI();
@@ -2356,12 +2367,14 @@
 
                 el.innerHTML = `<div class="karm-grid">${cards}</div>` + extra;
             } catch (e) {
+                // Clear the AI panel first: returning early used to leave its
+                // loader spinning behind the locked teaser.
+                document.getElementById('akashic-ai-content').innerHTML = '';
                 if (e instanceof LockedFeature) {
                     renderLocked(el, e.detail, loadAkashic);
                     return;
                 }
                 el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
-                document.getElementById('akashic-ai-content').innerHTML = '';
                 return;
             }
             loadAkashicAI();
