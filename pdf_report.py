@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 PDF reports for readings.
 

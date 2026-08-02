@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Mechanical Bulgarian text corrections applied to generated readings.
 

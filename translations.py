@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Bulgarian translations for astrology terms returned by the immanuel library.
 Provides lookup helpers that fall back to the original English term when a

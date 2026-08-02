@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os, re, sys, json, sqlite3, datetime, urllib.parse, secrets, hashlib, asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager

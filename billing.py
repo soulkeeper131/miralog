@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Stripe Checkout helpers for subscriptions and one-off feature unlocks.
 
 Configured via env:

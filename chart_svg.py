@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 SVG Natal Chart Generator
 Draws a zodiac wheel with house cusps, planet positions and aspect lines

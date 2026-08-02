@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Pythagorean numerology calculations.
 Pure deterministic math from birth date and name — no AI involved.
