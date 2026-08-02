@@ -1184,7 +1184,7 @@ FEATURE_CATALOGUE = [
     {"key": "planets", "name": "Планети", "note": "Списък с обяснения"},
     {"key": "aspects", "name": "Аспекти", "note": "Аспектите в картата"},
     {"key": "numerology", "name": "Нумерология", "note": "Числата и какво означават"},
-    {"key": "profile", "name": "За мен", "note": "Личен портрет от картата"},
+    {"key": "profile", "name": "Разчитане на астро портрета", "note": "Подробно тълкуване на портрета"},
     {"key": "horoscope", "name": "Дневен хороскоп", "note": "Разчитане на деня"},
     {"key": "period", "name": "Период", "note": "Транзити за диапазон от дати"},
     {"key": "synastry", "name": "Съвместимост", "note": "Синастрия между двама"},
@@ -2900,7 +2900,7 @@ def build_profile(chart_data: dict) -> dict:
     }
 
 @app.get("/api/persons/{person_id}/profile")
-def api_profile(person_id: int, user: Tuple[int, str] = Depends(require_feature("profile"))):
+def api_profile(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart"))):
     """Computed 'about me' profile — deterministic, no AI."""
     user_id, email = user
     p = get_person(person_id, user_id)

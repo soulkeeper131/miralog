@@ -564,7 +564,7 @@
         .sum-caution strong { color: var(--text-heading); }
         .sum-caution-icon { flex-shrink: 0; font-size: 1rem; }
 
-        /* --- "За мен" profile --- */
+        /* --- astro portrait --- */
         .prof-grid {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 12px; margin-bottom: 20px;
@@ -1046,7 +1046,7 @@
                 aria-label="Предишни менюта" hidden>‹</button>
         <div class="tabs" id="tabStrip">
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
-            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">За мен</div>
+            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">Астро портрет</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope">Дневен хороскоп</div>
@@ -1072,11 +1072,11 @@
 
         <div id="tab-profile" class="tab-content">
             <div class="section">
-                <h2>Твоят профил</h2>
+                <h2>Астро портрет</h2>
                 <div id="profile-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
-                <h2>Личен портрет</h2>
+                <h2>Разчитане на портрета</h2>
                 <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме...</div></div>
             </div>
         </div>
