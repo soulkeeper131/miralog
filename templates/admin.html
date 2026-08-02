@@ -1316,6 +1316,17 @@
                 const smtp = d.smtp || {};
                 const tpl = d.templates || {};
                 const providers = ['anthropic', 'deepseek', 'openai'];
+                const modelsByProvider = ai.models || {};
+                const currentModel = ai.model || '';
+
+                function modelOptions(provider, selected) {
+                    const list = modelsByProvider[provider] || [];
+                    return list.map(function(m) {
+                        return '<option value="' + escapeHtml(m.id) + '"' +
+                            (m.id === selected ? ' selected' : '') + '>' +
+                            escapeHtml(m.label) + '</option>';
+                    }).join('');
+                }
 
                 let html = '<div class="section"><h2>AI</h2>' +
                     '<div class="form-grid">' +
@@ -1324,6 +1335,10 @@
                                 return '<option value="' + p + '"' + (ai.provider === p ? ' selected' : '') + '>' + p + '</option>';
                             }).join('') +
                         '</select></div>' +
+                        '<div class="form-group"><label for="aiModel">Модел</label><select id="aiModel">' +
+                            modelOptions(ai.provider || 'deepseek', currentModel) +
+                        '</select>' +
+                            '<div class="hint">За DeepSeek: Flash е по-евтин; Pro е по-силен за сложни разчитания.</div></div>' +
                         '<div class="form-group"><label for="aiKey">API ключ</label>' +
                             '<input type="password" id="aiKey" autocomplete="off" placeholder="' +
                             (ai.key_set ? escapeHtml(ai.key_masked || 'зададен') : 'не е зададен') + '">' +
@@ -1402,6 +1417,7 @@
                     '<div class="btn-row"><button class="btn" id="saveTplBtn">Запази шаблоните</button></div></div>';
 
                 el.innerHTML = html;
+                window._aiModelsByProvider = modelsByProvider;
                 bindSettings();
             } catch (e) {
                 if (!forbidden) el.innerHTML = '<div class="section"><div class="error">' + escapeHtml(e.message) + '</div></div>';
@@ -1417,8 +1433,22 @@
         }
 
         function bindSettings() {
+            const providerEl = document.getElementById('aiProvider');
+            const modelEl = document.getElementById('aiModel');
+            providerEl.addEventListener('change', function() {
+                const list = (window._aiModelsByProvider || {})[providerEl.value] || [];
+                modelEl.innerHTML = list.map(function(m) {
+                    return '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.label) + '</option>';
+                }).join('');
+            });
+
             document.getElementById('saveAiBtn').addEventListener('click', async function() {
-                const payload = { ai: { provider: document.getElementById('aiProvider').value } };
+                const payload = {
+                    ai: {
+                        provider: providerEl.value,
+                        model: modelEl.value,
+                    },
+                };
                 const key = document.getElementById('aiKey').value.trim();
                 if (key) payload.ai.key = key;
                 await saveSettings(payload, 'AI настройките са запазени.');

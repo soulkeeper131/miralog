@@ -677,6 +677,30 @@ def ai_failure_message(exc: Exception) -> str:
     log.warning("AI call failed: %s: %s", type(exc).__name__, exc)
     return AI_UNAVAILABLE
 
+# Allowed chat models per provider. First entry is the default when unset/invalid.
+AI_MODELS = {
+    "deepseek": [
+        ("deepseek-v4-pro", "DeepSeek V4 Pro"),
+        ("deepseek-v4-flash", "DeepSeek V4 Flash"),
+    ],
+    "openai": [
+        ("gpt-4o-mini", "GPT-4o mini"),
+        ("gpt-4o", "GPT-4o"),
+    ],
+    "anthropic": [
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5"),
+    ],
+}
+
+def resolve_ai_model(provider: str) -> str:
+    """Model id from admin settings, falling back to the provider default."""
+    options = AI_MODELS.get(provider) or AI_MODELS["deepseek"]
+    allowed = {m for m, _ in options}
+    saved = (get_setting("ai_model") or "").strip()
+    if saved in allowed:
+        return saved
+    return options[0][0]
+
 def get_ai_config() -> Tuple[Optional[str], str]:
     """Returns (api_key, provider) where provider is 'deepseek', 'openai' or 'anthropic'.
     DB setting takes priority over environment variables."""
@@ -1557,9 +1581,15 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
     """App-wide settings: AI key status, SMTP and email templates."""
     ai_key = get_setting("ai_api_key")
     smtp_pass = get_setting("smtp_password")
+    provider = get_setting("ai_provider") or "deepseek"
     return {
         "ai": {
-            "provider": get_setting("ai_provider") or "deepseek",
+            "provider": provider,
+            "model": resolve_ai_model(provider),
+            "models": {
+                p: [{"id": mid, "label": label} for mid, label in opts]
+                for p, opts in AI_MODELS.items()
+            },
             "key_set": bool(ai_key),
             "key_masked": ("•" * 8 + ai_key[-4:]) if ai_key and len(ai_key) > 4 else None,
         },
@@ -1584,6 +1614,12 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     ai = payload.get("ai") or {}
     if ai.get("provider"):
         set_setting("ai_provider", ai["provider"])
+    if ai.get("model"):
+        provider = ai.get("provider") or get_setting("ai_provider") or "deepseek"
+        allowed = {m for m, _ in AI_MODELS.get(provider, [])}
+        model = str(ai["model"]).strip()
+        if model in allowed:
+            set_setting("ai_model", model)
     if (ai.get("key") or "").strip():
         set_setting("ai_api_key", ai["key"].strip())
 
@@ -3211,12 +3247,13 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
     import urllib.request
     import urllib.error
 
+    model = resolve_ai_model(provider)
     try:
         if provider == "anthropic":
             req = urllib.request.Request(
                 "https://api.anthropic.com/v1/messages",
                 data=json.dumps({
-                    "model": "claude-sonnet-4-5",
+                    "model": model,
                     "max_tokens": max_tokens,
                     "messages": [{"role": "user", "content": prompt}],
                 }).encode(),
@@ -3233,10 +3270,8 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
 
         if provider == "deepseek":
             url = "https://api.deepseek.com/chat/completions"
-            model = "deepseek-v4-pro"
         else:
             url = "https://api.openai.com/v1/chat/completions"
-            model = "gpt-4o-mini"
         req = urllib.request.Request(
             url,
             data=json.dumps({
