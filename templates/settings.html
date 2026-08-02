@@ -18,6 +18,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Any display value beats the hidden attribute, so state it explicitly —
+           otherwise a hidden button with display:inline-flex stays on screen. */
+        [hidden] { display: none !important; }
         :root {
             --font-body: 'Inter', -apple-system, system-ui, sans-serif;
             --font-display: 'Cormorant Garamond', Georgia, serif;

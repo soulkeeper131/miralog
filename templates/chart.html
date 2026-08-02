@@ -1851,7 +1851,7 @@
             el.innerHTML = crystalLoader('Генериране на интерпретация...');
             try {
                 const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await fetch(url, { headers: authHeaders() });
+                const resp = await guardedFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadInterpretation(true)') +
@@ -1860,6 +1860,10 @@
                     el.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
                 }
             } catch (e) {
+                if (e instanceof LockedFeature) {
+                    renderLocked(el, e.detail, loadInterpretation);
+                    return;
+                }
                 el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
             }
         }

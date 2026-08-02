@@ -319,7 +319,31 @@ def init_db():
                     ("planets", 0, 0),
                     ("aspects", 0, 0),
                     ("numerology", 400, 1),
+                    ("interpretation", 600, 1),
                 ])
+
+        # Same for the price list: it is only seeded when empty, so later
+        # features would have no price and could never be bought on their own.
+        for feature_key, cents in [("interpretation", 600)]:
+            conn.execute(
+                "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
+                " VALUES (?, ?, 'EUR', 1) ON CONFLICT(feature_key) DO NOTHING",
+                (feature_key, cents))
+
+        # Features added after a plan was first seeded do not appear in existing
+        # rows, so the paid plan would silently lose access to them.
+        for key, feature in [("full", "interpretation")]:
+            row = conn.execute("SELECT features FROM plans WHERE key = ?", (key,)).fetchone()
+            if not row:
+                continue
+            try:
+                feats = json.loads(row[0])
+            except Exception:
+                continue
+            if feature not in feats:
+                feats.append(feature)
+                conn.execute("UPDATE plans SET features = ? WHERE key = ?",
+                             (json.dumps(feats), key))
 
         # Seed the two plans the landing page advertises.
         if conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0:
@@ -333,7 +357,8 @@ def init_db():
                      json.dumps(["chart", "planets", "aspects", "numerology"]), 0),
                     ("full", "Пълен достъп", 500, "EUR", "month", 50,
                      json.dumps(["chart", "planets", "aspects", "numerology", "profile",
-                                 "horoscope", "period", "synastry", "love", "akashic", "moon"]), 1),
+                                 "horoscope", "period", "synastry", "love", "akashic",
+                                 "moon", "interpretation"]), 1),
                 ]
             )
 
@@ -635,6 +660,22 @@ def clear_ai_cache(person_id: int) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (person_id,))
         conn.commit()
+
+# Shown when the AI service is not configured or fails. Customers cannot fix
+# either, so the message says what it means for them, not what is broken.
+AI_UNAVAILABLE = (
+    "Разчитането не може да се изготви в момента. Данните на картата ти по-долу "
+    "са изчислени и запазени — опитай пак малко по-късно."
+)
+
+def ai_failure_message(exc: Exception) -> str:
+    """A customer-facing message for a failed AI call.
+
+    The real error goes to the log for whoever runs the service; the reader
+    gets something honest and actionable instead of a stack trace.
+    """
+    log.warning("AI call failed: %s: %s", type(exc).__name__, exc)
+    return AI_UNAVAILABLE
 
 def get_ai_config() -> Tuple[Optional[str], str]:
     """Returns (api_key, provider) where provider is 'deepseek', 'openai' or 'anthropic'.
@@ -969,6 +1010,7 @@ FEATURE_CATALOGUE = [
     {"key": "love", "name": "Любовен хороскоп", "note": "Съвместимост по зодия"},
     {"key": "akashic", "name": "Акашови записи", "note": "Кармично разчитане"},
     {"key": "moon", "name": "Лунен календар", "note": "Фазите и какво носят"},
+    {"key": "interpretation", "name": "AI интерпретация", "note": "Пълно разчитане на картата"},
 ]
 
 # Default wording for the automated emails; admins can edit these.
@@ -2169,11 +2211,11 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 KARMIC_POINTS = ("True North Node", "True South Node", "Chiron", "Saturn", "Pluto", "True Lilith")
 
@@ -2352,11 +2394,11 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 @app.get("/api/persons/{person_id}/numerology")
 def api_numerology(person_id: int, user: Tuple[int, str] = Depends(require_feature("numerology"))):
@@ -2414,11 +2456,11 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 
 LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
@@ -2778,11 +2820,11 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
             set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 
 @app.post("/api/synastry")
@@ -2869,11 +2911,11 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 @app.post("/api/transits")
 def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_current_user)):
@@ -2987,11 +3029,11 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
             return {"interpretation": body, "summary": summary, "date": date_bg,
                     "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}", "date": date_bg}
+            return {"interpretation": ai_failure_message(e), "date": date_bg}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}", "date": date_bg}
+            return {"interpretation": ai_failure_message(e), "date": date_bg}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки.", "date": date_bg}
+    return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
 
 MAJOR_ASPECT_TYPES = {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
 # Fast-moving transit bodies (Moon, and daily-recalculated angles like Asc/MC) create
@@ -3126,11 +3168,11 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
             set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 class AIError(Exception):
     """Raised with a user-facing Bulgarian explanation of what went wrong with an AI call."""
@@ -3215,7 +3257,8 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
         raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
 
 @app.get("/api/persons/{person_id}/interpretation")
-def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+def api_interpretation(person_id: int, refresh: bool = False,
+                       user: Tuple[int, str] = Depends(require_feature("interpretation"))):
     """Generate AI interpretation of a natal chart. Cached — pass ?refresh=true to regenerate."""
     user_id, email = user
     p = get_person(person_id, user_id)
@@ -3300,11 +3343,11 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
-            return {"interpretation": f"⚠️ {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
         except Exception as e:
-            return {"interpretation": f"⚠️ Неочаквана грешка: {str(e)}"}
+            return {"interpretation": ai_failure_message(e)}
 
-    return {"interpretation": "⚠️ Няма конфигуриран AI API ключ. Задайте го в Настройки."}
+    return {"interpretation": AI_UNAVAILABLE}
 
 # --- PDF export and email delivery ---
 

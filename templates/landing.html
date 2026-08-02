@@ -53,6 +53,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Any display value beats the hidden attribute, so state it explicitly —
+           otherwise a hidden button with display:inline-flex stays on screen. */
+        [hidden] { display: none !important; }
         /* The rotating chart wheel sweeps past its own box at some angles.
            body alone is not enough — the root element grows too. */
         html { overflow-x: hidden; }
