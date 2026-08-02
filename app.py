@@ -243,7 +243,9 @@ def init_db():
                 "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, sort_order)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [
-                    ("demo", "Демо", 0, "EUR", "month", 1,
+                    # Two charts, so a bought "Съвместимост" has a second person
+                    # to compare against.
+                    ("demo", "Демо", 0, "EUR", "month", 2,
                      json.dumps(["chart", "planets", "aspects", "numerology"]), 0),
                     ("full", "Пълен достъп", 500, "EUR", "month", 50,
                      json.dumps(["chart", "planets", "aspects", "numerology", "profile",
@@ -389,7 +391,7 @@ def effective_plan(user: dict) -> dict:
     """The plan actually in force — falls back to demo once a paid one expires."""
     plan = get_plan(user.get("plan_key")) if plan_is_active(user) else None
     return plan or get_plan("demo") or {
-        "key": "demo", "name": "Демо", "max_persons": 1,
+        "key": "demo", "name": "Демо", "max_persons": 2,
         "features": ["chart", "planets", "aspects", "numerology"],
     }
 
