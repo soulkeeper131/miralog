@@ -1,0 +1,20 @@
+# Keep the build context small and never ship local state into the image.
+.git
+.gitignore
+.claude
+venv
+.venv
+__pycache__
+*.pyc
+*.pyo
+
+# Local database and downloaded ephemeris — both belong to the container's
+# own volume, not to the image.
+data
+ephe
+
+# Secrets must never reach the image; they come from the environment.
+.env
+
+docs
+README.md

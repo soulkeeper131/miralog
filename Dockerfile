@@ -11,13 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app
-COPY app.py .
-COPY chart_svg.py .
-COPY translations.py .
-COPY numerology.py .
-COPY bg_text.py .
-COPY pdf_report.py .
+# Copy app. A glob rather than a list of names: every module added later
+# ships automatically, instead of the build succeeding and the container
+# then dying on ModuleNotFoundError.
+COPY *.py ./
 COPY templates/ templates/
 COPY static/ static/
 
