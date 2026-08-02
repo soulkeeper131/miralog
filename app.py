@@ -1,4 +1,4 @@
-import os, re, json, sqlite3, datetime, urllib.parse
+import os, re, sys, json, sqlite3, datetime, urllib.parse
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
@@ -40,15 +40,81 @@ from pdf_report import build_reading_pdf
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
 DB_PATH = BASE_DIR / "data" / "persons.db"
-SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production-secret-key")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
+
+# ENVIRONMENT=production refuses to start on an insecure default, so a live
+# deployment can never silently run with the credentials published in the repo.
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
+
+DEV_SECRET_KEY = "change-me-in-production-secret-key"
+DEV_ADMIN_PASSWORD = "admin123"
+DEV_DEMO_PASSWORD = "demo123"
+
+SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@miralog.bg")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", DEV_ADMIN_PASSWORD)
 # A standing demo account, so the locked/paywalled views can be checked without
 # touching a real user. Set DEMO_EMAIL="" to skip creating it in production.
 DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@miralog.bg")
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "demo123")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", DEV_DEMO_PASSWORD)
+
+
+import logging
+log = logging.getLogger("miraskop")
+
+# A Windows console defaults to cp1251 and raises on Cyrillic. Reconfigure the
+# streams where possible so startup messages are readable instead of fatal.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+class ConfigError(RuntimeError):
+    """Raised when the deployment is configured in a way that is not safe to run."""
+
+
+def check_config() -> list:
+    """Validate the environment. Returns warnings; raises on anything unsafe.
+
+    Only production is strict — development keeps working with the defaults so
+    nobody has to set variables just to run the app locally.
+    """
+    problems, warnings = [], []
+
+    def demand(name, value, insecure, hint):
+        if value == insecure:
+            (problems if IS_PRODUCTION else warnings).append(
+                f"{name} е с примерната стойност от кода. {hint}")
+
+    demand("SECRET_KEY", SECRET_KEY, DEV_SECRET_KEY,
+           "Задай дълъг случаен низ — иначе всеки може да си направи валиден токен "
+           "и да влезе като администратор.")
+    demand("ADMIN_PASSWORD", ADMIN_PASSWORD, DEV_ADMIN_PASSWORD,
+           "Паролата „admin123“ е публикувана в кода на проекта.")
+
+    if len(SECRET_KEY) < 32 and SECRET_KEY != DEV_SECRET_KEY:
+        (problems if IS_PRODUCTION else warnings).append(
+            "SECRET_KEY е по-къс от 32 знака. Използвай поне 32 случайни знака.")
+
+    if DEMO_EMAIL and DEMO_PASSWORD == DEV_DEMO_PASSWORD and IS_PRODUCTION:
+        problems.append(
+            "Демо акаунтът е включен с паролата по подразбиране. Или задай "
+            "DEMO_PASSWORD, или изключи акаунта с DEMO_EMAIL=\"\".")
+
+    if problems:
+        lines = "\n".join(f"  • {p}" for p in problems)
+        raise ConfigError(
+            "Приложението не може да стартира с тези настройки:\n\n"
+            f"{lines}\n\n"
+            "Задай променливите в средата (в Coolify: Environment Variables) и рестартирай.\n"
+            "Виж .env.example за пълния списък. Генериране на ключ:\n"
+            "  python -c \"import secrets; print(secrets.token_urlsafe(48))\"\n"
+        )
+    return warnings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -262,6 +328,13 @@ def init_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail loudly before serving a single request rather than running insecurely.
+    # Logging, not print(): a Windows console defaults to cp1251 and would
+    # raise UnicodeEncodeError on Cyrillic.
+    for warning in check_config():
+        log.warning(warning)
+    if not IS_PRODUCTION:
+        log.info("ENVIRONMENT=%s - proverkite za produkciya sa izklyucheni.", ENVIRONMENT)
     init_db()
     yield
 
@@ -347,14 +420,14 @@ def create_token(user_id: int, email: str) -> str:
 def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> Tuple[int, str]:
     """Dependency that returns (user_id, email) from valid JWT token."""
     if not token:
-        raise HTTPException(401, "Not authenticated. Use Bearer token in Authorization header.")
+        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
         email = payload["email"]
         return user_id, email
     except JWTError:
-        raise HTTPException(401, "Invalid or expired token")
+        raise HTTPException(401, "Сесията изтече. Влез отново.")
 
 def get_user_by_id(user_id: int) -> Optional[dict]:
     with sqlite3.connect(DB_PATH) as conn:
@@ -810,7 +883,7 @@ def api_login(data: AuthRequest):
     """Login with email/password. Returns JWT token + user info."""
     user = get_user_by_email(data.email)
     if not user or not verify_password(data.password, user["password_hash"]):
-        raise HTTPException(401, "Invalid email or password")
+        raise HTTPException(401, "Грешен имейл или парола.")
     token = create_token(user["id"], user["email"])
     return {
         "token": token,
@@ -1694,7 +1767,7 @@ def api_get_person(person_id: int, user: Tuple[int, str] = Depends(get_current_u
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return p
 
 @app.post("/api/persons")
@@ -1750,7 +1823,7 @@ def api_delete_person(person_id: int, user: Tuple[int, str] = Depends(get_curren
         )
         conn.commit()
         if cur.rowcount == 0:
-            raise HTTPException(404, "Person not found")
+            raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return {"deleted": person_id}
 
 @app.get("/api/persons/{person_id}/natal")
@@ -1758,7 +1831,7 @@ def api_natal_chart(person_id: int, user: Tuple[int, str] = Depends(get_current_
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return compute_natal(p)
 
 @app.post("/api/persons/{person_id}/natal")
@@ -1771,9 +1844,9 @@ def api_natal_chart_update(
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     if not update_person(person_id, user_id, data):
-        raise HTTPException(500, "Failed to update person")
+        raise HTTPException(500, "Данните не можаха да се запазят. Опитай пак.")
     clear_ai_cache(person_id)
     p = get_person(person_id, user_id)
     return compute_natal(p)
@@ -1784,7 +1857,7 @@ def api_natal_chart_text(person_id: int, user: Tuple[int, str] = Depends(get_cur
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     chart_data = compute_natal(p)
     text = natal_to_text(p, chart_data)
     return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
@@ -1795,7 +1868,7 @@ def api_chart_svg(person_id: int, user: Tuple[int, str] = Depends(get_current_us
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     chart_data = compute_natal(p)
     from chart_svg import generate_chart_svg
     svg = generate_chart_svg(chart_data)
@@ -1961,7 +2034,7 @@ def api_profile(person_id: int, user: Tuple[int, str] = Depends(require_feature(
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return build_profile(compute_natal(p))
 
 @app.get("/api/persons/{person_id}/profile/interpretation")
@@ -1971,7 +2044,7 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     cache_key = "profile"
     if not refresh:
@@ -2100,7 +2173,7 @@ def api_akashic(person_id: int, user: Tuple[int, str] = Depends(require_feature(
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
     return build_karmic(compute_natal(p), numerology)
 
@@ -2115,7 +2188,7 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     cache_key = "akashic"
     if not refresh:
@@ -2241,7 +2314,7 @@ def api_numerology(person_id: int, user: Tuple[int, str] = Depends(require_featu
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return compute_numerology(p["name"], p["year"], p["month"], p["day"])
 
 @app.get("/api/persons/{person_id}/numerology/interpretation")
@@ -2250,7 +2323,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     current_year = datetime.date.today().year
     cache_key = f"numerology:{current_year}"
@@ -2548,7 +2621,7 @@ def api_love_match(data: LoveMatchRequest, user: Tuple[int, str] = Depends(requi
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     return resolve_love_match(data, p)
 
 @app.post("/api/love-match/interpretation")
@@ -2558,7 +2631,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     full = data.has_full_chart()
     if full:
@@ -2770,7 +2843,7 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(get_curr
         if target_date.tzinfo is None:
             target_date = target_date.replace(tzinfo=tz)
     except ValueError:
-        raise HTTPException(400, "Invalid target_date format. Use ISO format: YYYY-MM-DDTHH:MM:SS")
+        raise HTTPException(400, "Невалидна дата. Очакваният формат е ГГГГ-ММ-ДД или ГГГГ-ММ-ДДTЧЧ:ММ:СС.")
     return compute_transits(p, target_date)
 
 @app.get("/api/persons/{person_id}/daily-horoscope")
@@ -2780,7 +2853,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     tz_name = p.get("timezone", "Europe/Sofia")
     try:
@@ -2891,12 +2964,12 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(ge
         start = datetime.date.fromisoformat(data.start_date)
         end = datetime.date.fromisoformat(data.end_date)
     except ValueError:
-        raise HTTPException(400, "Invalid date format. Use ISO format: YYYY-MM-DD")
+        raise HTTPException(400, "Невалидна дата. Очакваният формат е ГГГГ-ММ-ДД.")
 
     if start > end:
-        raise HTTPException(400, "start_date must be before end_date")
+        raise HTTPException(400, "Началната дата трябва да е преди крайната.")
     if (end - start).days > 62:
-        raise HTTPException(400, "Period too long. Maximum range is 62 days.")
+        raise HTTPException(400, "Периодът е твърде дълъг. Максимумът е 62 дни — раздели го на части.")
 
     tz_name = p.get("timezone", "Europe/Sofia")
     try:
@@ -3097,7 +3170,7 @@ def api_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, s
     user_id, email = user
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     cache_key = "natal"
     if not refresh:
@@ -3281,7 +3354,7 @@ def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(ge
     user_id, _ = user
     person = get_person(person_id, user_id)
     if not person:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     pdf, filename = build_person_pdf(person, key)
     # The filename holds Cyrillic, so it goes out RFC 5987-encoded.
@@ -3302,7 +3375,7 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
     user_id, email = user
     person = get_person(person_id, user_id)
     if not person:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     to = (data.to or email or "").strip()
     if "@" not in to:
@@ -3402,7 +3475,7 @@ async def view_chart(request: Request, person_id: int):
 
     p = get_person(person_id, user_id)
     if not p:
-        raise HTTPException(404, "Person not found")
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
     chart_data = compute_natal(p)
     return HTMLResponse(templates.get_template("chart.html").render({
         "request": request,

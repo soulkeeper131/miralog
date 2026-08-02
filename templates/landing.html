@@ -153,6 +153,8 @@
         /* --- hero --- */
         .hero {
             position: relative;
+            /* the wheel is wider than the text column and must not widen the page */
+            overflow: hidden;
             padding: clamp(56px, 11vw, 108px) 0 clamp(40px, 7vw, 72px);
             text-align: center;
         }
@@ -161,6 +163,33 @@
             background: var(--hero-glow); pointer-events: none; z-index: 0;
         }
         .hero > * { position: relative; z-index: 1; }
+
+        /* A real zodiac wheel turning slowly behind the logo — it shows what the
+           product actually produces, rather than decorating with a stock glow. */
+        .sky {
+            position: absolute; z-index: 0; pointer-events: none;
+            top: clamp(-40px, -4vw, -10px); left: 50%; transform: translateX(-50%);
+            width: min(760px, 100vw); aspect-ratio: 1;
+            opacity: 0.5;
+            -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 38%, transparent 72%);
+            mask-image: radial-gradient(circle at 50% 42%, #000 38%, transparent 72%);
+        }
+        :root[data-theme="light"] .sky { opacity: 0.42; }
+        .sky svg { width: 100%; height: 100%; display: block; }
+        .sky .ring-outer { animation: sky-spin 190s linear infinite; transform-origin: 50% 50%; }
+        .sky .ring-inner { animation: sky-spin 130s linear infinite reverse; transform-origin: 50% 50%; }
+        .sky .twinkle { animation: sky-twinkle 4s ease-in-out infinite; }
+        .sky .twinkle:nth-of-type(2n) { animation-delay: 1.3s; }
+        .sky .twinkle:nth-of-type(3n) { animation-delay: 2.6s; }
+        @keyframes sky-spin { to { transform: rotate(360deg); } }
+        @keyframes sky-twinkle {
+            0%, 100% { opacity: 0.25; }
+            50% { opacity: 0.9; }
+        }
+        /* Motion is decorative; respect anyone who has asked for less of it. */
+        @media (prefers-reduced-motion: reduce) {
+            .sky .ring-outer, .sky .ring-inner, .sky .twinkle { animation: none; }
+        }
 
         /* The logo art is portrait with the wordmark at the bottom; the circle is
            centred on the illustration itself so nothing important gets clipped. */
@@ -342,6 +371,37 @@
             text-align: center; font-size: 0.83rem; color: var(--text-dim); margin-top: 20px;
         }
 
+        /* --- one-off unlocks: priced chips, for people who want one thing only --- */
+        .unlocks {
+            margin-top: 34px; padding-top: 30px;
+            border-top: 1px solid var(--border-soft);
+        }
+        .unlocks-head { text-align: center; margin-bottom: 20px; }
+        .unlocks-head h3 {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: clamp(1.4rem, 3.4vw, 1.9rem); line-height: 1.2;
+            color: var(--text-heading); margin-bottom: 8px;
+        }
+        .unlocks-head p {
+            color: var(--text-muted); font-size: 0.92rem;
+            max-width: 58ch; margin: 0 auto;
+        }
+        .chip-row {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+        }
+        .chip {
+            display: inline-flex; align-items: baseline; gap: 8px;
+            padding: 9px 16px; border-radius: 999px;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            font-size: 0.88rem; color: var(--text);
+            transition: border-color .15s ease, transform .15s ease;
+        }
+        .chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .chip .price {
+            font-weight: 700; color: var(--accent-lighter);
+            font-size: 0.92rem; white-space: nowrap;
+        }
+
         /* --- closing cta --- */
         .final {
             text-align: center;
@@ -373,6 +433,52 @@
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
     <header class="hero">
+        <!-- Decorative: the wheel says "this is astrology" faster than a sentence can. -->
+        <div class="sky" aria-hidden="true">
+            <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" fill="none">
+                <g class="ring-outer" stroke="var(--thistle)" stroke-width="0.8" opacity="0.85">
+                    <circle cx="200" cy="200" r="168"/>
+                    <circle cx="200" cy="200" r="150"/>
+                    <!-- twelve house divisions -->
+                    <g stroke-width="0.7">
+                        <path d="M200 32 V50 M200 350 V368"/>
+                        <path d="M32 200 H50 M350 200 H368"/>
+                        <path d="M84 84 L97 97 M303 303 L316 316"/>
+                        <path d="M316 84 L303 97 M97 303 L84 316"/>
+                        <path d="M119 41 L127 58 M273 342 L281 359"/>
+                        <path d="M281 41 L273 58 M127 342 L119 359"/>
+                        <path d="M41 119 L58 127 M342 273 L359 281"/>
+                        <path d="M41 281 L58 273 M342 127 L359 119"/>
+                    </g>
+                </g>
+                <g class="ring-inner" stroke="var(--sky-blue)" stroke-width="0.8" opacity="0.75">
+                    <circle cx="200" cy="200" r="118"/>
+                    <circle cx="200" cy="200" r="96"/>
+                    <!-- aspect lines across the chart, as a real reading would draw them -->
+                    <g stroke-width="0.6" opacity="0.85">
+                        <path d="M200 82 L302 259 L98 259 Z"/>
+                        <path d="M118 141 L282 259 M282 141 L118 259"/>
+                        <path d="M200 82 L200 318"/>
+                    </g>
+                </g>
+                <g fill="var(--baby-pink)" stroke="none">
+                    <circle class="twinkle" cx="200" cy="82" r="3.2"/>
+                    <circle class="twinkle" cx="302" cy="259" r="2.6"/>
+                    <circle class="twinkle" cx="98" cy="259" r="2.6"/>
+                    <circle class="twinkle" cx="118" cy="141" r="2.2"/>
+                    <circle class="twinkle" cx="282" cy="141" r="2.2"/>
+                    <circle class="twinkle" cx="200" cy="318" r="2.8"/>
+                </g>
+                <g fill="var(--icy-blue)" stroke="none" opacity="0.7">
+                    <circle class="twinkle" cx="66" cy="120" r="1.6"/>
+                    <circle class="twinkle" cx="338" cy="150" r="1.4"/>
+                    <circle class="twinkle" cx="120" cy="340" r="1.5"/>
+                    <circle class="twinkle" cx="300" cy="60" r="1.3"/>
+                    <circle class="twinkle" cx="52" cy="262" r="1.4"/>
+                    <circle class="twinkle" cx="352" cy="296" r="1.5"/>
+                </g>
+            </svg>
+        </div>
         <div class="wrap">
             <img class="hero-logo" src="/static/logo-full.png" alt="МираСкоп">
             <div class="kicker">Астрология на разбираем език</div>
@@ -497,7 +603,7 @@
                         <p class="plan-note">Без карта, без срок</p>
                     </div>
                     <ul class="plan-list">
-                        <li class="yes">Една натална карта</li>
+                        <li class="yes">Две натални карти</li>
                         <li class="yes">Пълното колело с домове и аспекти</li>
                         <li class="yes">Позициите с обяснение на български</li>
                         <li class="yes">Нумерологичните ти числа</li>
@@ -527,7 +633,25 @@
                     <a class="btn btn-primary plan-btn" href="/register">Вземи пълен достъп</a>
                 </article>
             </div>
-            <p class="plans-foot">Плащането още не е активно — създай акаунт сега и започни с демото.</p>
+            <div class="unlocks">
+                <div class="unlocks-head">
+                    <h3>Или плати само за това, което ти трябва</h3>
+                    <p>Не искаш абонамент? Отключи отделна функция еднократно — плащаш веднъж
+                       и ти остава завинаги, без месечна такса.</p>
+                </div>
+                <div class="chip-row">
+                    <span class="chip">Дневен хороскоп <span class="price">3 €</span></span>
+                    <span class="chip">Лунен календар <span class="price">3 €</span></span>
+                    <span class="chip">Нумерология <span class="price">4 €</span></span>
+                    <span class="chip">За мен <span class="price">5 €</span></span>
+                    <span class="chip">Периоди <span class="price">5 €</span></span>
+                    <span class="chip">Любовен хороскоп <span class="price">5 €</span></span>
+                    <span class="chip">Съвместимост <span class="price">7 €</span></span>
+                    <span class="chip">Акашови записи <span class="price">9 €</span></span>
+                </div>
+            </div>
+
+            <p class="plans-foot">Регистрацията е моментална и не иска карта. За абонамент или отделно отключване пиши ни — свързваме се същия ден.</p>
         </div>
     </section>
 
