@@ -450,6 +450,7 @@
                 </div>
             </div>
             <div class="topbar-right">
+                <a class="btn btn-cancel" id="moonLink" href="#"><span class="btn-ico" aria-hidden="true">🌙</span>Лунен календар</a>
                 <a class="btn btn-cancel" id="synastryLink" href="#"><span class="btn-ico" aria-hidden="true">💞</span>Съвместимост</a>
                 <a class="btn btn-cancel" id="adminLink" href="#" hidden><span class="btn-ico" aria-hidden="true">🛠</span>Админ</a>
                 <a class="btn btn-cancel" id="settingsLink" href="#"><span class="btn-ico" aria-hidden="true">⚙</span>Настройки</a>
@@ -588,6 +589,7 @@
         document.getElementById('userEmail').textContent = email;
         document.getElementById('settingsLink').href = '/settings?token=' + encodeURIComponent(getToken());
         document.getElementById('synastryLink').href = '/synastry?token=' + encodeURIComponent(getToken());
+        document.getElementById('moonLink').href = '/moon?token=' + encodeURIComponent(getToken());
 
         // The admin link only appears for accounts that actually hold the role.
         (async function revealAdminLink() {

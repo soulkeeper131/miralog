@@ -66,7 +66,7 @@
             /* Spacing scale. Sections breathe more than the blocks inside them,
                and the rhythm tightens on small screens rather than scaling down
                everything uniformly. */
-            --space-section: clamp(56px, 8vw, 104px);
+            --space-section: clamp(48px, 5vw, 72px);
             --space-block: clamp(28px, 4.5vw, 52px);
             --space-tight: clamp(14px, 2vw, 22px);
             --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
@@ -302,7 +302,16 @@
         .cta-note { font-size: 0.82rem; color: var(--text-dim); }
 
         /* --- sections --- */
-        section { padding: var(--space-section) 0; }
+        section { padding: var(--space-section) 0; position: relative; }
+        /* Alternate the ground instead of separating with dead space. */
+        section:nth-of-type(even) { background: var(--bg-raised); }
+        section:nth-of-type(even)::before,
+        section:nth-of-type(even)::after {
+            content: ""; position: absolute; left: 0; right: 0; height: 1px;
+            background: var(--border-soft);
+        }
+        section:nth-of-type(even)::before { top: 0; }
+        section:nth-of-type(even)::after { bottom: 0; }
         /* The closing call to action follows the pricing directly; a full
            section gap between them reads as a dead zone. */
         section + section:last-of-type { padding-top: 0; }
@@ -406,7 +415,9 @@
         .card {
             position: relative; overflow: hidden; isolation: isolate;
             background: var(--bg-card); border: 1px solid var(--border-soft);
-            border-radius: 16px; padding: 26px 24px 24px;
+            border-radius: 16px;
+            /* Extra top padding leaves the scene a clear band of its own. */
+            padding: 74px 24px 26px;
             display: flex; flex-direction: column;
             box-shadow: var(--shadow-card);
             transition: transform .3s cubic-bezier(.2,.7,.3,1),
@@ -421,11 +432,20 @@
             pointer-events: none;
             /* Each scene inherits its card's own hue via currentColor. */
             color: var(--on-thistle);
-            /* Fade the scene out over the text column so nothing competes with
-               the copy — the art belongs to the top-right corner. */
-            -webkit-mask-image: linear-gradient(200deg, #000 0%, rgba(0,0,0,.55) 38%, transparent 62%);
-            mask-image: linear-gradient(200deg, #000 0%, rgba(0,0,0,.55) 38%, transparent 62%);
+            /* The scene fills the card and fades toward the copy, so it reads as
+               the card's own ground rather than a corner ornament. */
+            -webkit-mask-image: linear-gradient(#000 0%, rgba(0,0,0,.85) 32%, rgba(0,0,0,.25) 62%, transparent 88%);
+            mask-image: linear-gradient(#000 0%, rgba(0,0,0,.85) 32%, rgba(0,0,0,.25) 62%, transparent 88%);
         }
+        /* A tinted wash under each scene — this is what makes the card feel
+           themed rather than decorated. */
+        .card-scene::before {
+            content: ""; position: absolute; inset: 0;
+            background: radial-gradient(130% 75% at 72% 0%,
+                        currentColor 0%, transparent 70%);
+            opacity: .13;
+        }
+        :root[data-theme="light"] .card-scene::before { opacity: .14; }
         .s-day { color: var(--on-icy); }
         .s-chart { color: var(--on-pink); }
         .s-period { color: var(--on-sky); }
@@ -438,37 +458,37 @@
 
         /* 1 — За мен: three concentric rings, the natal wheel's own structure. */
         .s-self i {
-            border: 1px solid currentColor; opacity: .16;
-            right: -30px; top: -30px;
+            border: 1px solid currentColor; opacity: .26;
+            right: -46px; top: -46px;
             animation: drift-spin 42s linear infinite;
         }
-        .s-self i:nth-child(1) { width: 190px; height: 190px; }
-        .s-self i:nth-child(2) { width: 140px; height: 140px; right: -5px; top: -5px;
+        .s-self i:nth-child(1) { width: 250px; height: 250px; }
+        .s-self i:nth-child(2) { width: 186px; height: 186px; right: 2px; top: 2px;
                                  animation-duration: 34s; animation-direction: reverse; }
-        .s-self i:nth-child(3) { width: 92px; height: 92px; right: 19px; top: 19px;
+        .s-self i:nth-child(3) { width: 124px; height: 124px; right: 33px; top: 33px;
                                  border-style: dashed; animation-duration: 26s; }
 
         /* 2 — Денят ти: a moon crossing, with its phase carved by a second disc. */
         .s-day i:nth-child(1) {
-            width: 104px; height: 104px; right: 22px; top: -18px;
-            background: currentColor; opacity: .13;
+            width: 150px; height: 150px; right: 16px; top: -30px;
+            background: currentColor; opacity: .2;
             animation: moon-cross 26s ease-in-out infinite;
         }
         .s-day i:nth-child(2) {
-            width: 104px; height: 104px; right: 46px; top: -18px;
+            width: 150px; height: 150px; right: 50px; top: -30px;
             background: var(--bg-card); opacity: 1;
             animation: moon-cross 26s ease-in-out infinite;
         }
 
         /* 3 — Натална карта: a wheel with house spokes, slowly turning. */
         .s-chart i:nth-child(1) {
-            width: 168px; height: 168px; right: -34px; top: -34px;
-            border: 1px solid currentColor; opacity: .18;
+            width: 226px; height: 226px; right: -48px; top: -48px;
+            border: 1px solid currentColor; opacity: .26;
             animation: drift-spin 60s linear infinite;
         }
         .s-chart i:nth-child(2) {
-            width: 168px; height: 168px; right: -34px; top: -34px;
-            opacity: .14;
+            width: 226px; height: 226px; right: -48px; top: -48px;
+            opacity: .2;
             background:
                 conic-gradient(from 0deg, currentColor 0 1deg, transparent 1deg 30deg,
                     currentColor 30deg 31deg, transparent 31deg 60deg,
@@ -489,27 +509,27 @@
 
         /* 4 — Периоди: a timeline of transit bars sliding past. */
         .s-period i {
-            border-radius: 2px; height: 3px; background: currentColor;
-            right: 0; opacity: .16;
+            border-radius: 2px; height: 4px; background: currentColor;
+            right: 0; opacity: .24;
             animation: bar-slide 18s ease-in-out infinite;
         }
-        .s-period i:nth-child(1) { width: 96px; top: 22px; }
-        .s-period i:nth-child(2) { width: 64px; top: 40px; animation-delay: -6s; opacity: .12; }
-        .s-period i:nth-child(3) { width: 110px; top: 58px; animation-delay: -12s; opacity: .14; }
-        .s-period i:nth-child(4) { width: 48px; top: 76px; animation-delay: -3s; opacity: .1; }
+        .s-period i:nth-child(1) { width: 132px; top: 20px; }
+        .s-period i:nth-child(2) { width: 86px;  top: 42px; animation-delay: -6s;  opacity: .18; }
+        .s-period i:nth-child(3) { width: 154px; top: 64px; animation-delay: -12s; opacity: .21; }
+        .s-period i:nth-child(4) { width: 66px;  top: 86px; animation-delay: -3s;  opacity: .15; }
 
         /* 5 — Съвместимост: two charts overlapping, breathing toward each other. */
         .s-match i {
-            width: 116px; height: 116px; border: 1px solid currentColor; opacity: .18;
-            top: -22px;
+            width: 158px; height: 158px; border: 1px solid currentColor; opacity: .26;
+            top: -34px;
             animation: pair-breathe 11s ease-in-out infinite;
         }
-        .s-match i:nth-child(1) { right: 44px; }
-        .s-match i:nth-child(2) { right: -18px; animation-direction: reverse; }
+        .s-match i:nth-child(1) { right: 58px; }
+        .s-match i:nth-child(2) { right: -28px; animation-direction: reverse; }
 
         /* 6 — Акашови записи: a slow starfield, the oldest record there is. */
         .s-karma i {
-            width: 3px; height: 3px; background: currentColor;
+            width: 4px; height: 4px; background: currentColor;
             animation: star-pulse 5s ease-in-out infinite;
         }
         .s-karma i:nth-child(1) { right: 30px; top: 24px; opacity: .5; }
@@ -518,8 +538,8 @@
         .s-karma i:nth-child(4) { right: 96px; top: 30px; animation-delay: -3.1s; opacity: .3; }
         .s-karma i:nth-child(5) { right: 22px; top: 104px; animation-delay: -4s; opacity: .4; }
         .s-karma i:nth-child(6) {
-            width: 132px; height: 132px; right: 6px; top: 6px;
-            background: none; border: 1px dashed currentColor; opacity: .12;
+            width: 178px; height: 178px; right: -10px; top: -10px;
+            background: none; border: 1px dashed currentColor; opacity: .2;
             animation: drift-spin 70s linear infinite;
         }
 
@@ -543,41 +563,16 @@
 
         /* Hover wakes the scene rather than adding a separate effect. */
         .card:hover .card-scene { opacity: 1; }
-        .card .card-scene { opacity: .72; transition: opacity .3s ease; }
+        .card .card-scene { opacity: .9; transition: opacity .3s ease; }
 
-        /* --- card glyphs: real astrological marks, not app-drawer icons --- */
-        .card-ico {
-            position: relative;
-            width: 52px; height: 52px; border-radius: 50%; margin-bottom: 18px;
-            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-            border: 1px solid var(--border-soft);
-            transition: border-color .3s ease, transform .3s cubic-bezier(.2,.7,.3,1);
-        }
-        /* A hairline orbit around the glyph, drawn only on hover. */
-        .card-ico::after {
-            content: ""; position: absolute; inset: -5px; border-radius: 50%;
-            border: 1px solid var(--accent-light); opacity: 0;
-            transition: opacity .3s ease, transform .5s cubic-bezier(.2,.7,.3,1);
-            transform: scale(.9);
-        }
-        .card:hover .card-ico { transform: translateY(-1px); }
-        .card:hover .card-ico::after { opacity: .55; transform: scale(1); }
-        .card-glyph {
-            /* Astrological glyphs vary a lot in drawn width between fonts, so
-               they get a fixed optical box and centre inside it. */
-            display: flex; align-items: center; justify-content: center;
-            width: 26px; height: 26px;
-            font-size: 1.45rem; line-height: 1;
-            transition: transform .45s cubic-bezier(.2,.7,.3,1);
-        }
-        .card:hover .card-glyph { transform: rotate(8deg) scale(1.08); }
-
-        .i-thistle { background: var(--surface-thistle); color: var(--on-thistle); }
-        .i-icy { background: var(--surface-icy); color: var(--on-icy); }
-        .i-petal { background: var(--surface-petal); color: var(--on-pink); }
-        .i-sky { background: var(--surface-sky); color: var(--on-sky); }
-        .i-pink { background: var(--surface-pink); color: var(--on-pink); }
-        .i-gilt { background: var(--gilt-soft); color: var(--gilt); }
+        /* The scene alone carries the theme now; a glyph badge on top of it was
+           one signal too many. The tints stay — the scenes borrow them. */
+        .i-thistle { color: var(--on-thistle); }
+        .i-icy { color: var(--on-icy); }
+        .i-petal { color: var(--on-pink); }
+        .i-sky { color: var(--on-sky); }
+        .i-pink { color: var(--on-pink); }
+        .i-gilt { color: var(--gilt); }
 
         .card h3 {
             font-family: var(--font-display); font-weight: 600;
@@ -603,6 +598,66 @@
             .card:hover .card-glyph { transform: none; }
             /* The scenes stay — they just stop moving. */
             .card-scene i { animation: none !important; }
+        }
+
+        /* --- mid-page calls to action, so the only way to act is not the bottom --- */
+        .mid-cta {
+            display: flex; flex-direction: column; align-items: center; gap: 10px;
+            margin-top: var(--space-block);
+        }
+        .mid-cta-note {
+            font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: .08em;
+            color: var(--text-dim);
+        }
+
+        /* --- sample reading: facts on the left, the prose they produce on the right --- */
+        .sample {
+            display: grid; grid-template-columns: 280px 1fr; gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 900px) { .sample { grid-template-columns: 1fr; } }
+        .sample-side {
+            display: flex; flex-direction: column; gap: 10px;
+            padding: 20px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+        }
+        @media (max-width: 900px) {
+            /* Two columns of facts read better than one tall stack on a tablet. */
+            .sample-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+        }
+        .sample-fact {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+        }
+        .sample-fact:last-child { border-bottom: none; }
+        .sample-glyph {
+            width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--surface-thistle); color: var(--on-thistle);
+            font-size: 1.05rem; line-height: 1;
+        }
+        .sample-label {
+            display: block; font-size: 0.86rem; font-weight: 500; color: var(--text);
+        }
+        .sample-val {
+            display: block; font-family: var(--font-mono); font-size: 0.72rem;
+            color: var(--gilt); font-variant-numeric: tabular-nums; margin-top: 2px;
+        }
+        .sample-main {
+            padding: 26px 28px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            box-shadow: var(--shadow-card);
+        }
+        .sample-eyebrow {
+            font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: .14em;
+            text-transform: uppercase; color: var(--gilt); margin-bottom: 14px;
+        }
+        .sample-main p { color: var(--text-soft); line-height: 1.75; margin-bottom: 14px; }
+        .sample-main p strong { color: var(--text-heading); font-weight: 600; }
+        .sample-foot {
+            font-size: 0.82rem !important; color: var(--text-dim) !important;
+            border-top: 1px solid var(--border-soft); padding-top: 14px;
+            margin-bottom: 0 !important;
         }
 
         /* --- steps: a genuine sequence, so the numbers earn their place --- */
@@ -896,42 +951,36 @@
             <div class="cards">
                 <article class="card">
                     <div class="card-scene s-self" aria-hidden="true"><i></i><i></i><i></i></div>
-                    <div class="card-ico i-thistle"><span class="card-glyph">☉</span></div>
                     <h3>За мен</h3>
                     <p class="card-src">Слънце · Луна · Асцендент</p>
                     <p>Кой си ти в едно изречение — и после подробно. Същност, емоции, как те виждат другите, силните ти страни и слабите места, казани честно и без плашене.</p>
                 </article>
                 <article class="card">
                     <div class="card-scene s-day" aria-hidden="true"><i></i><i></i></div>
-                    <div class="card-ico i-icy"><span class="card-glyph">☽</span></div>
                     <h3>Денят ти</h3>
                     <p class="card-src">Транзити за днес</p>
                     <p>Какво е благоприятно днес и какво не. Конкретно: какво да свършиш, какво да отложиш, в какво да внимаваш — всяко от тях изведено от реален транзит.</p>
                 </article>
                 <article class="card">
                     <div class="card-scene s-chart" aria-hidden="true"><i></i><i></i></div>
-                    <div class="card-ico i-petal"><span class="card-glyph">⊕</span></div>
                     <h3>Натална карта</h3>
                     <p class="card-src">Плацидус · 12 дома</p>
                     <p>Истинско колело с домовете по Плацидус, аспектите и всяка планета. Плюс обяснение до всяка позиция какво означава — на български.</p>
                 </article>
                 <article class="card">
                     <div class="card-scene s-period" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-                    <div class="card-ico i-sky"><span class="card-glyph">♃</span></div>
                     <h3>Периоди напред</h3>
                     <p class="card-src">До 62 дни напред</p>
                     <p>Избираш дати и виждаш кои дни носят промяна: кой транзит започва, кой отпада и какво означава това за седмиците пред теб.</p>
                 </article>
                 <article class="card">
                     <div class="card-scene s-match" aria-hidden="true"><i></i><i></i></div>
-                    <div class="card-ico i-pink"><span class="card-glyph">♀</span></div>
                     <h3>Съвместимост</h3>
                     <p class="card-src">Синастрия · Композит</p>
                     <p>Синастрия между двама души: как се разбирате емоционално, къде има химия, къде има търкания и какъв е дългосрочният потенциал.</p>
                 </article>
                 <article class="card">
                     <div class="card-scene s-karma" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-                    <div class="card-ico i-gilt"><span class="card-glyph">☊</span></div>
                     <h3>Акашови записи и нумерология</h3>
                     <p class="card-src">Лунни възли · Хирон · Сатурн</p>
                     <p>Кармичните теми от лунните възли, Хирон и Сатурн — и числата на съдбата ти, изчислени по питагоровата система.</p>
@@ -962,6 +1011,63 @@
                     <h3>Четеш на своя език</h3>
                     <p>Всяка позиция, аспект и дом идват с обяснение. Разчитанията са структурирани, не изсипани — четат се леко.</p>
                 </div>
+            </div>
+            <div class="mid-cta">
+                <a class="btn btn-primary" href="/register">Направи първата си карта</a>
+                <span class="mid-cta-note">Отнема под минута · без карта за плащане</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- What a reading actually looks like. Claims are cheap; a sample is not. -->
+    <section id="sample">
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Ето как изглежда едно разчитане</h2>
+                <p>Не общи приказки за зодията ти, а изречения, изведени от конкретна позиция в твоята карта.</p>
+            </div>
+            <div class="sample">
+                <div class="sample-side">
+                    <div class="sample-fact">
+                        <span class="sample-glyph">☉</span>
+                        <div>
+                            <span class="sample-label">Слънце</span>
+                            <span class="sample-val">10° Козирог · 10-ти дом</span>
+                        </div>
+                    </div>
+                    <div class="sample-fact">
+                        <span class="sample-glyph">☽</span>
+                        <div>
+                            <span class="sample-label">Луна</span>
+                            <span class="sample-val">22° Дева · 6-ти дом</span>
+                        </div>
+                    </div>
+                    <div class="sample-fact">
+                        <span class="sample-glyph">↑</span>
+                        <div>
+                            <span class="sample-label">Асцендент</span>
+                            <span class="sample-val">14° Козирог</span>
+                        </div>
+                    </div>
+                    <div class="sample-fact">
+                        <span class="sample-glyph">△</span>
+                        <div>
+                            <span class="sample-label">Слънце тригон Луна</span>
+                            <span class="sample-val">орб 2.4°</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="sample-main">
+                    <p class="sample-eyebrow">Из „Личен портрет“</p>
+                    <p><strong>Слънцето ти е в Козирог, в 10-ти дом.</strong> Това е позицията на човек, чиято самооценка минава през свършена работа. Признанието значи за теб повече, отколкото признаваш — и точно затова умееш да търпиш дълго, докато стигнеш до него.</p>
+                    <p><strong>Луната в Дева</strong> добавя нужда от ред, за да си спокоен. Когато нещата около теб са подредени, тревогата стихва; когато не са, тя се прехвърля върху дребното.</p>
+                    <p><strong>Тригонът между Слънцето и Луната</strong> е рядък късмет: това, което искаш, и това, от което имаш нужда, сочат в една посока. Малко хора имат тази вътрешна съгласуваност.</p>
+                    <p class="sample-foot">Всяко изречение стъпва на позиция вляво. Нищо не е добавено „за красота“.</p>
+                </div>
+            </div>
+            <div class="mid-cta">
+                <a class="btn btn-primary" href="/register">Виж своето разчитане</a>
+                <span class="mid-cta-note">Демото включва две карти безплатно</span>
             </div>
         </div>
     </section>
