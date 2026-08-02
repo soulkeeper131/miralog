@@ -1,0 +1,61 @@
+/* Shared styling for features the account has not unlocked.
+   Used by chart.html, moon.html and synastry.html. */
+
+/* --- locked feature: a teaser behind frosted glass --- */
+.locked { position: relative; border-radius: 14px; overflow: hidden; }
+.locked-teaser {
+    filter: blur(6px);
+    opacity: 0.55;
+    pointer-events: none;
+    user-select: none;
+    padding: 18px 20px;
+    min-height: 260px;
+}
+.locked-teaser h4 {
+    color: var(--accent-light); font-size: 1rem; margin: 14px 0 6px;
+}
+.locked-teaser p { margin-bottom: 10px; line-height: 1.7; }
+.locked-overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; text-align: center; padding: 24px 20px;
+    background: linear-gradient(180deg,
+        color-mix(in srgb, var(--bg-card) 55%, transparent) 0%,
+        color-mix(in srgb, var(--bg-card) 88%, transparent) 45%);
+}
+.locked-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    background: var(--surface-thistle); color: var(--on-thistle);
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+}
+.locked-title {
+    font-family: var(--font-display); font-size: 1.45rem; font-weight: 700;
+    color: var(--text-heading); line-height: 1.2;
+}
+.locked-note {
+    color: var(--text-muted); font-size: 0.88rem; line-height: 1.6;
+    max-width: 42ch;
+}
+.locked-price {
+    font-size: 1.6rem; font-weight: 700; color: var(--text);
+    font-family: var(--font-display);
+}
+.locked-price small {
+    display: block; font-family: var(--font-body);
+    font-size: 0.72rem; font-weight: 500; color: var(--text-dim);
+    letter-spacing: 0.02em;
+}
+.locked-btn {
+    padding: 11px 22px; border-radius: 12px; border: none;
+    background: var(--accent); color: #fff; cursor: pointer;
+    font-family: var(--font-body); font-size: 0.92rem; font-weight: 600;
+    min-height: 44px;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+}
+.locked-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.locked-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+@media (max-width: 600px) {
+    .locked-teaser { min-height: 300px; }
+    .locked-title { font-size: 1.25rem; }
+}

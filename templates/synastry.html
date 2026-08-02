@@ -16,6 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -316,6 +317,7 @@
         </div>
     </div>
 
+    <script src="/static/locked.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -435,11 +437,6 @@
         function clearBanner() {
             document.getElementById('banner').innerHTML = '';
         }
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
 
         let persons = [];
 
@@ -485,7 +482,7 @@
             document.getElementById('interpretBtn').style.display = 'none';
             document.getElementById('interpretationBox').style.display = 'none';
             try {
-                const resp = await fetch('/api/synastry', {
+                const resp = await guardedFetch('/api/synastry', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person1_id: Number(id1), person2_id: Number(id2) })
@@ -499,6 +496,13 @@
                 synastryPerson2Id = Number(id2);
                 renderResult(data);
             } catch (e) {
+                if (e instanceof LockedFeature) {
+                    document.getElementById('resultStats').innerHTML = '';
+                    renderLocked(document.getElementById('resultAspects'), e.detail, computeSynastry);
+                    btn.disabled = false;
+                    btn.textContent = 'Изчисли съвместимост';
+                    return;
+                }
                 document.getElementById('resultSection').style.display = 'none';
                 document.getElementById('resultAspects').innerHTML = '';
                 showBanner('Грешка при изчисляване: ' + e.message);
@@ -553,7 +557,7 @@
             box.innerHTML = crystalLoader('Генериране на интерпретация чрез AI...');
 
             try {
-                const resp = await fetch('/api/synastry/interpretation', {
+                const resp = await guardedFetch('/api/synastry/interpretation', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person1_id: synastryPerson1Id, person2_id: synastryPerson2Id })
@@ -568,7 +572,11 @@
                     box.innerHTML = '<div class="error-banner">Не можа да се генерира интерпретация.</div>';
                 }
             } catch (e) {
-                box.innerHTML = '<div class="error-banner">Грешка: ' + e.message + '</div>';
+                if (e instanceof LockedFeature) {
+                    renderLocked(box, e.detail, getInterpretation);
+                } else {
+                    box.innerHTML = '<div class="error-banner">Грешка: ' + e.message + '</div>';
+                }
             } finally {
                 btn.disabled = false;
                 btn.textContent = '🔄 Ново четене';

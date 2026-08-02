@@ -16,6 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -619,64 +620,6 @@
         .cache-label { font-size: 0.75rem; color: var(--text-dim); }
         .cache-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-        /* --- locked feature: a teaser behind frosted glass --- */
-        .locked { position: relative; border-radius: 14px; overflow: hidden; }
-        .locked-teaser {
-            filter: blur(6px);
-            opacity: 0.55;
-            pointer-events: none;
-            user-select: none;
-            padding: 18px 20px;
-            min-height: 260px;
-        }
-        .locked-teaser h4 {
-            color: var(--accent-light); font-size: 1rem; margin: 14px 0 6px;
-        }
-        .locked-teaser p { margin-bottom: 10px; line-height: 1.7; }
-        .locked-overlay {
-            position: absolute; inset: 0;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 10px; text-align: center; padding: 24px 20px;
-            background: linear-gradient(180deg,
-                color-mix(in srgb, var(--bg-card) 55%, transparent) 0%,
-                color-mix(in srgb, var(--bg-card) 88%, transparent) 45%);
-        }
-        .locked-badge {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 4px 12px; border-radius: 999px;
-            background: var(--surface-thistle); color: var(--on-thistle);
-            font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
-        }
-        .locked-title {
-            font-family: var(--font-display); font-size: 1.45rem; font-weight: 700;
-            color: var(--text-heading); line-height: 1.2;
-        }
-        .locked-note {
-            color: var(--text-muted); font-size: 0.88rem; line-height: 1.6;
-            max-width: 42ch;
-        }
-        .locked-price {
-            font-size: 1.6rem; font-weight: 700; color: var(--text);
-            font-family: var(--font-display);
-        }
-        .locked-price small {
-            display: block; font-family: var(--font-body);
-            font-size: 0.72rem; font-weight: 500; color: var(--text-dim);
-            letter-spacing: 0.02em;
-        }
-        .locked-btn {
-            padding: 11px 22px; border-radius: 12px; border: none;
-            background: var(--accent); color: #fff; cursor: pointer;
-            font-family: var(--font-body); font-size: 0.92rem; font-weight: 600;
-            min-height: 44px;
-            transition: background-color 0.15s ease, transform 0.15s ease;
-        }
-        .locked-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
-        .locked-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-        @media (max-width: 600px) {
-            .locked-teaser { min-height: 300px; }
-            .locked-title { font-size: 1.25rem; }
-        }
         .btn-refresh {
             padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border);
             background: transparent; color: var(--accent-light);
@@ -1346,6 +1289,7 @@
         </div>
     </div>
 
+    <script src="/static/locked.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -1482,100 +1426,6 @@
                 return payload.email || '';
             } catch (e) {
                 return '';
-            }
-        }
-
-        /* ---------- locked features ---------- */
-
-        // Thrown by guardedFetch when the server answers 402; carries the offer
-        // so the caller can render the teaser instead of an error.
-        class LockedFeature extends Error {
-            constructor(detail) {
-                super((detail && detail.message) || 'Функцията не е отключена.');
-                this.detail = detail || {};
-            }
-        }
-
-        // Every panel fetch goes through this, so a 402 always lands as a
-        // LockedFeature rather than a generic "HTTP 402" string.
-        async function guardedFetch(url, options) {
-            const resp = await fetch(url, options);
-            if (resp.status === 402) {
-                const body = await resp.json().catch(() => ({}));
-                const detail = body.detail;
-                throw new LockedFeature(typeof detail === 'object' ? detail : { message: detail });
-            }
-            return resp;
-        }
-
-        function money(cents, currency) {
-            const value = (Number(cents) || 0) / 100;
-            const symbol = (currency || 'EUR') === 'EUR' ? '€' : currency;
-            return value.toFixed(2).replace('.00', '') + ' ' + symbol;
-        }
-
-        // Filler text sitting under the blur — long enough to look like a real
-        // reading, vague enough to give nothing away.
-        function teaserText(featureName) {
-            const para = 'Разчитането е изготвено на база точните позиции в картата ти и обяснява какво означават те за теб — къде са силните ти страни, какво те дърпа назад и кои периоди работят във твоя полза.';
-            return `<div class="locked-teaser">
-                <h4>${escapeHtml(featureName || 'Разчитане')}</h4>
-                <p>${para}</p>
-                <h4>Какво ти помага</h4>
-                <p>${para}</p>
-                <h4>За какво да внимаваш</h4>
-                <p>${para}</p>
-            </div>`;
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text === null || text === undefined ? '' : String(text);
-            return div.innerHTML;
-        }
-
-        // Renders the blurred teaser plus the price, into the panel that failed.
-        function renderLocked(el, detail, retry) {
-            const offer = detail.offer;
-            const name = detail.feature_name || (offer && offer.name) || 'Тази функция';
-            const priceBlock = offer
-                ? `<div class="locked-price">${money(offer.price_cents, offer.currency)}
-                       <small>еднократно, остава завинаги</small></div>
-                   <button class="locked-btn" data-feature="${escapeHtml(offer.key)}">Отключи „${escapeHtml(offer.name)}“</button>`
-                : `<a class="locked-btn" href="/settings?token=${encodeURIComponent(getToken())}"
-                       style="text-decoration:none;">Виж пакетите</a>`;
-
-            el.classList.add('locked');
-            el.innerHTML = teaserText(name) + `
-                <div class="locked-overlay">
-                    <span class="locked-badge">🔒 Заключено</span>
-                    <div class="locked-title">${escapeHtml(name)}</div>
-                    <div class="locked-note">${escapeHtml(detail.message || '')}</div>
-                    ${priceBlock}
-                </div>`;
-
-            const btn = el.querySelector('.locked-btn[data-feature]');
-            if (btn) btn.addEventListener('click', () => requestUnlock(btn, btn.dataset.feature, retry));
-        }
-
-        async function requestUnlock(btn, featureKey, retry) {
-            btn.disabled = true;
-            const original = btn.textContent;
-            btn.textContent = 'Изпращане…';
-            try {
-                const resp = await fetch('/api/features/' + encodeURIComponent(featureKey) + '/request', {
-                    method: 'POST', headers: authHeaders(),
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
-                if (data.already && retry) { retry(); return; }
-                alert('Заявката е изпратена. Ще се свържем с теб, за да уредим плащането — '
-                    + 'след това функцията се отключва за постоянно.');
-                btn.textContent = 'Заявката е изпратена';
-            } catch (e) {
-                alert('Заявката не можа да се изпрати: ' + e.message);
-                btn.disabled = false;
-                btn.textContent = original;
             }
         }
 

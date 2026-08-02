@@ -2300,7 +2300,7 @@ LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
 
 @app.get("/api/lunar-calendar")
 def api_lunar_calendar(year: Optional[int] = None, month: Optional[int] = None,
-                       user: Tuple[int, str] = Depends(get_current_user)):
+                       user: Tuple[int, str] = Depends(require_feature("moon"))):
     """Moon phase and sign for every day of a month, with what each favours.
 
     Computed from ephemeris data, so it holds for any month, past or future.
