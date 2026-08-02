@@ -50,25 +50,36 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
-            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
-            --font-display: 'Cormorant Garamond', Georgia, serif;
+            /* Fraunces has an optical size axis and a 'wonk' that reads like an
+               engraved star atlas; Outfit keeps the running text quiet beside it.
+               Mono is for anything that is literally data: degrees, dates, prices. */
+            --font-body: 'Outfit', -apple-system, system-ui, sans-serif;
+            --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
             --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
             --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
             --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
-            --bg: #0a0a1a;
-            --bg-card: #1a1a2e;
-            --bg-input: #16162a;
-            --border: #2a2a4a;
-            --border-soft: #1e1e36;
-            --text: #e0e0e0;
-            --text-heading: #c9b1ff;
-            --text-muted: #888;
+            /* Ground: ink indigo, the colour of a clear sky an hour after dusk.
+               Neutrals carry a violet bias so nothing reads as unconsidered grey. */
+            --bg: #08071a;
+            --bg-raised: #0f0e26;
+            --bg-card: #14122e;
+            --bg-input: #100f26;
+            --border: #2b2752;
+            --border-soft: #1d1a3c;
+            --text: #e6e2f4;
+            --text-heading: #d6c6ff;
+            --text-muted: #9a93b8;
             --text-dim: #9090a4;
-            --text-soft: #aaa;
+            --text-soft: #b4adcc;
+            /* Gilt: the ink of engraved star atlases. Reserved for real data —
+               degrees, dates, prices — never for decoration. */
+            --gilt: #e8c56b;
+            --gilt-soft: rgba(232,197,107,0.12);
             --accent: #7c3aed;
             --accent-hover: #6d28d9;
             --accent-light: #a78bfa;
@@ -93,16 +104,20 @@
             --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
             --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
             --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
-            --bg: #faf7fb;
+            /* Ground: warm paper with a violet cast, like an old ephemeris page. */
+            --bg: #f7f4fa;
+            --bg-raised: #ffffff;
             --bg-card: #ffffff;
-            --bg-input: #f7f1f9;
-            --border: #e5d4ec;
-            --border-soft: #efe3f4;
-            --text: #2d2438;
-            --text-heading: #6d4a89;
-            --text-muted: #7a6d8a;
+            --bg-input: #f4eff8;
+            --border: #e2d5ec;
+            --border-soft: #ece3f2;
+            --text: #241d33;
+            --text-heading: #513173;
+            --text-muted: #6e6285;
             --text-dim: #7d6888;
-            --text-soft: #7a6d8a;
+            --text-soft: #6e6285;
+            --gilt: #8a6410;
+            --gilt-soft: rgba(138,100,16,0.10);
             --accent: #8659a3;
             --accent-hover: #744a90;
             --accent-light: #8659a3;
@@ -204,19 +219,35 @@
         }
         .hero h1 {
             font-family: var(--font-display); font-weight: 700;
-            font-size: clamp(2.5rem, 7vw, 4.1rem); line-height: 1.05;
-            letter-spacing: -0.02em; color: var(--text-heading); margin-bottom: 8px;
+            /* Fraunces at display size: high optical size, a touch of wonk and
+               soft terminals, so the wordmark reads engraved rather than typed. */
+            font-variation-settings: 'opsz' 144, 'SOFT' 30, 'WONK' 1;
+            font-size: clamp(2.7rem, 7.6vw, 4.6rem); line-height: 0.98;
+            letter-spacing: -0.025em; color: var(--text-heading);
+            margin-bottom: 10px; text-wrap: balance;
         }
         .hero .kicker {
-            font-size: 0.78rem; letter-spacing: .22em; text-transform: uppercase;
-            color: var(--text-dim); font-weight: 600; margin-bottom: 18px;
+            font-family: var(--font-mono);
+            font-size: 0.72rem; letter-spacing: .2em; text-transform: uppercase;
+            color: var(--gilt); font-weight: 500; margin-bottom: 20px;
+            display: inline-flex; align-items: center; gap: 10px;
+        }
+        /* Hairlines either side of the kicker, like a rule on an atlas plate. */
+        .hero .kicker::before, .hero .kicker::after {
+            content: ""; width: clamp(18px, 6vw, 42px); height: 1px;
+            background: linear-gradient(90deg, transparent, var(--gilt), transparent);
+            opacity: .55;
         }
         .hero .lede {
-            font-size: clamp(1.05rem, 2.3vw, 1.28rem); color: var(--text-soft);
-            max-width: 40ch; margin: 0 auto 14px; line-height: 1.6;
+            font-family: var(--font-display); font-weight: 400;
+            font-variation-settings: 'opsz' 40, 'SOFT' 20;
+            font-size: clamp(1.18rem, 2.7vw, 1.6rem); color: var(--text);
+            max-width: 34ch; margin: 0 auto 16px; line-height: 1.42;
+            text-wrap: balance;
         }
         .hero .sub {
-            font-size: 0.95rem; color: var(--text-muted); max-width: 46ch; margin: 0 auto 30px;
+            font-size: 0.97rem; color: var(--text-muted); max-width: 52ch;
+            margin: 0 auto 32px; line-height: 1.7;
         }
 
         .cta-row {
@@ -246,31 +277,102 @@
 
         /* --- sections --- */
         section { padding: clamp(44px, 7vw, 76px) 0; }
-        .sec-head { text-align: center; margin-bottom: clamp(28px, 5vw, 46px); }
-        .sec-head h2 {
-            font-family: var(--font-display); font-weight: 700;
-            font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.15; letter-spacing: -0.02em;
-            color: var(--text-heading); margin-bottom: 10px;
+        /* --- ephemeris strip: today's real positions, set like a data table --- */
+        .ephemeris {
+            border-top: 1px solid var(--border-soft);
+            border-bottom: 1px solid var(--border-soft);
+            background: var(--bg-raised);
+            padding: 14px 0;
         }
-        .sec-head p { color: var(--text-muted); max-width: 52ch; margin: 0 auto; }
+        .eph-inner {
+            display: flex; align-items: center; gap: 18px;
+            flex-wrap: wrap; justify-content: center;
+        }
+        .eph-label {
+            font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: .18em;
+            text-transform: uppercase; color: var(--gilt); white-space: nowrap;
+        }
+        .eph-list {
+            list-style: none; margin: 0; padding: 0;
+            display: flex; flex-wrap: wrap; gap: 6px 22px; justify-content: center;
+        }
+        .eph-list li {
+            display: inline-flex; align-items: baseline; gap: 7px;
+            font-size: 0.82rem; color: var(--text-muted);
+        }
+        .eph-glyph { color: var(--text-heading); font-size: 0.98rem; line-height: 1; }
+        .eph-name { color: var(--text-soft); }
+        .eph-pos {
+            font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+            color: var(--text); font-size: 0.78rem;
+        }
+        @media (max-width: 640px) {
+            /* Too many figures for a phone; keep the first four and the label. */
+            .eph-list li:nth-child(n+5) { display: none; }
+        }
 
+        .sec-head { text-align: center; margin-bottom: clamp(30px, 5vw, 50px); }
+        .sec-head h2 {
+            font-family: var(--font-display); font-weight: 600;
+            font-variation-settings: 'opsz' 90, 'SOFT' 24, 'WONK' 1;
+            font-size: clamp(1.9rem, 4.4vw, 2.7rem); line-height: 1.1; letter-spacing: -0.022em;
+            color: var(--text-heading); margin-bottom: 12px; text-wrap: balance;
+        }
+        .sec-head p {
+            color: var(--text-muted); max-width: 54ch; margin: 0 auto;
+            font-size: 1.02rem; line-height: 1.7;
+        }
+        /* A small gilt marker above each section heading: the glyph astrologers
+           use for a conjunction, repeated as a quiet structural device. */
+        .sec-head .mark {
+            display: block; font-family: var(--font-mono); font-size: 0.9rem;
+            color: var(--gilt); opacity: .8; margin-bottom: 14px; letter-spacing: .3em;
+        }
+
+        /* Six panels on a twelve-column field. The first two run wider because
+           they carry the two things people actually come for; the rest sit in
+           thirds. Even boxes would read as a template. */
         .cards {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
-            gap: 16px; align-items: stretch;
+            display: grid; grid-template-columns: repeat(6, 1fr);
+            gap: 14px; align-items: stretch;
+        }
+        .card { grid-column: span 2; }
+        .card:nth-child(1), .card:nth-child(2) { grid-column: span 3; }
+        @media (max-width: 900px) {
+            .cards { grid-template-columns: repeat(2, 1fr); }
+            .card, .card:nth-child(1), .card:nth-child(2) { grid-column: span 1; }
+        }
+        @media (max-width: 560px) {
+            .cards { grid-template-columns: 1fr; }
         }
         .card {
+            position: relative; overflow: hidden;
             background: var(--bg-card); border: 1px solid var(--border-soft);
-            border-radius: 18px; padding: 24px 22px;
+            border-radius: 16px; padding: 26px 24px 24px;
             display: flex; flex-direction: column;
             box-shadow: var(--shadow-card);
-            transition: transform .18s ease, border-color .18s ease;
+            transition: transform .22s cubic-bezier(.2,.7,.3,1),
+                        border-color .22s ease, box-shadow .22s ease;
         }
-        .card:hover { transform: translateY(-3px); border-color: var(--accent-light); }
+        /* A faint arc in the corner — the rim of a chart wheel catching light. */
+        .card::after {
+            content: ""; position: absolute; right: -58px; top: -58px;
+            width: 148px; height: 148px; border-radius: 50%;
+            border: 1px solid var(--border); opacity: .5;
+            transition: opacity .22s ease, transform .22s ease;
+            pointer-events: none;
+        }
+        .card:hover {
+            transform: translateY(-3px);
+            border-color: var(--accent-light);
+            box-shadow: var(--shadow-card), 0 14px 40px rgba(124,58,237,0.16);
+        }
+        .card:hover::after { opacity: .9; transform: scale(1.06); }
         .card-ico {
-            width: 48px; height: 48px; border-radius: 15px; margin-bottom: 15px;
+            width: 44px; height: 44px; border-radius: 13px; margin-bottom: 16px;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
-        .card-ico svg { width: 24px; height: 24px; }
+        .card-ico svg { width: 22px; height: 22px; }
         .i-thistle { background: var(--surface-thistle); color: var(--on-thistle); }
         .i-icy { background: var(--surface-icy); color: var(--on-icy); }
         .i-petal { background: var(--surface-petal); color: var(--on-pink); }
@@ -282,18 +384,36 @@
         }
         .card p { font-size: 0.9rem; color: var(--text-soft); line-height: 1.65; }
 
-        /* --- steps --- */
-        .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
-        .step { text-align: center; padding: 0 8px; }
-        .step-num {
-            width: 46px; height: 46px; border-radius: 50%; margin: 0 auto 14px;
-            display: flex; align-items: center; justify-content: center;
-            font-family: var(--font-display); font-size: 1.35rem; font-weight: 700;
-            background: var(--surface-thistle); color: var(--text-heading);
-            border: 1px solid var(--border-soft);
+        /* --- steps: a genuine sequence, so the numbers earn their place --- */
+        .steps {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 26px 20px; position: relative;
         }
-        .step h3 { font-size: 1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 6px; }
-        .step p { font-size: 0.89rem; color: var(--text-soft); }
+        .step { text-align: center; padding: 0 6px; position: relative; }
+        /* Hairline joining the steps, cut short of the discs on either side. */
+        @media (min-width: 760px) {
+            .step:not(:last-child)::before {
+                content: ""; position: absolute; top: 25px; left: calc(50% + 34px);
+                right: calc(-50% + 34px); height: 1px;
+                background: linear-gradient(90deg, var(--border), var(--border-soft));
+            }
+        }
+        .step-num {
+            position: relative; z-index: 1;
+            width: 50px; height: 50px; border-radius: 50%; margin: 0 auto 16px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-mono); font-size: 0.92rem; font-weight: 500;
+            font-variant-numeric: tabular-nums;
+            background: var(--bg); color: var(--gilt);
+            border: 1px solid var(--border);
+            box-shadow: 0 0 0 4px var(--bg), inset 0 0 0 1px var(--gilt-soft);
+        }
+        .step h3 {
+            font-family: var(--font-display); font-weight: 600;
+            font-variation-settings: 'opsz' 30, 'SOFT' 20;
+            font-size: 1.14rem; color: var(--text-heading); margin-bottom: 7px;
+        }
+        .step p { font-size: 0.91rem; color: var(--text-soft); line-height: 1.65; }
 
         /* --- trust strip --- */
         .trust {
@@ -337,12 +457,17 @@
             font-family: var(--font-display); font-size: 1.5rem; font-weight: 700;
             color: var(--text-heading); letter-spacing: -0.01em; margin-bottom: 6px;
         }
-        .plan-price { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
+        .plan-price { display: flex; align-items: baseline; justify-content: center; gap: 7px; }
         .plan-price .amount {
-            font-family: var(--font-display); font-size: 2.9rem; font-weight: 700;
-            color: var(--text-heading); line-height: 1; letter-spacing: -0.02em;
+            font-family: var(--font-display); font-size: 3.2rem; font-weight: 700;
+            font-variation-settings: 'opsz' 144, 'SOFT' 26, 'WONK' 1;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-heading); line-height: 1; letter-spacing: -0.03em;
         }
-        .plan-price .per { font-size: 0.92rem; color: var(--text-muted); }
+        .plan-featured .plan-price .amount { color: var(--gilt); }
+        .plan-price .per {
+            font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted);
+        }
         .plan-note { font-size: 0.82rem; color: var(--text-dim); margin-top: 6px; }
 
         .plan-list { list-style: none; padding: 0; margin: 0 0 24px; flex: 1; }
@@ -398,8 +523,8 @@
         }
         .chip:hover { border-color: var(--accent); transform: translateY(-1px); }
         .chip .price {
-            font-weight: 700; color: var(--accent-lighter);
-            font-size: 0.92rem; white-space: nowrap;
+            font-family: var(--font-mono); font-weight: 500; color: var(--gilt);
+            font-size: 0.86rem; white-space: nowrap; font-variant-numeric: tabular-nums;
         }
 
         /* --- closing cta --- */
@@ -481,7 +606,7 @@
         </div>
         <div class="wrap">
             <img class="hero-logo" src="/static/logo-full.png" alt="МираСкоп">
-            <div class="kicker">Астрология на разбираем език</div>
+            <p><span class="kicker">Астрология на разбираем език</span></p>
             <h1>МираСкоп</h1>
             <p class="lede">Небето в мига на раждането ти казва повече, отколкото предполагаш. Тук то е преведено на човешки.</p>
             <p class="sub">Точни изчисления по Swiss Ephemeris, разчетени дума по дума — без мъгла, без общи приказки, без термини, които трябва да гуглиш.</p>
@@ -493,6 +618,27 @@
             <p class="cta-note">Безплатно. Нужни са само дата, час и място на раждане.</p>
         </div>
     </header>
+
+    {% if sky %}
+    <!-- Live positions, computed at request time. The strip is the product's
+         own output used as evidence — not an illustration of it. -->
+    <div class="ephemeris" aria-label="Позиции на планетите в момента">
+        <div class="wrap">
+            <div class="eph-inner">
+                <span class="eph-label">Небето в момента</span>
+                <ul class="eph-list">
+                    {% for o in sky %}
+                    <li>
+                        <span class="eph-glyph">{{ o.symbol }}</span>
+                        <span class="eph-name">{{ o.name }}</span>
+                        <span class="eph-pos">{{ o.degree }}° {{ o.sign }}{% if o.retrograde %} ℞{% endif %}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <section>
         <div class="wrap">

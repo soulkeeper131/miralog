@@ -996,6 +996,38 @@ def seo_settings() -> dict:
     """Current SEO values, falling back to the defaults for anything unset."""
     return {key: (get_setting(key) or default) for key, default in SEO_DEFAULTS.items()}
 
+def sky_today() -> list:
+    """Where the main bodies actually are right now, for the landing strip.
+
+    The point of the strip is that these are live figures, not decoration —
+    so a failure returns nothing and the strip is simply left out.
+    """
+    try:
+        now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+        subject = charts.Subject(
+            date_time=now.replace(tzinfo=None),
+            latitude=42.6977, longitude=23.3219, timezone="Europe/Sofia",
+        )
+        chart_now = charts.Natal(subject)
+        wanted = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
+        found = {}
+        for obj in chart_now.objects.values():
+            name = getattr(obj, "name", None)
+            if name in wanted and name not in found:
+                sign = str(obj.sign.name)
+                found[name] = {
+                    "name": tr_object(name),
+                    "symbol": sign_symbol(sign),
+                    "sign": tr_sign(sign),
+                    "degree": int(obj.sign_longitude.degrees),
+                    "retrograde": getattr(obj, "movement", None)
+                                  and str(obj.movement) == "Retrograde",
+                }
+        return [found[n] for n in wanted if n in found]
+    except Exception:
+        log.warning("sky_today failed; the landing strip will be omitted", exc_info=True)
+        return []
+
 def seo_context(request: Request, *, path: str = "/") -> dict:
     """Everything the public templates need to render their meta tags."""
     seo = seo_settings()
@@ -3401,7 +3433,7 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
 async def index(request: Request):
     """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
     return HTMLResponse(templates.get_template("landing.html").render(
-        {"request": request, **seo_context(request, path="/")}))
+        {"request": request, "sky": sky_today(), **seo_context(request, path="/")}))
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt(request: Request):
