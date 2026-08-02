@@ -16,6 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         /* Any display value beats the hidden attribute, so state it explicitly —
@@ -543,6 +544,7 @@
         </div>
     </div>
 
+    <script src="/static/ui.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -678,7 +680,9 @@
         }
 
         async function deletePerson(id) {
-            if (!confirm('Сигурни ли сте, че искате да изтриете този човек?')) return;
+            const ok = await uiConfirm('Картата и всички разчитания към нея се изтриват безвъзвратно.', {
+                title: 'Да изтрия ли този човек?', ok: 'Изтрий', danger: true });
+            if (!ok) return;
             try {
                 const resp = await fetch('/api/persons/' + id, {
                     method: 'DELETE',

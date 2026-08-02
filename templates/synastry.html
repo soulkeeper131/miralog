@@ -16,6 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
     <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -321,6 +322,7 @@
     </div>
 
     <script src="/static/locked.js"></script>
+    <script src="/static/ui.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -555,9 +557,9 @@
             const btn = document.getElementById('interpretBtn');
             const box = document.getElementById('interpretationBox');
             btn.disabled = true;
-            btn.textContent = 'Генериране...';
+            btn.textContent = 'Разчитаме...';
             box.style.display = 'block';
-            box.innerHTML = crystalLoader('Генериране на интерпретация чрез AI...');
+            box.innerHTML = crystalLoader('Разчитаме картите...');
 
             try {
                 const resp = await guardedFetch('/api/synastry/interpretation', {
@@ -572,7 +574,7 @@
                         box.innerHTML += '<div class="cache-note">📋 Заредено от кеш</div>';
                     }
                 } else {
-                    box.innerHTML = '<div class="error-banner">Не можа да се генерира интерпретация.</div>';
+                    box.innerHTML = '<div class="error-banner">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {

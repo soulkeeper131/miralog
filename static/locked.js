@@ -130,11 +130,12 @@ async function requestUnlock(btn, featureKey, retry) {
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
         if (data.already && retry) { retry(); return; }
-        alert('Заявката е изпратена. Ще се свържем с теб, за да уредим плащането — '
-            + 'след това функцията се отключва за постоянно.');
+        uiAlert('Ще се свържем с теб, за да уредим плащането. След това функцията '
+              + 'се отключва за постоянно.', { title: 'Заявката е изпратена' });
         btn.textContent = 'Заявката е изпратена';
     } catch (e) {
-        alert('Заявката не можа да се изпрати: ' + e.message);
+        uiAlert('Заявката не можа да се изпрати: ' + e.message,
+                { title: 'Нещо се обърка', tone: 'danger' });
         btn.disabled = false;
         btn.textContent = original;
     }

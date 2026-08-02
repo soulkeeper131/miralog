@@ -16,6 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
     <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1039,7 +1040,7 @@
             <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology">Нумерология</div>
             <div class="tab" onclick="showTab('love')" id="tabbtn-love">Любовен хороскоп</div>
             <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic">Акашови записи</div>
-            <div class="tab" onclick="showTab('interpretation')" id="tabbtn-interpretation">AI Интерпретация</div>
+            <div class="tab" onclick="showTab('interpretation')" id="tabbtn-interpretation">Пълно разчитане</div>
         </div>
         <button class="tab-nav tab-nav-next" id="tabNext" type="button"
                 aria-label="Следващи менюта" hidden>›</button>
@@ -1062,7 +1063,7 @@
             </div>
             <div class="section">
                 <h2>Личен портрет</h2>
-                <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
+                <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме...</div></div>
             </div>
         </div>
 
@@ -1170,7 +1171,7 @@
         <div id="tab-horoscope" class="tab-content">
             <div class="section">
                 <h2>Разчитане на деня</h2>
-                <div id="horoscope-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на разчитане...</div></div>
+                <div id="horoscope-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме деня ти...</div></div>
             </div>
             <div class="section">
                 <h2>Дневен транзитен хороскоп — данни</h2>
@@ -1209,8 +1210,8 @@
                 <div id="numerology-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
-                <h2>AI Интерпретация на нумерологията</h2>
-                <div id="numerology-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране...</div></div>
+                <h2>Пълно разчитане на нумерологията</h2>
+                <div id="numerology-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме...</div></div>
             </div>
         </div>
 
@@ -1310,13 +1311,14 @@
 
         <div id="tab-interpretation" class="tab-content">
             <div class="section">
-                <h2>AI Интерпретация</h2>
-                <div id="interpretation-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Генериране на интерпретация...</div></div>
+                <h2>Пълно разчитане</h2>
+                <div id="interpretation-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме картата...</div></div>
             </div>
         </div>
     </div>
 
     <script src="/static/locked.js"></script>
+    <script src="/static/ui.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -1616,7 +1618,7 @@
         }
 
         function cachedBadge(data, onRefresh) {
-            const label = data.cached ? '📦 Кеширано разчитане' : '✨ Ново разчитане';
+            const label = data.cached ? '📖 Твоето разчитане' : '✨ Ново разчитане';
             // Only readings the server actually stored can be exported.
             const key = data.cache_key || '';
             const exportBtns = key ? `
@@ -1625,7 +1627,7 @@
             return `<div class="cache-bar">
                 <span class="cache-label">${label}</span>
                 <div class="cache-actions">
-                    <button class="btn-refresh" onclick="${onRefresh}">↻ Регенерирай</button>
+                    <button class="btn-refresh" onclick="${onRefresh}">↻ Разчети наново</button>
                     ${exportBtns}
                 </div>
             </div>`;
@@ -1650,18 +1652,28 @@
                 a.remove();
                 URL.revokeObjectURL(url);
             } catch (e) {
-                alert('PDF-ът не можа да се изтегли: ' + e.message);
+                uiAlert('PDF-ът не можа да се изтегли: ' + e.message,
+                        { title: 'Нещо се обърка', tone: 'danger' });
             }
         }
 
-        function openEmailModal(key) {
-            const to = prompt('На кой имейл да изпратя разчитането?', currentUserEmail());
+        async function openEmailModal(key) {
+            const to = await uiPrompt('Ще ти пратим разчитането като PDF документ.', {
+                title: 'Изпращане по имейл',
+                label: 'Имейл адрес',
+                type: 'email',
+                value: currentUserEmail(),
+                ok: 'Изпрати',
+            });
             if (to === null) return;
             sendReadingEmail(key, to.trim());
         }
 
         async function sendReadingEmail(key, to) {
-            if (!to || to.indexOf('@') < 0) { alert('Въведи валиден имейл адрес.'); return; }
+            if (!to || to.indexOf('@') < 0) {
+                uiAlert('Въведи валиден имейл адрес.', { title: 'Невалиден адрес' });
+                return;
+            }
             try {
                 const resp = await fetch('/api/persons/{{ person.id }}/email-reading', {
                     method: 'POST',
@@ -1670,9 +1682,10 @@
                 });
                 const data = await resp.json();
                 if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
-                alert('Готово — разчитането е изпратено на ' + data.to + '.');
+                uiToast('Разчитането е изпратено на ' + data.to, 'ok');
             } catch (e) {
-                alert('Имейлът не можа да се изпрати: ' + e.message);
+                uiAlert('Имейлът не можа да се изпрати: ' + e.message,
+                        { title: 'Нещо се обърка', tone: 'danger' });
             }
         }
 
@@ -1771,7 +1784,7 @@
 
         async function loadProfileAI(refresh) {
             const el = document.getElementById('profile-ai-content');
-            el.innerHTML = crystalLoader('Генериране на портрет...');
+            el.innerHTML = crystalLoader('Съставяме портрета ти...');
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/profile/interpretation' + (refresh ? '?refresh=true' : '');
@@ -1781,7 +1794,7 @@
                     el.innerHTML = cachedBadge(data, 'loadProfileAI(true)') +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
-                    el.innerHTML = '<div class="error">Не можа да се генерира портрет.</div>';
+                    el.innerHTML = '<div class="error">Портретът не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {
@@ -1794,7 +1807,7 @@
 
         async function loadHoroscopeAI(refresh) {
             const el = document.getElementById('horoscope-ai-content');
-            el.innerHTML = crystalLoader('Генериране на разчитане...');
+            el.innerHTML = crystalLoader('Разчитаме деня ти...');
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
@@ -1805,7 +1818,7 @@
                         summaryCards(data.summary) +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
-                    el.innerHTML = '<div class="error">Не можа да се генерира разчитане.</div>';
+                    el.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {
@@ -1852,7 +1865,7 @@
         async function loadInterpretation(refresh) {
             window._interpretationLoaded = true;
             const el = document.getElementById('interpretation-content');
-            el.innerHTML = crystalLoader('Генериране на интерпретация...');
+            el.innerHTML = crystalLoader('Разчитаме картата...');
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
@@ -1862,7 +1875,7 @@
                     el.innerHTML = cachedBadge(data, 'loadInterpretation(true)') +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
-                    el.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
+                    el.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {
@@ -2032,7 +2045,7 @@
 
         async function loadNumerologyAI(refresh) {
             const aiEl = document.getElementById('numerology-ai-content');
-            aiEl.innerHTML = crystalLoader('Генериране...');
+            aiEl.innerHTML = crystalLoader('Разчитаме...');
             try {
                 const url = '/api/persons/{{ person.id }}/numerology/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await guardedFetch(url, { headers: authHeaders() });
@@ -2041,7 +2054,7 @@
                     aiEl.innerHTML = cachedBadge(data, 'loadNumerologyAI(true)') +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
-                    aiEl.innerHTML = '<div class="error">Не можа да се генерира интерпретация.</div>';
+                    aiEl.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {
@@ -2314,7 +2327,7 @@
                     el.innerHTML = cachedBadge(data, 'loadLoveAI(true)') +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
-                    el.innerHTML = '<div class="error">Не можа да се генерира хороскоп.</div>';
+                    el.innerHTML = '<div class="error">Хороскопът не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {
@@ -2400,7 +2413,7 @@
                     el.innerHTML = cachedBadge(data, 'loadAkashicAI(true)') +
                         '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
                 } else {
-                    el.innerHTML = '<div class="error">Не можа да се генерира четене.</div>';
+                    el.innerHTML = '<div class="error">Четенето не се получи. Опитай пак след малко.</div>';
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {

@@ -16,6 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         /* Any display value beats the hidden attribute, so state it explicitly —
@@ -512,6 +513,7 @@
         </div>
     </div>
 
+    <script src="/static/ui.js"></script>
     <script>
         /* ---------- auth ---------- */
         function getToken() {
@@ -895,7 +897,9 @@
             });
 
             document.getElementById('euDelete').addEventListener('click', async function() {
-                if (!confirm('Да изтрия ли ' + u.email + ' заедно с всичките му карти? Действието е необратимо.')) return;
+                const ok = await uiConfirm('Изтриват се и всичките му карти. Действието е необратимо.', {
+                    title: 'Да изтрия ли ' + u.email + '?', ok: 'Изтрий', danger: true });
+                if (!ok) return;
                 try {
                     await api('/api/admin/users/' + u.id, { method: 'DELETE', headers: authHeaders() });
                     closeModal();
@@ -1135,7 +1139,9 @@
                 btn.addEventListener('click', async function() {
                     const card = btn.closest('.plan-card');
                     const key = card.dataset.planKey;
-                    if (!confirm('Да изтрия ли пакета „' + key + '“?')) return;
+                    const ok = await uiConfirm('Потребителите на този пакет минават на демо достъп.', {
+                        title: 'Да изтрия ли пакета „' + key + '“?', ok: 'Изтрий', danger: true });
+                    if (!ok) return;
                     try {
                         await api('/api/admin/plans/' + encodeURIComponent(key), {
                             method: 'DELETE', headers: authHeaders(),
@@ -1237,7 +1243,9 @@
                 el.innerHTML = html;
                 el.querySelectorAll('[data-del-payment]').forEach(function(btn) {
                     btn.addEventListener('click', async function() {
-                        if (!confirm('Да изтрия ли това плащане?')) return;
+                        const ok = await uiConfirm('Записът изчезва от историята на плащанията.', {
+                            title: 'Да изтрия ли това плащане?', ok: 'Изтрий', danger: true });
+                        if (!ok) return;
                         try {
                             await api('/api/admin/payments/' + btn.dataset.delPayment, {
                                 method: 'DELETE', headers: authHeaders(),
