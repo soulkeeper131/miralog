@@ -1047,6 +1047,52 @@ def api_login(data: AuthRequest):
         "user": {"id": user["id"], "email": user["email"]}
     }
 
+class GuestChartRequest(BaseModel):
+    """Birth details only. No email, no account — this is the free look."""
+    name: str
+    year: int
+    month: int
+    day: int
+    hour: int = 12
+    minute: int = 0
+    lat: float
+    lon: float
+    timezone: str = "Europe/Sofia"
+
+
+@app.post("/api/guest/chart")
+def api_guest_chart(data: GuestChartRequest):
+    """Compute a chart for somebody who has not signed up yet.
+
+    Nothing is stored: the browser keeps the birth details and asks again on
+    the next visit. Asking for an email before showing anything is the point
+    where casual visitors leave, so the chart comes first and the account
+    comes after they have seen it.
+    """
+    if not (data.name or "").strip():
+        raise HTTPException(400, "Моля, въведи име.")
+    try:
+        person = {
+            "name": data.name.strip(),
+            "year": data.year, "month": data.month, "day": data.day,
+            "hour": data.hour, "minute": data.minute,
+            "lat": data.lat, "lon": data.lon,
+            "timezone": data.timezone or "Europe/Sofia",
+        }
+        chart_data = compute_natal(person)
+    except Exception as e:
+        log.warning("Guest chart failed: %s", e)
+        raise HTTPException(400, "Картата не можа да се изчисли. Провери датата и мястото.")
+
+    from chart_svg import generate_chart_svg
+    return {
+        "ok": True,
+        "chart": chart_data,
+        "profile": build_profile(chart_data),
+        "svg": generate_chart_svg(chart_data),
+    }
+
+
 class OnboardRequest(BaseModel):
     """Birth details plus an email, gathered before any account exists."""
     email: str

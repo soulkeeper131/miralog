@@ -214,6 +214,91 @@
         .btn:disabled { opacity: .6; cursor: not-allowed; }
         .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
+        /* --- the chart, shown in place before any account exists --- */
+        .result-card { margin-top: 18px; }
+        .result-head { text-align: center; margin-bottom: 18px; }
+        .result-head h2 {
+            font-family: var(--font-display); font-weight: 700;
+            font-variation-settings: 'opsz' 90, 'SOFT' 24, 'WONK' 1;
+            font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.15;
+            color: var(--text-heading); margin-bottom: 6px;
+        }
+        .result-meta {
+            font-family: var(--font-mono); font-size: .74rem;
+            color: var(--gilt); line-height: 1.5;
+        }
+        .result-wheel svg { width: 100%; height: auto; display: block; }
+        .result-h3 {
+            font-family: var(--font-display); font-weight: 600;
+            font-size: 1.3rem; color: var(--text-heading); margin-bottom: 16px;
+        }
+
+        .prof-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 12px;
+        }
+        .prof-point {
+            background: var(--bg-input); border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 16px;
+        }
+        .prof-point-head { display: flex; gap: 11px; align-items: flex-start; }
+        .prof-glyph {
+            font-size: 1.35rem; line-height: 1; color: var(--on-thistle);
+            width: 26px; text-align: center; flex-shrink: 0;
+        }
+        .prof-point-label {
+            font-family: var(--font-mono); font-size: .64rem; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--text-dim);
+        }
+        .prof-point-value {
+            color: var(--text-heading); font-weight: 600; font-size: .98rem;
+            margin-top: 2px;
+        }
+        .prof-point-house { color: var(--text-muted); font-size: .78rem; }
+        .prof-point-meaning {
+            margin-top: 10px; font-size: .85rem; line-height: 1.6;
+            color: var(--text-soft);
+        }
+
+        /* The ask comes after the reward, and looks like an offer, not a gate. */
+        .save-card {
+            margin-top: 18px; text-align: center;
+            border-color: var(--gilt); background: var(--gilt-soft);
+        }
+        .save-eyebrow {
+            display: inline-block; font-family: var(--font-mono);
+            font-size: .64rem; letter-spacing: .16em; text-transform: uppercase;
+            color: var(--gilt); margin-bottom: 8px;
+        }
+        .save-card h3 {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: clamp(1.25rem, 3vw, 1.6rem); line-height: 1.2;
+            color: var(--text-heading); margin-bottom: 8px;
+        }
+        .save-card > p {
+            color: var(--text-muted); font-size: .92rem; line-height: 1.65;
+            max-width: 48ch; margin: 0 auto 18px;
+        }
+        .save-row {
+            display: flex; gap: 9px; flex-wrap: wrap;
+            max-width: 460px; margin: 0 auto;
+        }
+        .save-row input {
+            flex: 1 1 200px; min-width: 0;
+            padding: 11px 13px; border-radius: 10px; min-height: 48px;
+            border: 1px solid var(--border); background: var(--bg-card);
+            color: var(--text); font-family: inherit; font-size: 16px;
+        }
+        .save-row input:focus {
+            outline: none; border-color: var(--accent); box-shadow: var(--focus-ring);
+        }
+        .save-row .btn { flex: 0 0 auto; width: auto; padding-inline: 24px; }
+        .save-card .hint { margin-top: 12px; }
+        @media (max-width: 480px) {
+            .save-row { flex-direction: column; }
+            .save-row .btn { width: 100%; }
+        }
+
         .foot-note {
             text-align: center; font-size: 0.8rem; color: var(--text-dim);
             margin-top: 16px; line-height: 1.6;
@@ -302,17 +387,6 @@
                     <div class="coords" id="coords" hidden></div>
                 </div>
 
-                <div class="divider"></div>
-
-                <div class="form-group">
-                    <label for="fEmail">Твоят имейл</label>
-                    <input type="email" id="fEmail" required placeholder="име@поща.bg" autocomplete="email">
-                    <div class="hint">
-                        Пращаме ти връзка за задаване на парола, за да можеш
-                        да се върнеш към картата си по всяко време.
-                    </div>
-                </div>
-
                 <div class="price-row">
                     <span class="price-what">
                         Наталната ти карта
@@ -322,7 +396,38 @@
                 </div>
 
                 <button type="submit" class="btn" id="submitBtn">Виж своята натална карта</button>
+                <p class="foot-note" style="margin-top:14px;">
+                    Без регистрация. Имейл ще ти поискаме чак ако решиш да я запазиш.
+                </p>
             </form>
+        </div>
+
+        <!-- The chart itself, revealed in place once it is computed. -->
+        <div id="result" hidden>
+            <div class="card result-card">
+                <div class="result-head">
+                    <h2 id="resultName">Твоята натална карта</h2>
+                    <p id="resultMeta" class="result-meta"></p>
+                </div>
+                <div id="resultWheel" class="result-wheel"></div>
+            </div>
+
+            <div class="card result-card">
+                <h3 class="result-h3">Астро портрет</h3>
+                <div id="resultPoints" class="prof-grid"></div>
+            </div>
+
+            <div class="card save-card">
+                <span class="save-eyebrow">Запази я</span>
+                <h3>Искаш ли да се върнеш към нея?</h3>
+                <p>Картата живее само в този браузър. Остави имейл и я запазваме
+                   в профил — оттам можеш да добавяш разчитания, когато решиш.</p>
+                <div class="save-row">
+                    <input type="email" id="fEmail" placeholder="име@поща.bg" autocomplete="email">
+                    <button type="button" class="btn" id="saveBtn">Запази картата</button>
+                </div>
+                <p class="hint" id="saveHint">Пращаме ти връзка за задаване на парола. Нищо друго.</p>
+            </div>
         </div>
 
         <p class="foot-note">
@@ -415,95 +520,164 @@
         });
 
         /* ---------- submit ---------- */
-        document.getElementById('startForm').addEventListener('submit', async e => {
-            e.preventDefault();
-            clearBanner();
+        // Birth details, kept in memory so the save step can reuse them.
+        let lastBirth = null;
 
+        function readBirthForm() {
             const name = document.getElementById('fName').value.trim();
             const day = +document.getElementById('fDay').value;
             const month = +document.getElementById('fMonth').value;
             const year = +document.getElementById('fYear').value;
-            const email = document.getElementById('fEmail').value.trim();
 
-            if (!name) { showBanner('Въведи име.', document.getElementById('fName')); return; }
+            if (!name) { showBanner('Въведи име.', document.getElementById('fName')); return null; }
             if (!day || !month || !year) {
                 showBanner('Въведи пълна дата на раждане.', document.getElementById('fDay'));
-                return;
+                return null;
             }
-            if (email.indexOf('@') < 0) {
-                showBanner('Въведи валиден имейл адрес.', document.getElementById('fEmail'));
-                return;
+            return {
+                name, year, month, day,
+                hour: +document.getElementById('fHour').value || 0,
+                minute: +document.getElementById('fMinute').value || 0,
+            };
+        }
+
+        // Somebody who typed a place without picking from the list still meant
+        // a real place; look it up for them rather than refusing.
+        async function ensurePlace() {
+            if (picked) return true;
+            const typed = placeInput.value.trim();
+            if (!typed) { showBanner('Въведи място на раждане.', placeInput); return false; }
+            try {
+                const rs = await fetch('/api/public/geocode?q=' + encodeURIComponent(typed));
+                const rd = rs.ok ? await rs.json() : { results: [] };
+                if (rd.results && rd.results.length) choosePlace(rd.results[0]);
+            } catch (err) { /* handled below */ }
+            if (!picked) {
+                showBanner('Не намерихме такова място. Опитай с по-голям град наблизо.', placeInput);
+                return false;
             }
+            return true;
+        }
+
+        document.getElementById('startForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            clearBanner();
+
+            const birth = readBirthForm();
+            if (!birth) return;
 
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
-            btn.textContent = 'Изчисляваме картата...';
-
-            // Somebody who typed a place without picking from the list still
-            // meant a real place; look it up for them rather than refusing.
-            if (!picked) {
-                const typed = placeInput.value.trim();
-                if (!typed) {
-                    btn.disabled = false;
-                    btn.textContent = 'Виж своята натална карта';
-                    showBanner('Въведи място на раждане.', placeInput);
-                    return;
-                }
-                btn.textContent = 'Търсим мястото...';
-                try {
-                    const rs = await fetch('/api/public/geocode?q=' + encodeURIComponent(typed));
-                    const rd = rs.ok ? await rs.json() : { results: [] };
-                    if (rd.results && rd.results.length) {
-                        choosePlace(rd.results[0]);
-                    }
-                } catch (err) { /* handled by the check below */ }
-
-                if (!picked) {
-                    btn.disabled = false;
-                    btn.textContent = 'Виж своята натална карта';
-                    showBanner('Не намерихме такова място. Опитай с по-голям град наблизо.',
-                               placeInput);
-                    return;
-                }
-                btn.textContent = 'Изчисляваме картата...';
+            btn.textContent = 'Търсим мястото...';
+            if (!(await ensurePlace())) {
+                btn.disabled = false;
+                btn.textContent = 'Виж своята натална карта';
+                return;
             }
 
+            btn.textContent = 'Изчисляваме картата...';
+            lastBirth = Object.assign({}, birth, {
+                lat: picked.lat, lon: picked.lon, timezone: picked.timezone,
+            });
+
             try {
-                const resp = await fetch('/api/onboard', {
+                const resp = await fetch('/api/guest/chart', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email, name, year, month, day,
-                        hour: +document.getElementById('fHour').value || 0,
-                        minute: +document.getElementById('fMinute').value || 0,
-                        lat: picked.lat, lon: picked.lon, timezone: picked.timezone,
-                    }),
+                    body: JSON.stringify(lastBirth),
                 });
                 const data = await resp.json().catch(() => ({}));
-
-                if (resp.status === 409) {
-                    // A dialog, not a banner: this is a fork in the road, and
-                    // the visitor has to decide which way to go.
-                    const goLogin = await uiConfirm(
-                        'Този имейл вече е използван. Влез в профила си — картите ти '
-                        + 'са там, а нови създаваш от таблото.',
-                        { title: 'Имейлът е зает', ok: 'Към вход', cancel: 'Друг имейл' });
-                    if (goLogin) { window.location.href = '/login'; return; }
-                    document.getElementById('fEmail').focus();
-                    document.getElementById('fEmail').select();
-                    return;
-                }
                 if (!resp.ok) {
                     const msg = typeof data.detail === 'string' ? data.detail
                               : (data.detail && data.detail.message) || 'Нещо се обърка.';
                     showBanner(escapeHtml(msg));
                     return;
                 }
+                renderGuestChart(data);
+            } catch (err) {
+                showBanner('Връзката се разпадна. Опитай пак.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Виж своята натална карта';
+            }
+        });
 
-                // Signed in already: straight to the chart they came for.
+        function renderGuestChart(data) {
+            document.getElementById('startForm').closest('.card').hidden = true;
+            document.querySelector('.steps').children[1].classList.add('on');
+
+            document.getElementById('resultName').textContent = lastBirth.name;
+            const pad = n => String(n).padStart(2, '0');
+            document.getElementById('resultMeta').textContent =
+                `${lastBirth.day}.${lastBirth.month}.${lastBirth.year} г. · ` +
+                `${pad(lastBirth.hour)}:${pad(lastBirth.minute)} ч. · ${picked.label}`;
+
+            document.getElementById('resultWheel').innerHTML = data.svg || '';
+
+            const core = (data.profile && data.profile.core) || {};
+            const points = [
+                ['Същност', core.sun],
+                ['Емоции', core.moon],
+                ['Как те виждат', core.ascendant],
+                ['Призвание', core.mc],
+            ].map(([label, pt]) => pt ? `
+                <div class="prof-point">
+                    <div class="prof-point-head">
+                        <span class="prof-glyph">${escapeHtml(pt.sign_symbol || '')}</span>
+                        <div>
+                            <div class="prof-point-label">${escapeHtml(label)}</div>
+                            <div class="prof-point-value">${escapeHtml(pt.name_bg)} в ${escapeHtml(pt.sign_bg)}</div>
+                            <div class="prof-point-house">${escapeHtml(pt.house_bg || '')}</div>
+                        </div>
+                    </div>
+                    ${pt.meaning ? `<p class="prof-point-meaning">${escapeHtml(pt.meaning)}</p>` : ''}
+                </div>` : '').join('');
+            document.getElementById('resultPoints').innerHTML = points;
+
+            document.getElementById('result').hidden = false;
+            document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        /* ---------- saving the chart to an account ---------- */
+        document.getElementById('saveBtn').addEventListener('click', async () => {
+            const emailEl = document.getElementById('fEmail');
+            const email = emailEl.value.trim();
+            if (email.indexOf('@') < 0) {
+                emailEl.focus();
+                uiAlert('Въведи валиден имейл адрес.', { title: 'Проверка' });
+                return;
+            }
+            if (!lastBirth) { location.reload(); return; }
+
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Запазваме...';
+            try {
+                const resp = await fetch('/api/onboard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(Object.assign({ email }, lastBirth)),
+                });
+                const data = await resp.json().catch(() => ({}));
+
+                if (resp.status === 409) {
+                    const goLogin = await uiConfirm(
+                        'Този имейл вече е използван. Влез в профила си — картите ти '
+                        + 'са там, а нови създаваш от таблото.',
+                        { title: 'Имейлът е зает', ok: 'Към вход', cancel: 'Друг имейл' });
+                    if (goLogin) { window.location.href = '/login'; return; }
+                    emailEl.focus(); emailEl.select();
+                    return;
+                }
+                if (!resp.ok) {
+                    const msg = typeof data.detail === 'string' ? data.detail
+                              : (data.detail && data.detail.message) || 'Нещо се обърка.';
+                    uiAlert(escapeHtml(msg), { title: 'Нещо се обърка', tone: 'danger' });
+                    return;
+                }
+
                 // The cookie must be replaced too — a leftover one from an
-                // earlier account would outlive this session and point the
-                // server at the wrong user.
+                // earlier account would outlive this session.
                 if (data.token) {
                     localStorage.setItem('miralog_token', data.token);
                     document.cookie = 'miralog_token=' + encodeURIComponent(data.token)
@@ -512,12 +686,14 @@
                 if (data.chart_url) { window.location.href = data.chart_url; return; }
                 window.location.href = '/';
             } catch (err) {
-                showBanner('Връзката се разпадна. Опитай пак.');
+                uiAlert('Връзката се разпадна. Опитай пак.',
+                        { title: 'Нещо се обърка', tone: 'danger' });
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Виж своята натална карта';
+                btn.textContent = 'Запази картата';
             }
         });
+
     </script>
 </body>
 </html>
