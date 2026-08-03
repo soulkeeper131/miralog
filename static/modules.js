@@ -148,9 +148,25 @@
         localStorage.setItem(SEEN_KEY, '1');
     };
 
-    /* Show the picker once, the first time somebody lands with a chart. */
-    window.maybeShowModulePicker = function () {
+    /* Show the picker once, the first time somebody lands with a chart —
+       but only if there is actually something left to buy. Somebody who
+       already owns every module has nothing to choose from. */
+    window.maybeShowModulePicker = async function () {
         if (localStorage.getItem(SEEN_KEY)) return;
+        try {
+            const resp = await fetch('/api/features', { headers: authHeaders() });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const forSale = (data.catalogue || []).filter(item =>
+                !item.included && !item.unlocked && item.offer);
+            if (!forSale.length) {
+                // Nothing to offer: remember that, so this check runs once.
+                localStorage.setItem(SEEN_KEY, '1');
+                return;
+            }
+        } catch (e) {
+            return;   // a failed check must never pop an empty sheet
+        }
         openModulePicker({ firstTime: true });
     };
 })();
