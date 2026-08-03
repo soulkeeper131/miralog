@@ -260,6 +260,116 @@
             color: var(--text-soft);
         }
 
+        /* --- what else the chart can tell them --- */
+        .offer-card { margin-top: 18px; }
+        .offer-head { text-align: center; margin-bottom: 20px; }
+        .offer-head h3 {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: clamp(1.3rem, 3.4vw, 1.75rem); line-height: 1.2;
+            color: var(--text-heading); margin-bottom: 8px; text-wrap: balance;
+        }
+        .offer-head p {
+            color: var(--text-muted); font-size: .92rem; line-height: 1.65;
+            max-width: 52ch; margin: 0 auto;
+        }
+        .offer-grid { display: grid; gap: 10px; }
+        .offer-loading {
+            text-align: center; padding: 24px; color: var(--text-muted); font-size: .9rem;
+        }
+
+        /* The whole card is the label, so anywhere is a valid tap target. */
+        .offer-card-item {
+            display: block; cursor: pointer; position: relative;
+            border: 1px solid var(--border-soft); border-radius: 14px;
+            background: var(--bg-input); padding: 15px 16px;
+            transition: border-color .15s ease, background-color .15s ease;
+        }
+        .offer-card-item:hover { border-color: var(--accent-light); }
+        .offer-card-item.picked {
+            border-color: var(--accent); background: var(--surface-thistle);
+        }
+        .offer-check {
+            position: absolute; opacity: 0; width: 0; height: 0;
+        }
+        .offer-check:focus-visible + .offer-body {
+            outline: none; box-shadow: var(--focus-ring); border-radius: 10px;
+        }
+        .offer-body { display: block; }
+        .offer-top {
+            display: flex; align-items: flex-start; gap: 11px;
+        }
+        .offer-glyph {
+            width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-card); color: var(--on-thistle);
+            font-size: 1rem; line-height: 1;
+        }
+        .offer-card-item.picked .offer-glyph {
+            background: var(--accent); color: #fff;
+        }
+        .offer-titles { flex: 1; min-width: 0; }
+        .offer-name {
+            display: block; font-family: var(--font-display); font-weight: 600;
+            font-size: 1.02rem; line-height: 1.25; color: var(--text-heading);
+        }
+        .offer-note {
+            display: block; font-size: .78rem; color: var(--text-muted);
+            margin-top: 1px;
+        }
+        .offer-price {
+            font-family: var(--font-display); font-weight: 700; font-size: 1.2rem;
+            color: var(--gilt); flex-shrink: 0; line-height: 1.2;
+            font-variant-numeric: tabular-nums;
+        }
+        .offer-bullets {
+            display: block; margin-top: 10px; padding-left: 43px;
+        }
+        .offer-bullets span {
+            display: block; position: relative; padding-left: 14px;
+            font-size: .82rem; line-height: 1.55; color: var(--text-soft);
+        }
+        .offer-bullets span::before {
+            content: "·"; position: absolute; left: 3px;
+            color: var(--gilt); font-weight: 700;
+        }
+        @media (max-width: 520px) {
+            .offer-bullets { padding-left: 0; }
+        }
+
+        /* --- basket above the email field --- */
+        .basket {
+            text-align: left; max-width: 420px; margin: 0 auto 18px;
+            border: 1px solid var(--border-soft); border-radius: 12px;
+            background: var(--bg-card); overflow: hidden;
+        }
+        .basket-row {
+            display: flex; justify-content: space-between; gap: 12px;
+            padding: 10px 14px; font-size: .88rem;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .basket-row:last-child { border-bottom: none; }
+        .basket-price {
+            font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+            color: var(--gilt); white-space: nowrap;
+        }
+        .basket-total { font-weight: 600; background: var(--bg-input); }
+
+        .save-fields { max-width: 420px; margin: 0 auto 18px; text-align: left; }
+        .save-label {
+            display: block; font-size: .8rem; color: var(--text-muted);
+            margin-bottom: 5px; margin-top: 12px;
+        }
+        .save-label .opt { color: var(--text-dim); }
+        .save-fields input {
+            width: 100%; padding: 11px 13px; border-radius: 10px; min-height: 48px;
+            border: 1px solid var(--border); background: var(--bg-card);
+            color: var(--text); font-family: inherit; font-size: 16px;
+        }
+        .save-fields input:focus {
+            outline: none; border-color: var(--accent); box-shadow: var(--focus-ring);
+        }
+        .save-card .btn { max-width: 420px; margin: 0 auto; }
+
         /* The ask comes after the reward, and looks like an offer, not a gate. */
         .save-card {
             margin-top: 18px; text-align: center;
@@ -417,16 +527,41 @@
                 <div id="resultPoints" class="prof-grid"></div>
             </div>
 
-            <div class="card save-card">
-                <span class="save-eyebrow">Запази я</span>
-                <h3>Искаш ли да се върнеш към нея?</h3>
-                <p>Картата живее само в този браузър. Остави имейл и я запазваме
-                   в профил — оттам можеш да добавяш разчитания, когато решиш.</p>
-                <div class="save-row">
-                    <input type="email" id="fEmail" placeholder="име@поща.bg" autocomplete="email">
-                    <button type="button" class="btn" id="saveBtn">Запази картата</button>
+            <!-- What else the chart can tell them. Picking is optional; the
+                 account can be created with nothing selected. -->
+            <div class="card offer-card">
+                <div class="offer-head">
+                    <span class="save-eyebrow">Това е само началото</span>
+                    <h3>Какво още искаш да знаеш за себе си?</h3>
+                    <p>Картата ти вече е изчислена. Всяко от тези чете нея —
+                       избери каквото те интересува, плащаш веднъж и ти остава завинаги.</p>
                 </div>
-                <p class="hint" id="saveHint">Пращаме ти връзка за задаване на парола. Нищо друго.</p>
+                <div class="offer-grid" id="offerGrid">
+                    <div class="offer-loading">Зареждане…</div>
+                </div>
+            </div>
+
+            <div class="card save-card">
+                <span class="save-eyebrow">Последна стъпка</span>
+                <h3 id="saveTitle">Запази картата си</h3>
+                <p id="saveCopy">Картата живее само в този браузър. Остави имейл и я
+                   запазваме в профил, за да се върнеш към нея по всяко време.</p>
+
+                <div id="basket" class="basket" hidden></div>
+
+                <div class="save-fields">
+                    <label class="save-label" for="fEmail">Имейл</label>
+                    <input type="email" id="fEmail" placeholder="име@поща.bg" autocomplete="email">
+
+                    <label class="save-label" for="fPassword">Парола <span class="opt">(по избор)</span></label>
+                    <input type="password" id="fPassword" placeholder="поне 6 символа"
+                           autocomplete="new-password">
+                    <p class="hint" id="saveHint">
+                        Ако оставиш паролата празна, ти пращаме връзка да я зададеш по-късно.
+                    </p>
+                </div>
+
+                <button type="button" class="btn" id="saveBtn">Запази картата</button>
             </div>
         </div>
 
@@ -635,28 +770,127 @@
             document.getElementById('resultPoints').innerHTML = points;
 
             document.getElementById('result').hidden = false;
+            loadOffers();
             document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        /* ---------- module offers ---------- */
+        // Keys the visitor ticked, in the order they ticked them.
+        const wanted = new Set();
+        let catalogue = [];
+
+        function moneyBg(cents, currency) {
+            const v = (Number(cents) || 0) / 100;
+            const sym = (currency || 'EUR') === 'EUR' ? '€' : currency;
+            return v.toFixed(2).replace('.00', '') + ' ' + sym;
+        }
+
+        async function loadOffers() {
+            const grid = document.getElementById('offerGrid');
+            try {
+                const resp = await fetch('/api/public/catalogue');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                catalogue = (await resp.json()).catalogue || [];
+            } catch (e) {
+                grid.innerHTML = '<div class="offer-loading">Модулите не се заредиха.</div>';
+                return;
+            }
+            grid.innerHTML = catalogue.map(item => `
+                <label class="offer-card-item" data-key="${escapeHtml(item.key)}">
+                    <input type="checkbox" class="offer-check" value="${escapeHtml(item.key)}">
+                    <span class="offer-body">
+                        <span class="offer-top">
+                            <span class="offer-glyph">${escapeHtml(item.glyph)}</span>
+                            <span class="offer-titles">
+                                <span class="offer-name">${escapeHtml(item.name)}</span>
+                                <span class="offer-note">${escapeHtml(item.note)}</span>
+                            </span>
+                            <span class="offer-price">${moneyBg(item.price_cents, item.currency)}</span>
+                        </span>
+                        <span class="offer-bullets">
+                            ${(item.bullets || []).map(b => `<span>${escapeHtml(b)}</span>`).join('')}
+                        </span>
+                    </span>
+                </label>`).join('');
+
+            grid.querySelectorAll('.offer-check').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    if (cb.checked) wanted.add(cb.value); else wanted.delete(cb.value);
+                    cb.closest('.offer-card-item').classList.toggle('picked', cb.checked);
+                    renderBasket();
+                });
+            });
+        }
+
+        // The basket doubles as the summary above the email field, so the
+        // visitor sees exactly what they are about to pay for.
+        function renderBasket() {
+            const box = document.getElementById('basket');
+            const title = document.getElementById('saveTitle');
+            const copy = document.getElementById('saveCopy');
+            const btn = document.getElementById('saveBtn');
+
+            if (!wanted.size) {
+                box.hidden = true;
+                title.textContent = 'Запази картата си';
+                copy.textContent = 'Картата живее само в този браузър. Остави имейл и я '
+                    + 'запазваме в профил, за да се върнеш към нея по всяко време.';
+                btn.textContent = 'Запази картата';
+                return;
+            }
+
+            const picked = catalogue.filter(i => wanted.has(i.key));
+            const total = picked.reduce((s, i) => s + i.price_cents, 0);
+            box.hidden = false;
+            box.innerHTML = picked.map(i => `
+                <div class="basket-row">
+                    <span>${escapeHtml(i.glyph)} ${escapeHtml(i.name)}</span>
+                    <span class="basket-price">${moneyBg(i.price_cents, i.currency)}</span>
+                </div>`).join('')
+                + `<div class="basket-row basket-total">
+                       <span>Общо</span>
+                       <span class="basket-price">${moneyBg(total, 'EUR')}</span>
+                   </div>`;
+
+            title.textContent = 'Създай профил и плати';
+            copy.textContent = 'Профилът пази картата и отключеното в нея. '
+                + 'Плащането минава през Stripe.';
+            btn.textContent = 'Към плащането';
         }
 
         /* ---------- saving the chart to an account ---------- */
         document.getElementById('saveBtn').addEventListener('click', async () => {
             const emailEl = document.getElementById('fEmail');
+            const passEl = document.getElementById('fPassword');
             const email = emailEl.value.trim();
+            const password = passEl.value;
+
             if (email.indexOf('@') < 0) {
                 emailEl.focus();
                 uiAlert('Въведи валиден имейл адрес.', { title: 'Проверка' });
                 return;
             }
+            if (password && password.length < 6) {
+                passEl.focus();
+                uiAlert('Паролата трябва да е поне 6 символа, или остави полето празно.',
+                        { title: 'Проверка' });
+                return;
+            }
             if (!lastBirth) { location.reload(); return; }
 
             const btn = document.getElementById('saveBtn');
+            const original = btn.textContent;
             btn.disabled = true;
-            btn.textContent = 'Запазваме...';
+            btn.textContent = wanted.size ? 'Подготвяме плащането...' : 'Запазваме...';
             try {
                 const resp = await fetch('/api/onboard', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(Object.assign({ email }, lastBirth)),
+                    body: JSON.stringify(Object.assign({
+                        email,
+                        password: password || null,
+                        wanted: [...wanted],
+                    }, lastBirth)),
                 });
                 const data = await resp.json().catch(() => ({}));
 
@@ -683,6 +917,16 @@
                     document.cookie = 'miralog_token=' + encodeURIComponent(data.token)
                         + '; path=/; SameSite=Lax; max-age=2592000';
                 }
+
+                // Picked modules go straight to Stripe; otherwise to the chart.
+                if (data.checkout_url) { window.location.href = data.checkout_url; return; }
+
+                if (wanted.size && !data.checkout_url) {
+                    // Stripe is not configured on this install: the account is
+                    // made, the modules are noted, somebody follows up by hand.
+                    await uiAlert('Профилът е готов. Ще се свържем с теб за '
+                        + 'плащането на избраните разчитания.', { title: 'Готово' });
+                }
                 if (data.chart_url) { window.location.href = data.chart_url; return; }
                 window.location.href = '/';
             } catch (err) {
@@ -690,7 +934,7 @@
                         { title: 'Нещо се обърка', tone: 'danger' });
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Запази картата';
+                btn.textContent = original;
             }
         });
 

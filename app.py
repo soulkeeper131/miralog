@@ -1060,6 +1060,31 @@ class GuestChartRequest(BaseModel):
     timezone: str = "Europe/Sofia"
 
 
+@app.get("/api/public/catalogue")
+def api_public_catalogue():
+    """The module list with prices, for visitors who have no account yet.
+
+    Same data the signed-in picker uses, minus anything account-specific.
+    A price list is public information, so this needs no token.
+    """
+    out = []
+    for f in FEATURE_CATALOGUE:
+        if f.get("included"):
+            continue
+        offer = feature_offer(f["key"])
+        if not offer:
+            continue
+        out.append({
+            "key": f["key"],
+            "name": f["name"],
+            "note": f.get("note", ""),
+            "glyph": f.get("glyph", "✦"),
+            "bullets": f.get("bullets", []),
+            "price_cents": offer["price_cents"],
+            "currency": offer["currency"],
+        })
+    return {"catalogue": out}
+
 @app.post("/api/guest/chart")
 def api_guest_chart(data: GuestChartRequest):
     """Compute a chart for somebody who has not signed up yet.
@@ -1094,7 +1119,13 @@ def api_guest_chart(data: GuestChartRequest):
 
 
 class OnboardRequest(BaseModel):
-    """Birth details plus an email, gathered before any account exists."""
+    """Birth details plus an email, gathered before any account exists.
+
+    `password` is optional: somebody who types one is signed in straight away,
+    while somebody who leaves it blank gets a set-password link by email.
+    `wanted` carries the modules picked before signing up, so checkout can
+    start from the same click.
+    """
     email: str
     name: str
     year: int
@@ -1105,6 +1136,8 @@ class OnboardRequest(BaseModel):
     lat: float
     lon: float
     timezone: str = "Europe/Sofia"
+    password: Optional[str] = None
+    wanted: Optional[list] = None
 
 
 @app.post("/api/onboard")
@@ -1130,9 +1163,16 @@ def api_onboard(data: OnboardRequest, request: Request):
             "message": "Вече има акаунт с този имейл. Влез и създай картата оттам.",
         })
 
-    # An unusable password: the visitor is signed in by token now and sets a
-    # real one from the emailed link, at their own pace.
-    user = create_user(email, hash_password(secrets.token_urlsafe(32)))
+    chose_password = bool((data.password or "").strip())
+    if chose_password and len((data.password or "").strip()) < 6:
+        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+
+    # Without a typed password the account gets an unusable one: the visitor is
+    # signed in by token now and sets a real one from the emailed link.
+    user = create_user(
+        email,
+        hash_password(data.password.strip() if chose_password
+                      else secrets.token_urlsafe(32)))
 
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
@@ -1146,15 +1186,39 @@ def api_onboard(data: OnboardRequest, request: Request):
     # The chart is what they came for, so it is theirs from the start.
     grant_feature_purchase(user["id"], "chart", 0, "EUR", None)
 
-    send_welcome_set_password(user["id"])
+    if not chose_password:
+        send_welcome_set_password(user["id"])
 
     token = create_token(user["id"], user["email"])
-    return {
+    result = {
         "ok": True,
         "person_id": person_id,
         "token": token,
+        "chose_password": chose_password,
         "chart_url": f"/chart/{person_id}?token={token}",
     }
+
+    # Modules picked before signing up go straight to checkout, so the visitor
+    # does not have to find and click them a second time.
+    wanted = [k for k in (data.wanted or []) if feature_offer(k)]
+    if wanted and billing.stripe_enabled():
+        base = site_base_url(request)
+        try:
+            offers = [feature_offer(k) for k in wanted]
+            result["checkout_url"] = billing.create_features_checkout(
+                customer_email=email,
+                customer_id=None,
+                user_id=user["id"],
+                items=[{"key": o["key"], "name": o["name"],
+                        "amount_cents": o["price_cents"], "currency": o["currency"]}
+                       for o in offers],
+                success_url=f"{base}/chart/{person_id}?paid=1",
+                cancel_url=f"{base}/chart/{person_id}?paid=0",
+            )
+        except Exception as e:
+            log.warning("Onboarding checkout за %s се провали: %s", email, e)
+    result["wanted"] = wanted
+    return result
 
 
 @app.post("/api/auth/register")
@@ -2085,6 +2149,28 @@ def fulfill_checkout_session(session: dict) -> None:
         extend_user_plan(user_id, plan_key, months=1,
                          subscription_id=subscription_id, customer_id=customer_id)
         log.info("Stripe абонамент активиран за user=%s payment=%s", user_id, pay_id)
+        return
+
+    # A basket of modules bought in one go, from the signup flow.
+    if kind == "features" and meta.get("feature_keys"):
+        keys = [k.strip() for k in meta["feature_keys"].split(",") if k.strip()]
+        pay_id = record_payment(
+            user_id, plan_key=None, amount_cents=amount, currency=currency,
+            method="stripe", note=f"features:{','.join(keys)} {session.get('id')}")
+        for key in keys:
+            offer = feature_offer(key)
+            grant_feature_purchase(
+                user_id, key,
+                offer["price_cents"] if offer else 0,
+                offer["currency"] if offer else currency,
+                pay_id)
+        if customer_id:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute(
+                    "UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, ?) WHERE id = ?",
+                    (customer_id, user_id))
+                conn.commit()
+        log.info("Stripe отключване %s за user=%s", keys, user_id)
         return
 
     feature_key = meta.get("feature_key")

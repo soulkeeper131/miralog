@@ -112,6 +112,54 @@ def create_feature_checkout(
     return session.url
 
 
+def create_features_checkout(
+    *,
+    customer_email: str,
+    customer_id: Optional[str],
+    user_id: int,
+    items: list,
+    success_url: str,
+    cancel_url: str,
+) -> str:
+    """Checkout for several one-off unlocks at once.
+
+    Somebody who picked three modules should pay once, not three times. The
+    keys travel in metadata as a comma-separated list; the webhook grants them
+    all when the session completes.
+    """
+    stripe = get_stripe()
+    if not items:
+        raise ValueError("items must not be empty")
+
+    keys = ",".join(i["key"] for i in items)
+    params = {
+        "mode": "payment",
+        "line_items": [{
+            "price_data": {
+                "currency": (i.get("currency") or "eur").lower(),
+                "unit_amount": int(i["amount_cents"]),
+                "product_data": {"name": f"МираСкоп — {i['name']}"},
+            },
+            "quantity": 1,
+        } for i in items],
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "client_reference_id": str(user_id),
+        "metadata": {
+            "kind": "features",
+            "user_id": str(user_id),
+            "feature_keys": keys,
+        },
+        "allow_promotion_codes": True,
+    }
+    if customer_id:
+        params["customer"] = customer_id
+    else:
+        params["customer_email"] = customer_email
+    session = stripe.checkout.Session.create(**params)
+    return session.url
+
+
 def cancel_subscription_at_period_end(subscription_id: str) -> dict:
     stripe = get_stripe()
     sub = stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
