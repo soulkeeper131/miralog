@@ -61,17 +61,17 @@
             --border-soft: #ece3f2;
             --text: #241d33;
             --text-heading: #513173;
-            --text-muted: #6e6285;
-            --text-dim: #7d6888;
-            --text-soft: #6e6285;
+            --text-muted: #5f5475;
+            --text-dim: #6b5876;
+            --text-soft: #5f5475;
             --accent: #8659a3;
             --accent-hover: #744a90;
-            --accent-light: #8659a3;
+            --accent-light: #764a93;
             --danger: #c2255c;
             --danger-bg: #fff0f5;
             --danger-text: #c2255c;
             --success: #16a34a;
-            --gilt: #8a6410;
+            --gilt: #7a5709;
             --gilt-soft: rgba(138,100,16,0.10);
             --surface-thistle: rgba(205,180,219,0.28);
             --on-thistle: #5b3a73;
@@ -244,15 +244,15 @@
         <p class="lede">
             Нужни са само дата, час и място на раждане. Картата се изчислява
             със Swiss Ephemeris — същите таблици, които ползват професионалните
-            астролози.
+            астролози — и я виждаш веднага, без плащане.
         </p>
 
         <div class="steps" aria-label="Стъпки">
             <span class="step on"><span class="step-num">1</span>Данни за раждане</span>
             <span class="step-sep">·</span>
-            <span class="step"><span class="step-num">2</span>Плащане</span>
+            <span class="step"><span class="step-num">2</span>Картата ти</span>
             <span class="step-sep">·</span>
-            <span class="step"><span class="step-num">3</span>Готово</span>
+            <span class="step"><span class="step-num">3</span>Избираш какво да четеш</span>
         </div>
 
         <div class="card">
@@ -308,20 +308,20 @@
                     <label for="fEmail">Твоят имейл</label>
                     <input type="email" id="fEmail" required placeholder="име@поща.bg" autocomplete="email">
                     <div class="hint">
-                        Тук пращаме картата и връзка за задаване на парола,
-                        с която влизаш после.
+                        Пращаме ти връзка за задаване на парола, за да можеш
+                        да се върнеш към картата си по всяко време.
                     </div>
                 </div>
 
                 <div class="price-row">
                     <span class="price-what">
-                        Натална карта
-                        <small>Колелото, позициите и аспектите — остава ти завинаги</small>
+                        Наталната ти карта
+                        <small>Колелото, позициите, аспектите и астро портретът — без плащане</small>
                     </span>
-                    <span class="price-amount" id="priceTag">9 €</span>
+                    <span class="price-amount" id="priceTag">0 €</span>
                 </div>
 
-                <button type="submit" class="btn" id="submitBtn">Към плащането</button>
+                <button type="submit" class="btn" id="submitBtn">Виж своята натална карта</button>
             </form>
         </div>
 
@@ -432,7 +432,7 @@
 
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
-            btn.textContent = 'Подготвяме плащането...';
+            btn.textContent = 'Изчисляваме картата...';
 
             try {
                 const resp = await fetch('/api/onboard', {
@@ -459,18 +459,15 @@
                     return;
                 }
 
-                if (data.checkout_url) { window.location.href = data.checkout_url; return; }
-
-                // No payment processor configured: the request was logged instead.
-                await uiAlert('Записахме заявката ти. Ще се свържем с теб на ' + email +
-                              ', за да уредим плащането и да отключим картата.',
-                              { title: 'Готово' });
+                // Signed in already: straight to the chart they came for.
+                if (data.token) localStorage.setItem('miralog_token', data.token);
+                if (data.chart_url) { window.location.href = data.chart_url; return; }
                 window.location.href = '/';
             } catch (err) {
                 showBanner('Връзката се разпадна. Опитай пак.');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Към плащането';
+                btn.textContent = 'Виж своята натална карта';
             }
         });
     </script>

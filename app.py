@@ -340,9 +340,9 @@ def init_db():
                     ("love", 500, 1),
                     ("akashic", 900, 1),
                     ("moon", 300, 1),
-                    # The chart itself is the first purchase; planets and
-                    # aspects are part of it and are never sold separately.
-                    ("chart", 900, 1),
+                    # The chart is granted free at onboarding, so it is never
+                    # offered for sale; planets and aspects ride along with it.
+                    ("chart", 0, 0),
                     ("planets", 0, 0),
                     ("aspects", 0, 0),
                     ("numerology", 400, 1),
@@ -355,11 +355,11 @@ def init_db():
             " WHERE key = 'demo' AND features LIKE '%chart%'",
             (json.dumps(["planets", "aspects"]),))
 
-        # The chart used to be free with every plan; it is now the entry
-        # purchase. Existing rows keep their old zero price without this.
+        # The chart was briefly sold for 9 EUR; it is now granted at signup,
+        # so any install that seeded the old price must stop offering it.
         conn.execute(
-            "UPDATE feature_prices SET price_cents = 900, is_purchasable = 1"
-            " WHERE feature_key = 'chart' AND price_cents = 0")
+            "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
+            " WHERE feature_key = 'chart'")
 
         # Same for the price list: it is only seeded when empty, so later
         # features would have no price and could never be bought on their own.
@@ -1052,12 +1052,12 @@ class OnboardRequest(BaseModel):
 
 @app.post("/api/onboard")
 def api_onboard(data: OnboardRequest, request: Request):
-    """Take birth details and an email, then send the visitor to checkout.
+    """Create an account and its first chart, then sign the visitor straight in.
 
-    The account is created up front with an unusable password: it has to exist
-    for the chart to belong to someone and for Stripe's webhook to have a user
-    to unlock. The visitor sets a real password from the link emailed after
-    payment succeeds.
+    Nothing is charged here. The chart, the astro portrait, the planets and the
+    aspects come free: somebody has to see what the product is before deciding
+    whether to buy a reading of it. The add-ons are offered afterwards, from
+    the chart page itself.
     """
     email = (data.email or "").strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
@@ -1073,12 +1073,8 @@ def api_onboard(data: OnboardRequest, request: Request):
             "message": "Вече има акаунт с този имейл. Влез и създай картата оттам.",
         })
 
-    offer = feature_offer("chart")
-    if not offer:
-        raise HTTPException(503, "Наталната карта не се предлага в момента.")
-
-    # An unusable password: the account cannot be signed into until the visitor
-    # follows the emailed link and chooses one.
+    # An unusable password: the visitor is signed in by token now and sets a
+    # real one from the emailed link, at their own pace.
     user = create_user(email, hash_password(secrets.token_urlsafe(32)))
 
     with sqlite3.connect(DB_PATH) as conn:
@@ -1090,38 +1086,18 @@ def api_onboard(data: OnboardRequest, request: Request):
         person_id = cur.lastrowid
         conn.commit()
 
-    if not billing.stripe_enabled():
-        # Without a payment processor the visitor still gets an account and a
-        # chart; unlocking is handled by hand from the admin panel.
-        to = get_setting("smtp_from") or get_setting("smtp_user")
-        if to:
-            try:
-                send_email(to, "Нова заявка за натална карта",
-                           f"{email} създаде карта „{data.name}“ (person {person_id}) "
-                           f"и чака отключване за {offer['price_cents'] / 100:.2f} "
-                           f"{offer['currency']}.")
-            except HTTPException:
-                pass
-        return {"ok": True, "manual": True, "person_id": person_id}
+    # The chart is what they came for, so it is theirs from the start.
+    grant_feature_purchase(user["id"], "chart", 0, "EUR", None)
 
-    base = site_base_url(request)
-    try:
-        url = billing.create_feature_checkout(
-            customer_email=email,
-            customer_id=None,
-            user_id=user["id"],
-            feature_key="chart",
-            feature_name=offer["name"],
-            amount_cents=offer["price_cents"],
-            currency=offer["currency"],
-            success_url=f"{base}/welcome?paid=1",
-            cancel_url=f"{base}/?paid=0",
-        )
-    except Exception as e:
-        log.warning("Onboarding checkout се провали за %s: %s", email, e)
-        raise HTTPException(502, "Плащането не можа да се стартира. Опитай пак.")
+    send_welcome_set_password(user["id"])
 
-    return {"ok": True, "checkout_url": url, "person_id": person_id}
+    token = create_token(user["id"], user["email"])
+    return {
+        "ok": True,
+        "person_id": person_id,
+        "token": token,
+        "chart_url": f"/chart/{person_id}?token={token}",
+    }
 
 
 @app.post("/api/auth/register")
