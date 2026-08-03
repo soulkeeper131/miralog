@@ -1,0 +1,160 @@
+/* Module picker: a sheet of cards, one per add-on. Built from the same tokens
+   as the rest of the app so it reads as part of the site, not a store bolted on. */
+
+.mod-overlay {
+    position: fixed; inset: 0; z-index: 9200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(6, 5, 18, .84);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity .18s ease;
+    overflow-y: auto;
+}
+.mod-overlay.mod-open { opacity: 1; }
+:root[data-theme="light"] .mod-overlay { background: rgba(45, 36, 56, .58); }
+
+.mod-sheet {
+    position: relative;
+    width: min(880px, 100%);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    background: var(--bg-card, #14122e);
+    border: 1px solid var(--border, #2b2752);
+    border-radius: 22px;
+    padding: clamp(26px, 4vw, 40px);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, .5);
+    transform: translateY(10px) scale(.985);
+    transition: transform .2s cubic-bezier(.2, .7, .3, 1);
+}
+.mod-overlay.mod-open .mod-sheet { transform: translateY(0) scale(1); }
+
+.mod-close {
+    position: absolute; top: 16px; right: 16px;
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border, #2b2752);
+    background: transparent; color: var(--text-muted, #9a93b8);
+    font-size: .9rem; cursor: pointer;
+}
+.mod-close:hover { border-color: var(--accent, #7c3aed); color: var(--text, #e6e2f4); }
+.mod-close:focus-visible {
+    outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124, 58, 237, .28));
+}
+
+.mod-intro { text-align: center; margin-bottom: 26px; padding-right: 40px; padding-left: 40px; }
+.mod-eyebrow {
+    display: inline-block; font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: .66rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--gilt, #e8c56b); margin-bottom: 10px;
+}
+.mod-intro h3 {
+    font-family: var(--font-display, Georgia, serif); font-weight: 700;
+    font-size: clamp(1.5rem, 3.6vw, 2rem); line-height: 1.15;
+    color: var(--text-heading, #d6c6ff); margin-bottom: 10px;
+    text-wrap: balance;
+}
+.mod-intro p {
+    color: var(--text-muted, #9a93b8); font-size: .93rem; line-height: 1.7;
+    max-width: 56ch; margin: 0 auto;
+}
+
+.mod-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 14px;
+}
+.mod-loading {
+    grid-column: 1 / -1; text-align: center; padding: 30px;
+    color: var(--text-muted, #9a93b8); font-size: .9rem;
+}
+
+.mod-card {
+    display: flex; flex-direction: column;
+    /* --bg-raised only exists on some pages; --bg-input is defined in both
+       themes everywhere, so the card never falls back to a dark hard-coded
+       colour on a light sheet. */
+    background: var(--bg-input, #0f0e26);
+    border: 1px solid var(--border-soft, #1d1a3c);
+    border-radius: 16px; padding: 20px 18px 18px;
+    transition: border-color .18s ease, transform .18s ease;
+}
+.mod-card:hover { border-color: var(--accent-light, #a78bfa); transform: translateY(-2px); }
+.mod-card-owned { opacity: .62; }
+.mod-card-owned:hover { transform: none; border-color: var(--border-soft, #1d1a3c); }
+
+.mod-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.mod-glyph {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-thistle, rgba(205, 180, 219, .1));
+    color: var(--on-thistle, #c9b1ff);
+    font-size: 1.1rem; line-height: 1;
+}
+.mod-name {
+    font-family: var(--font-display, Georgia, serif); font-weight: 600;
+    font-size: 1.05rem; line-height: 1.25;
+    color: var(--text-heading, #d6c6ff);
+}
+
+.mod-list { list-style: none; padding: 0; margin: 0 0 16px; flex: 1; }
+.mod-list li {
+    position: relative; padding: 5px 0 5px 20px;
+    font-size: .84rem; line-height: 1.55;
+    /* --text-soft is tuned for body copy on the page ground; on the tinted
+       card it falls under AA, so the bullets use the stronger token. */
+    color: var(--text, #e6e2f4);
+}
+.mod-list li::before {
+    content: "·"; position: absolute; left: 6px; top: 4px;
+    color: var(--gilt, #e8c56b); font-weight: 700;
+}
+
+.mod-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap;
+    padding-top: 14px; border-top: 1px solid var(--border-soft, #1d1a3c);
+}
+.mod-pricing { display: flex; align-items: baseline; gap: 6px; }
+.mod-price {
+    font-family: var(--font-display, Georgia, serif); font-weight: 700;
+    font-size: 1.45rem; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--gilt, #e8c56b);
+}
+.mod-once {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: .64rem; color: var(--text-dim, #9090a4);
+}
+.mod-owned {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: .7rem; letter-spacing: .08em;
+    color: var(--success, #22c55e);
+}
+.mod-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 9px 18px; border-radius: 10px; border: none;
+    background: var(--accent, #7c3aed); color: #fff; cursor: pointer;
+    font-family: inherit; font-size: .85rem; font-weight: 600; line-height: 1.2;
+    min-height: 40px;
+    transition: background-color .15s ease;
+}
+.mod-btn:hover { background: var(--accent-hover, #6d28d9); }
+.mod-btn:disabled { opacity: .6; cursor: not-allowed; }
+.mod-btn:focus-visible {
+    outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124, 58, 237, .28));
+}
+
+.mod-foot-note {
+    text-align: center; margin-top: 22px;
+    font-size: .78rem; color: var(--text-dim, #9090a4);
+}
+
+@media (max-width: 560px) {
+    .mod-sheet { padding: 24px 18px 20px; border-radius: 18px; }
+    .mod-intro { padding-inline: 30px; }
+    .mod-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .mod-overlay, .mod-sheet, .mod-card { transition: none; }
+    .mod-sheet { transform: none; }
+}

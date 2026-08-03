@@ -17,6 +17,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/modules.css">
     <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,6 +39,9 @@
             --text-dim: #9090a4;
             --text-soft: #aaa;
             --text-softer: #ccc;
+            /* Gilt marks real data: prices, degrees, dates. */
+            --gilt: #e8c56b;
+            --gilt-soft: rgba(232,197,107,0.12);
             --text-meaning: #b8b0d0;
             --accent: #7c3aed;
             --accent-hover: #6d28d9;
@@ -79,6 +83,8 @@
             --text-dim: #7d6888;
             --text-soft: #7a6d8a;
             --text-softer: #4a3f5c;
+            --gilt: #8a6410;
+            --gilt-soft: rgba(138,100,16,0.10);
             --text-meaning: #5c4d70;
             --accent: #8659a3;
             --accent-hover: #744a90;
@@ -127,6 +133,22 @@
         /* shared page mark: small logo sitting beside the back-link */
         .page-nav {
             display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+        }
+        /* Pushed to the far right so it never crowds the back link. */
+        .nav-modules {
+            margin-left: auto; flex-shrink: 0;
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 15px; border-radius: 10px; min-height: 40px;
+            border: 1px solid var(--border); background: transparent;
+            color: var(--accent-light); cursor: pointer;
+            font-family: var(--font-body); font-size: 0.8rem; font-weight: 500;
+            line-height: 1.2;
+            transition: background-color .15s ease, border-color .15s ease;
+        }
+        .nav-modules:hover { border-color: var(--accent); background: var(--surface-thistle); }
+        .nav-modules:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        @media (max-width: 600px) {
+            .nav-modules { padding: 8px 12px; font-size: 0.75rem; }
         }
         .page-logo {
             width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
@@ -1009,6 +1031,7 @@
         <div class="page-nav">
             <img class="page-logo" src="/static/logo-header.png" alt="МираСкоп">
             <a href="/" class="back-link">← Всички хора</a>
+            <button class="nav-modules" onclick="openModulePicker()">✦ Добави разчитания</button>
         </div>
 
         <div class="chart-header">
@@ -1333,6 +1356,7 @@
 
     <script src="/static/locked.js"></script>
     <script src="/static/ui.js"></script>
+    <script src="/static/modules.js"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -2197,6 +2221,13 @@
         }
 
         // Debounced so we stay within Nominatim's one-request-per-second policy.
+        // Someone arriving with a fresh chart has not seen the add-ons yet.
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof maybeShowModulePicker === 'function') {
+                setTimeout(maybeShowModulePicker, 900);
+            }
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
             const input = document.getElementById('pPlace');
             if (!input) return;
