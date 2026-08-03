@@ -355,6 +355,17 @@ def init_db():
             " WHERE key = 'demo' AND features LIKE '%chart%'",
             (json.dumps(["planets", "aspects"]),))
 
+        # Accounts created before the chart became free were never granted it,
+        # so their own chart page would 402. Give it to anyone who has a person.
+        conn.execute(
+            "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
+            " SELECT DISTINCT user_id, 'chart', 0, 'EUR' FROM persons")
+
+        # „Пълно разчитане“ is withdrawn for now: no price, not purchasable.
+        conn.execute(
+            "UPDATE feature_prices SET is_purchasable = 0"
+            " WHERE feature_key = 'interpretation'")
+
         # The chart was briefly sold for 9 EUR; it is now granted at signup,
         # so any install that seeded the old price must stop offering it.
         conn.execute(
@@ -371,7 +382,7 @@ def init_db():
 
         # Features added after a plan was first seeded do not appear in existing
         # rows, so the paid plan would silently lose access to them.
-        for key, feature in [("full", "interpretation")]:
+        for key, feature in []:   # "interpretation" is currently withdrawn
             row = conn.execute("SELECT features FROM plans WHERE key = ?", (key,)).fetchone()
             if not row:
                 continue
@@ -1157,7 +1168,7 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
 # Everything a plan can unlock. Keys are what require_feature() checks against.
 FEATURE_CATALOGUE = [
     # "bullets" and "glyph" drive the module picker; "included" marks what a
-    # bought chart already carries, so the picker never offers it for sale.
+    # chart already carries, so the picker never offers it for sale.
     {"key": "chart", "name": "Натална карта", "note": "Колелото и позициите",
      "glyph": "⊕", "included": True,
      "bullets": ["Колелото с домовете по Плацидус",
@@ -1168,61 +1179,63 @@ FEATURE_CATALOGUE = [
     {"key": "aspects", "name": "Аспекти", "note": "Аспектите в картата",
      "glyph": "△", "included": True, "bullets": []},
 
-    {"key": "profile", "name": "Разчитане на астро портрета",
-     "note": "Подробно тълкуване на портрета", "glyph": "☉",
-     "bullets": ["Кой си ти — същност, емоции, как те виждат",
-                 "Силните ти страни, казани конкретно",
-                 "Слабите места, казани честно и без плашене",
-                 "Върху какво да работиш"]},
-    {"key": "interpretation", "name": "Пълно разчитане",
-     "note": "Цялата карта, тълкувана подробно", "glyph": "✦",
-     "bullets": ["Всяка планета в знак и дом — какво значи за теб",
-                 "Всички аспекти и как се преплитат",
-                 "Темите, които се повтарят в картата",
-                 "Най-дългият текст в приложението"]},
-    {"key": "horoscope", "name": "Дневен хороскоп", "note": "Разчитане на деня",
-     "glyph": "☽",
-     "bullets": ["Какво е благоприятно точно днес",
-                 "Какво да отложиш за друг ден",
-                 "Изведено от реалните транзити към твоята карта",
-                 "Ново разчитане всеки ден"]},
-    {"key": "period", "name": "Период", "note": "Транзити за диапазон от дати",
-     "glyph": "♃",
-     "bullets": ["Избираш период до 62 дни напред",
-                 "Кои дни носят промяна и защо",
-                 "Кой транзит започва и кой отпада",
-                 "Полезно за планиране на важни неща"]},
-    {"key": "numerology", "name": "Нумерология", "note": "Числата и какво означават",
-     "glyph": "7",
-     "bullets": ["Числото на съдбата, изразяването и душевния копнеж",
-                 "Числата на личността и рождения ден",
-                 "Питагорова система, сметната от името и датата",
-                 "Разчитане на всяко число"]},
-    {"key": "love", "name": "Любовен хороскоп", "note": "Съвместимост по зодия",
-     "glyph": "♀",
-     "bullets": ["Съвместимост с партньор по зодия",
-                 "Или по пълни рождени данни, ако ги знаеш",
-                 "Къде има химия и къде има търкания",
-                 "Какво да правиш и с какво да внимаваш"]},
-    {"key": "synastry", "name": "Съвместимост", "note": "Синастрия между двама",
-     "glyph": "☍",
-     "bullets": ["Пълна синастрия между две натални карти",
-                 "Аспектите между двете карти",
-                 "Емоционално разбиране и дългосрочен потенциал",
-                 "Нужни са рождените данни и на двамата"]},
-    {"key": "akashic", "name": "Акашови записи", "note": "Кармично разчитане",
-     "glyph": "☊",
-     "bullets": ["Лунните възли — откъде идваш и накъде вървиш",
-                 "Хирон — раната, която лекува",
-                 "Сатурн и Плутон — уроците и трансформацията",
-                 "Кармичните теми в картата ти"]},
-    {"key": "moon", "name": "Лунен календар", "note": "Фазите и какво носят",
-     "glyph": "◐",
+    {"key": "profile", "name": "Разчитане на портрета",
+     "note": "Кой си ти, казано подробно", "glyph": "☉",
+     "bullets": ["Защо реагираш така, както реагираш",
+                 "Силните ти страни — конкретно, не с общи думи",
+                 "Слепите петна, които другите виждат преди теб",
+                 "Кое в теб се бори със самото себе си"]},
+
+    {"key": "horoscope", "name": "Дневен хороскоп",
+     "note": "Какво носи днешният ден", "glyph": "☽",
+     "bullets": ["Кое днес ще ти върви по-леко от обикновено",
+                 "Кой разговор е по-добре да изчака",
+                 "Изведено от твоята карта, не от зодията ти",
+                 "Ново всяка сутрин"]},
+
+    {"key": "period", "name": "Периоди напред",
+     "note": "Кога да действаш и кога да чакаш", "glyph": "♃",
+     "bullets": ["Кои дни носят обрат — до два месеца напред",
+                 "Кога прозорецът се отваря и кога се затваря",
+                 "Полезно за подписване, местене, започване",
+                 "Виждаш го, преди да е дошло"]},
+
+    {"key": "love", "name": "Любовен хороскоп",
+     "note": "Как се получава с другия", "glyph": "♀",
+     "bullets": ["Достатъчна е зодията му — или пълните данни",
+                 "Къде има истинско привличане",
+                 "Кое ще ви дразни и след години",
+                 "Какво да правиш и къде да отстъпиш"]},
+
+    {"key": "synastry", "name": "Съвместимост",
+     "note": "Двете карти една до друга", "glyph": "☍",
+     "bullets": ["Пълно сравнение между двама души",
+                 "Кои теми ви свързват и кои ви разделят",
+                 "Разбирате ли се емоционално наистина",
+                 "Има ли го дългосрочното"]},
+
+    {"key": "akashic", "name": "Акашови записи",
+     "note": "Повтарящите се теми в живота ти", "glyph": "☊",
+     "bullets": ["Защо някои неща ти се случват отново и отново",
+                 "Какво носиш наготово и какво трябва да научиш",
+                 "Раната, която се оказва дарба",
+                 "Накъде води пътят ти"]},
+
+    {"key": "numerology", "name": "Нумерология",
+     "note": "Числата зад името и датата", "glyph": "7",
+     "bullets": ["Числото на съдбата ти и какво иска от теб",
+                 "Какво търсиш всъщност, зад думите",
+                 "Как те виждат хората отвън",
+                 "Изчислено по питагоровата система"]},
+
+    {"key": "moon", "name": "Лунен календар",
+     "note": "Кой ден за какво е добър", "glyph": "◐",
      "bullets": ["Фазата на Луната за всеки ден от месеца",
-                 "Какво да правиш и какво да избягваш",
-                 "В кой знак минава Луната",
-                 "Полезно за избор на дата"]},
+                 "Кога да започваш и кога да завършваш",
+                 "Кои дни са за почивка, а не за напъване",
+                 "Полезно, когато избираш дата"]},
 ]
+
 
 
 # Default wording for the automated emails; admins can edit these.

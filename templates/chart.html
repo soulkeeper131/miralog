@@ -134,6 +134,18 @@
         .page-nav {
             display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
         }
+        /* A padlock on tabs the account has not unlocked. The tab still opens —
+           the panel behind it shows the offer — so this is a signpost, not a
+           barrier. */
+        .tab-locked::before {
+            content: "🔒";
+            font-size: 0.72em;
+            margin-right: 5px;
+            opacity: .75;
+        }
+        .tab-locked { color: var(--text-dim); }
+        .tab-locked.active { color: inherit; }
+
         /* Pushed to the far right so it never crowds the back link. */
         .nav-modules {
             margin-left: auto; flex-shrink: 0;
@@ -1072,12 +1084,13 @@
             <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">Астро портрет</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
-            <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope">Дневен хороскоп</div>
-            <div class="tab" onclick="showTab('period')" id="tabbtn-period">Период</div>
-            <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology">Нумерология</div>
-            <div class="tab" onclick="showTab('love')" id="tabbtn-love">Любовен хороскоп</div>
-            <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic">Акашови записи</div>
-            <div class="tab" onclick="showTab('interpretation')" id="tabbtn-interpretation">Пълно разчитане</div>
+            <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope" data-feature="horoscope">Дневен хороскоп</div>
+            <div class="tab" onclick="showTab('period')" id="tabbtn-period" data-feature="period">Период</div>
+            <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology" data-feature="numerology">Нумерология</div>
+            <div class="tab" onclick="showTab('love')" id="tabbtn-love" data-feature="love">Любовен хороскоп</div>
+            <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic" data-feature="akashic">Акашови записи</div>
+            <!-- „Пълно разчитане“ е временно свалено от менюто. Панелът и
+                 endpoint-ът остават, за да се върне с един ред. -->
         </div>
         <button class="tab-nav tab-nav-next" id="tabNext" type="button"
                 aria-label="Следващи менюта" hidden>›</button>
@@ -1856,6 +1869,34 @@
         }
 
         async function loadProfileAI(refresh) {
+            // The portrait above is free; this reading is a separate purchase.
+            // Showing the offer without calling the endpoint keeps the panel
+            // honest and saves a request that would only 402.
+            if (featureIsLocked('profile')) {
+                const el = document.getElementById('profile-ai-content');
+                renderLocked(el, {
+                    feature: 'profile',
+                    feature_name: 'Разчитане на портрета',
+                    message: 'Портретът горе е твой. Подробното разчитане се отключва отделно.',
+                    offer: await featureOffer('profile'),
+                }, loadProfileAI);
+                return;
+            }
+            return loadProfileAIInner(refresh);
+        }
+
+        // Look up one feature's price without hard-coding it in the page.
+        async function featureOffer(key) {
+            try {
+                const resp = await fetch('/api/features', { headers: authHeaders() });
+                if (!resp.ok) return null;
+                const data = await resp.json();
+                const item = (data.catalogue || []).find(i => i.key === key);
+                return item ? item.offer : null;
+            } catch (e) { return null; }
+        }
+
+        async function loadProfileAIInner(refresh) {
             const el = document.getElementById('profile-ai-content');
             el.innerHTML = crystalLoader('Съставяме портрета ти...');
             unlockPanel(el);
@@ -2226,7 +2267,31 @@
             if (typeof maybeShowModulePicker === 'function') {
                 setTimeout(maybeShowModulePicker, 900);
             }
+            markLockedTabs();
         });
+
+        // What this account can open. Filled by markLockedTabs, read by the
+        // panels before they call a paid endpoint.
+        let unlockedFeatures = null;
+
+        function featureIsLocked(key) {
+            // Unknown means "let the server decide" — never block on a guess.
+            return unlockedFeatures !== null && !unlockedFeatures.has(key);
+        }
+
+        // Put a padlock on every tab whose feature is not unlocked yet.
+        async function markLockedTabs() {
+            try {
+                const resp = await fetch('/api/features', { headers: authHeaders() });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const unlocked = new Set(data.unlocked || []);
+                unlockedFeatures = unlocked;
+                document.querySelectorAll('.tab[data-feature]').forEach(tab => {
+                    tab.classList.toggle('tab-locked', !unlocked.has(tab.dataset.feature));
+                });
+            } catch (e) { /* no padlocks is better than a broken tab bar */ }
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             const input = document.getElementById('pPlace');

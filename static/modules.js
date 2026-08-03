@@ -39,7 +39,10 @@
         return `<article class="mod-card${item.unlocked ? ' mod-card-owned' : ''}">
             <div class="mod-head">
                 <span class="mod-glyph" aria-hidden="true">${esc(item.glyph || '✦')}</span>
-                <h4 class="mod-name">${esc(item.name)}</h4>
+                <div>
+                    <h4 class="mod-name">${esc(item.name)}</h4>
+                    ${item.note ? `<p class="mod-note">${esc(item.note)}</p>` : ''}
+                </div>
             </div>
             <ul class="mod-list">${bullets}</ul>
             <div class="mod-foot">

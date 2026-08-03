@@ -95,6 +95,14 @@
     font-size: 1.05rem; line-height: 1.25;
     color: var(--text-heading, #d6c6ff);
 }
+/* One line under the title saying what the module is for, before the
+   bullets get into specifics. */
+.mod-note {
+    font-size: .76rem; line-height: 1.4; margin-top: 2px;
+    color: var(--text-muted, #9a93b8);
+}
+.mod-head { align-items: flex-start; }
+.mod-head > div { min-width: 0; }
 
 .mod-list { list-style: none; padding: 0; margin: 0 0 16px; flex: 1; }
 .mod-list li {

@@ -351,9 +351,13 @@
 
         let picked = null;   // { lat, lon, timezone, label }
 
-        function showBanner(html) {
-            document.getElementById('banner').innerHTML =
-                '<div class="banner banner-error">' + html + '</div>';
+        function showBanner(html, focusEl) {
+            const el = document.getElementById('banner');
+            el.innerHTML = '<div class="banner banner-error">' + html + '</div>';
+            // On a long form the banner can sit above the fold; without this
+            // the button looks like it did nothing at all.
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (focusEl) setTimeout(() => focusEl.focus(), 350);
         }
         function clearBanner() { document.getElementById('banner').innerHTML = ''; }
 
@@ -421,18 +425,48 @@
             const year = +document.getElementById('fYear').value;
             const email = document.getElementById('fEmail').value.trim();
 
-            if (!name) { showBanner('Въведи име.'); return; }
-            if (!day || !month || !year) { showBanner('Въведи пълна дата на раждане.'); return; }
-            if (!picked) {
-                showBanner('Избери място от списъка, за да вземем координатите и часовата зона.');
-                placeInput.focus();
+            if (!name) { showBanner('Въведи име.', document.getElementById('fName')); return; }
+            if (!day || !month || !year) {
+                showBanner('Въведи пълна дата на раждане.', document.getElementById('fDay'));
                 return;
             }
-            if (email.indexOf('@') < 0) { showBanner('Въведи валиден имейл адрес.'); return; }
+            if (email.indexOf('@') < 0) {
+                showBanner('Въведи валиден имейл адрес.', document.getElementById('fEmail'));
+                return;
+            }
 
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
             btn.textContent = 'Изчисляваме картата...';
+
+            // Somebody who typed a place without picking from the list still
+            // meant a real place; look it up for them rather than refusing.
+            if (!picked) {
+                const typed = placeInput.value.trim();
+                if (!typed) {
+                    btn.disabled = false;
+                    btn.textContent = 'Виж своята натална карта';
+                    showBanner('Въведи място на раждане.', placeInput);
+                    return;
+                }
+                btn.textContent = 'Търсим мястото...';
+                try {
+                    const rs = await fetch('/api/public/geocode?q=' + encodeURIComponent(typed));
+                    const rd = rs.ok ? await rs.json() : { results: [] };
+                    if (rd.results && rd.results.length) {
+                        choosePlace(rd.results[0]);
+                    }
+                } catch (err) { /* handled by the check below */ }
+
+                if (!picked) {
+                    btn.disabled = false;
+                    btn.textContent = 'Виж своята натална карта';
+                    showBanner('Не намерихме такова място. Опитай с по-голям град наблизо.',
+                               placeInput);
+                    return;
+                }
+                btn.textContent = 'Изчисляваме картата...';
+            }
 
             try {
                 const resp = await fetch('/api/onboard', {
@@ -448,8 +482,15 @@
                 const data = await resp.json().catch(() => ({}));
 
                 if (resp.status === 409) {
-                    showBanner('Вече има акаунт с този имейл. ' +
-                               '<a href="/login">Влез оттук</a> и създай картата от таблото.');
+                    // A dialog, not a banner: this is a fork in the road, and
+                    // the visitor has to decide which way to go.
+                    const goLogin = await uiConfirm(
+                        'Този имейл вече е използван. Влез в профила си — картите ти '
+                        + 'са там, а нови създаваш от таблото.',
+                        { title: 'Имейлът е зает', ok: 'Към вход', cancel: 'Друг имейл' });
+                    if (goLogin) { window.location.href = '/login'; return; }
+                    document.getElementById('fEmail').focus();
+                    document.getElementById('fEmail').select();
                     return;
                 }
                 if (!resp.ok) {
