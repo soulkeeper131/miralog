@@ -501,7 +501,14 @@
                 }
 
                 // Signed in already: straight to the chart they came for.
-                if (data.token) localStorage.setItem('miralog_token', data.token);
+                // The cookie must be replaced too — a leftover one from an
+                // earlier account would outlive this session and point the
+                // server at the wrong user.
+                if (data.token) {
+                    localStorage.setItem('miralog_token', data.token);
+                    document.cookie = 'miralog_token=' + encodeURIComponent(data.token)
+                        + '; path=/; SameSite=Lax; max-age=2592000';
+                }
                 if (data.chart_url) { window.location.href = data.chart_url; return; }
                 window.location.href = '/';
             } catch (err) {

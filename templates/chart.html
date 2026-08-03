@@ -1584,6 +1584,36 @@
             setTimeout(update, 300);
         })();
 
+        // A locked tab should present its offer instead of a form that cannot
+        // work. The panel below the teaser is hidden until the feature is
+        // bought, so nothing dangles under the padlock.
+        async function gateTab(name, feature, panelId) {
+            if (!featureIsLocked(feature)) return false;
+            const panel = document.getElementById(panelId);
+            if (!panel || panel.dataset.gated === '1') return true;
+            const meta = {
+                period: { name: 'Периоди напред',
+                          msg: 'Виж кои дни носят промяна — до два месеца напред.' },
+                love:   { name: 'Любовен хороскоп',
+                          msg: 'Съвместимост по зодия или по пълни рождени данни.' },
+            }[feature] || { name: feature, msg: '' };
+
+            const host = document.createElement('div');
+            host.className = 'section';
+            panel.prepend(host);
+            // Everything the visitor cannot use yet goes away.
+            [...panel.children].forEach(ch => { if (ch !== host) ch.hidden = true; });
+            panel.dataset.gated = '1';
+
+            renderLocked(host, {
+                feature: feature,
+                feature_name: meta.name,
+                message: meta.msg,
+                offer: await featureOffer(feature),
+            }, () => { location.reload(); });
+            return true;
+        }
+
         function showTab(name) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -1613,6 +1643,10 @@
                 window._signsLoaded = true;
                 loadSignPicker();
             }
+            // Tabs whose whole panel is a form: show the offer instead, so the
+            // visitor never fills in dates that cannot be submitted.
+            if (name === 'period') gateTab(name, 'period', 'tab-period');
+            if (name === 'love') gateTab(name, 'love', 'tab-love');
         }
 
         async function loadChartWheel() {
@@ -2019,7 +2053,7 @@
             el.innerHTML = crystalLoader('Изчисляване на периода...');
             unlockPanel(el);
             try {
-                const resp = await fetch('/api/period-influence', {
+                const resp = await guardedFetch('/api/period-influence', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -2029,8 +2063,11 @@
                     })
                 });
                 if (!resp.ok) {
-                    const data = await resp.json().catch(() => ({}));
-                    throw new Error(data.detail || ('HTTP ' + resp.status));
+                    const d = await resp.json().catch(() => ({}));
+                    // detail can be an object; never interpolate it raw.
+                    const msg = typeof d.detail === 'string' ? d.detail
+                              : (d.detail && d.detail.message) || ('Грешка ' + resp.status);
+                    throw new Error(msg);
                 }
                 const data = await resp.json();
                 if (!data.days || !data.days.length) {
@@ -2051,6 +2088,11 @@
                 el.innerHTML = html;
                 loadPeriodAI(startEl.value, endEl.value);
             } catch (e) {
+                document.getElementById('period-ai-content').innerHTML = '';
+                if (e instanceof LockedFeature) {
+                    renderLocked(el, e.detail, loadPeriod);
+                    return;
+                }
                 el.innerHTML = '<div class="error">Грешка при анализа: ' + e.message + '</div>';
             } finally {
                 btn.disabled = false;

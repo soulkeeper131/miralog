@@ -4409,7 +4409,11 @@ def _token_from_request(request: Request) -> Optional[str]:
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return request.cookies.get("miralog_token") or request.query_params.get("token") or None
+    # ?token= wins over the cookie: it is the freshly issued one, handed out by
+    # onboarding or by a login link. A stale cookie from a previous account
+    # would otherwise make the visitor look at somebody else's session and get
+    # a 404 on their own chart.
+    return request.query_params.get("token") or request.cookies.get("miralog_token") or None
 
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
