@@ -852,6 +852,88 @@
         }
 
         /* --- one-off unlocks: priced chips, for people who want one thing only --- */
+        /* --- price table: one place to see every module and what it costs --- */
+        .visually-hidden {
+            position: absolute; width: 1px; height: 1px; overflow: hidden;
+            clip: rect(0 0 0 0); white-space: nowrap;
+        }
+        .price-table-wrap {
+            /* A table never widens the page; it scrolls inside its own box. */
+            overflow-x: auto;
+            border: 1px solid var(--border-soft); border-radius: 16px;
+            background: var(--bg-card);
+        }
+        .price-table {
+            width: 100%; border-collapse: collapse; min-width: 520px;
+            font-size: .92rem;
+        }
+        .price-table thead th {
+            text-align: left; padding: 14px 18px;
+            font-family: var(--font-mono); font-size: .66rem;
+            letter-spacing: .14em; text-transform: uppercase;
+            color: var(--gilt); font-weight: 500;
+            border-bottom: 1px solid var(--border-soft);
+            background: var(--bg-raised);
+        }
+        .price-table tbody th {
+            text-align: left; font-weight: 600; color: var(--text-heading);
+            padding: 14px 18px; white-space: nowrap;
+            font-family: var(--font-display); font-size: 1rem;
+        }
+        .price-table tbody td {
+            padding: 14px 18px; color: var(--text-soft); line-height: 1.55;
+        }
+        .price-table tbody tr { border-bottom: 1px solid var(--border-soft); }
+        .price-table tbody tr:last-child { border-bottom: none; }
+        .price-table tbody tr:hover { background: var(--surface-thistle); }
+        .pt-glyph {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 26px; height: 26px; border-radius: 50%; margin-right: 9px;
+            background: var(--surface-thistle); color: var(--on-thistle);
+            font-size: .88rem; vertical-align: middle;
+        }
+        .pt-extra {
+            display: block; margin-top: 4px;
+            font-size: .82rem; color: var(--gilt);
+        }
+        .price-table .col-price {
+            text-align: right; white-space: nowrap;
+            font-family: var(--font-display); font-weight: 700;
+            font-size: 1.15rem; color: var(--gilt);
+            font-variant-numeric: tabular-nums;
+        }
+        .price-table thead .col-price {
+            font-family: var(--font-mono); font-size: .66rem; font-weight: 500;
+        }
+        .price-table-note {
+            text-align: center; margin-top: 16px;
+            font-size: .88rem; color: var(--text-muted);
+        }
+        .price-table-note strong { color: var(--text-heading); }
+
+        /* --- privacy strip --- */
+        .privacy-strip {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 14px; margin-top: var(--space-block);
+        }
+        .privacy-item {
+            display: flex; gap: 11px; align-items: flex-start;
+            padding: 16px 18px; border-radius: 14px;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+        }
+        .privacy-glyph {
+            width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--gilt-soft); color: var(--gilt); font-size: .9rem;
+        }
+        .privacy-item h4 {
+            font-family: var(--font-display); font-weight: 600;
+            font-size: 1rem; color: var(--text-heading); margin-bottom: 4px;
+        }
+        .privacy-item p {
+            font-size: .85rem; line-height: 1.6; color: var(--text-soft);
+        }
+
         .unlocks {
             margin-top: 34px; padding-top: 30px;
             border-top: 1px solid var(--border-soft);
@@ -1028,8 +1110,8 @@
                 <article class="card">
                     <div class="card-scene s-day" aria-hidden="true"><i></i><i></i></div>
                     <h3>Денят ти</h3>
-                    <p class="card-src">Транзити за днес</p>
-                    <p>Какво е благоприятно днес и какво не. Конкретно: какво да свършиш, какво да отложиш, в какво да внимаваш — всяко от тях изведено от реален транзит.</p>
+                    <p class="card-src">Транзити за днес · и по имейл</p>
+                    <p>Какво е благоприятно днес и какво не. Конкретно: какво да свършиш, какво да отложиш, в какво да внимаваш — всяко от тях изведено от реален транзит. Може да ти пристига и на имейла всяка сутрин.</p>
                 </article>
                 <article class="card">
                     <div class="card-scene s-chart" aria-hidden="true"><i></i><i></i></div>
@@ -1167,6 +1249,33 @@
                     </div>
                 </div>
             </div>
+
+            <div class="privacy-strip">
+                <div class="privacy-item">
+                    <span class="privacy-glyph" aria-hidden="true">✦</span>
+                    <div>
+                        <h4>Картата без регистрация не се пази</h4>
+                        <p>Ако само разгледаш картата си, данните остават в браузъра ти.
+                           При нас не се записва нищо, докато сам не решиш да я запазиш.</p>
+                    </div>
+                </div>
+                <div class="privacy-item">
+                    <span class="privacy-glyph" aria-hidden="true">☌</span>
+                    <div>
+                        <h4>Плащането не минава през нас</h4>
+                        <p>Картовите данни се обработват от Stripe. Ние не ги виждаме
+                           и не ги съхраняваме.</p>
+                    </div>
+                </div>
+                <div class="privacy-item">
+                    <span class="privacy-glyph" aria-hidden="true">⚹</span>
+                    <div>
+                        <h4>Съобразено с GDPR</h4>
+                        <p>Имаш право на достъп, корекция и изтриване по всяко време.
+                           Виж <a href="/privacy">политиката за поверителност</a>.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -1191,6 +1300,7 @@
                         <li>Планети, точки и домове с тълкуване</li>
                         <li>Аспектите и какво носят</li>
                         <li><strong>Астро портрет</strong> — Слънце, Луна, Асцендент и стихиите ти</li>
+                        <li><strong>Дневен хороскоп</strong> — всеки ден, по желание и на имейла ти</li>
                         <li>Сваляне като PDF</li>
                     </ul>
                 </div>
@@ -1205,19 +1315,66 @@
             <div class="unlocks">
                 <div class="unlocks-head">
                     <h3>Добави каквото ти трябва</h3>
-                    <p>Всяко от тези се отключва отделно към картата ти и остава завинаги.</p>
+                    <p>Всяко от тези се отключва отделно към картата ти.
+                       <strong>Плащаш веднъж — остава ти завинаги.</strong>
+                       Без абонамент, без месечна такса, без автоматично подновяване.</p>
                 </div>
-                <div class="chip-row">
-                    <span class="chip">Дневен хороскоп <span class="price">3 €</span></span>
-                    <span class="chip">Лунен календар <span class="price">3 €</span></span>
-                    <span class="chip">Нумерология <span class="price">4 €</span></span>
-                    <span class="chip">Разчитане на портрета <span class="price">5 €</span></span>
-                    <span class="chip">Периоди <span class="price">5 €</span></span>
-                    <span class="chip">Любовен хороскоп <span class="price">5 €</span></span>
-                    <span class="chip">Пълно разчитане <span class="price">6 €</span></span>
-                    <span class="chip">Съвместимост <span class="price">7 €</span></span>
-                    <span class="chip">Акашови записи <span class="price">9 €</span></span>
+
+                <div class="price-table-wrap">
+                    <table class="price-table">
+                        <caption class="visually-hidden">Цени на отделните модули</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Модул</th>
+                                <th scope="col">Какво получаваш</th>
+                                <th scope="col" class="col-price">Цена</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">◐</span>Лунен календар</th>
+                                <td>Фазата за всеки ден и кое е добре да правиш.</td>
+                                <td class="col-price">3 €</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">7</span>Нумерология</th>
+                                <td>Числата зад името и датата ти, с разчитане.</td>
+                                <td class="col-price">4 €</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">☉</span>Разчитане на портрета</th>
+                                <td>Кой си ти — силни страни, слепи петна, вътрешни противоречия.</td>
+                                <td class="col-price">5 €</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">♃</span>Периоди напред</th>
+                                <td>Кои дни носят обрат — до два месеца напред.</td>
+                                <td class="col-price">5 €</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">♀</span>Любовен хороскоп</th>
+                                <td>Съвместимост по зодия или по пълни рождени данни.</td>
+                                <td class="col-price">5 €</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">☍</span>Съвместимост</th>
+                                <td>Пълна синастрия между две натални карти.</td>
+                                <td class="col-price">7 €</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><span class="pt-glyph">☊</span>Акашови записи</th>
+                                <td>Повтарящите се теми в живота ти и накъде водят.</td>
+                                <td class="col-price">9 €</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
+
+                <p class="price-table-note">
+                    Наталната карта, астро портретът, планетите, аспектите и
+                    <strong>дневният хороскоп</strong> са безплатни и не изискват плащане.
+                    Дневният може да ти пристига и на имейла всяка сутрин.
+                </p>
             </div>
 
             <p class="plans-foot">Картата ти остава достъпна винаги. Ако добавиш разчитане,

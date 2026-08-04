@@ -1913,6 +1913,7 @@
                     feature_name: 'Разчитане на портрета',
                     message: 'Портретът горе е твой. Подробното разчитане се отключва отделно.',
                     offer: await featureOffer('profile'),
+                    keepSiblings: true,   // the portrait data above stays visible
                 }, loadProfileAI);
                 return;
             }

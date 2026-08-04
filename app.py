@@ -53,6 +53,14 @@ TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
 
+# Lets the whole purchase flow be walked through without a payment processor:
+# the button grants the modules and records a payment marked as a test. Refused
+# in production so a live site can never hand out paid modules for free.
+MOCK_PAYMENTS = (
+    os.environ.get("MOCK_PAYMENTS", "").strip().lower() in ("1", "true", "yes")
+    and not IS_PRODUCTION
+)
+
 DEV_SECRET_KEY = "change-me-in-production-secret-key"
 DEV_ADMIN_PASSWORD = "admin123"
 DEV_DEMO_PASSWORD = "demo123"
@@ -334,7 +342,9 @@ def init_db():
                 " VALUES (?, ?, 'EUR', ?)",
                 [
                     ("profile", 500, 1),
-                    ("horoscope", 300, 1),
+                    # Free with every chart: the daily reading is what brings
+                    # somebody back, so it is the hook, not a product.
+                    ("horoscope", 0, 0),
                     ("period", 500, 1),
                     ("synastry", 700, 1),
                     ("love", 500, 1),
@@ -360,6 +370,14 @@ def init_db():
         conn.execute(
             "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
             " SELECT DISTINCT user_id, 'chart', 0, 'EUR' FROM persons")
+
+        # The daily horoscope used to cost 3 EUR; it now comes with the chart.
+        conn.execute(
+            "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
+            " WHERE feature_key = 'horoscope'")
+        conn.execute(
+            "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
+            " SELECT DISTINCT user_id, 'horoscope', 0, 'EUR' FROM persons")
 
         # „Пълно разчитане“ is withdrawn for now: no price, not purchasable.
         conn.execute(
@@ -1060,6 +1078,60 @@ class GuestChartRequest(BaseModel):
     timezone: str = "Europe/Sofia"
 
 
+class MockPayRequest(BaseModel):
+    """Which modules to hand over in a test purchase."""
+    keys: list
+
+
+@app.post("/api/dev/mock-pay")
+def api_mock_pay(data: MockPayRequest,
+                 user: Tuple[int, str] = Depends(get_current_user)):
+    """Grant modules as if they had been paid for. Test builds only.
+
+    Every grant is recorded as a payment with method "тест", so the admin
+    ledger never mistakes it for real income.
+    """
+    if not MOCK_PAYMENTS:
+        raise HTTPException(404, "Няма такъв ресурс.")
+
+    user_id, _ = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+
+    keys, total, currency = [], 0, "EUR"
+    for key in (data.keys or []):
+        offer = feature_offer(key)
+        if not offer or key in unlocked_features(row):
+            continue
+        keys.append(key)
+        total += offer["price_cents"]
+        currency = offer["currency"]
+
+    if not keys:
+        return {"ok": True, "granted": [], "note": "Нищо за отключване."}
+
+    pay_id = record_payment(
+        user_id, plan_key=None, amount_cents=total, currency=currency,
+        method="тест", note=f"mock:{','.join(keys)}")
+    for key in keys:
+        offer = feature_offer(key)
+        grant_feature_purchase(user_id, key, offer["price_cents"],
+                               offer["currency"], pay_id)
+
+    log.info("Тестово плащане: user=%s модули=%s", user_id, keys)
+    return {"ok": True, "granted": keys, "amount_cents": total, "currency": currency}
+
+
+@app.get("/api/public/config")
+def api_public_config():
+    """What the front end needs to know before anybody signs in."""
+    return {
+        "mock_payments": MOCK_PAYMENTS,
+        "stripe": billing.stripe_enabled(),
+    }
+
+
 @app.get("/api/public/catalogue")
 def api_public_catalogue():
     """The module list with prices, for visitors who have no account yet.
@@ -1183,8 +1255,10 @@ def api_onboard(data: OnboardRequest, request: Request):
         person_id = cur.lastrowid
         conn.commit()
 
-    # The chart is what they came for, so it is theirs from the start.
-    grant_feature_purchase(user["id"], "chart", 0, "EUR", None)
+    # The chart is what they came for, so it is theirs from the start — and
+    # the daily reading with it, since that is what brings people back.
+    for free_key in ("chart", "horoscope"):
+        grant_feature_purchase(user["id"], free_key, 0, "EUR", None)
 
     if not chose_password:
         send_welcome_set_password(user["id"])
@@ -1201,7 +1275,18 @@ def api_onboard(data: OnboardRequest, request: Request):
     # Modules picked before signing up go straight to checkout, so the visitor
     # does not have to find and click them a second time.
     wanted = [k for k in (data.wanted or []) if feature_offer(k)]
-    if wanted and billing.stripe_enabled():
+    if wanted and MOCK_PAYMENTS:
+        # Test builds complete the purchase immediately, so the whole flow can
+        # be walked end to end without a payment processor.
+        total = sum(feature_offer(k)["price_cents"] for k in wanted)
+        pay_id = record_payment(
+            user["id"], plan_key=None, amount_cents=total, currency="EUR",
+            method="тест", note=f"mock-onboard:{','.join(wanted)}")
+        for k in wanted:
+            o = feature_offer(k)
+            grant_feature_purchase(user["id"], k, o["price_cents"], o["currency"], pay_id)
+        result["mock_paid"] = wanted
+    elif wanted and billing.stripe_enabled():
         base = site_base_url(request)
         try:
             offers = [feature_offer(k) for k in wanted]
@@ -1297,7 +1382,7 @@ FEATURE_CATALOGUE = [
                  "Кое в теб се бори със самото себе си"]},
 
     {"key": "horoscope", "name": "Дневен хороскоп",
-     "note": "Какво носи днешният ден", "glyph": "☽",
+     "note": "Какво носи днешният ден", "glyph": "☽", "included": True,
      "bullets": ["Кое днес ще ти върви по-леко от обикновено",
                  "Кой разговор е по-добре да изчака",
                  "Изведено от твоята карта, не от зодията ти",

@@ -921,7 +921,12 @@
                 // Picked modules go straight to Stripe; otherwise to the chart.
                 if (data.checkout_url) { window.location.href = data.checkout_url; return; }
 
-                if (wanted.size && !data.checkout_url) {
+                if (data.mock_paid && data.mock_paid.length) {
+                    // Test build: the modules were granted without a processor.
+                    await uiAlert('Профилът е готов и избраните разчитания са '
+                        + 'отключени. Това е тестово плащане — истинско не е направено.',
+                        { title: 'Готово (тест)' });
+                } else if (wanted.size) {
                     // Stripe is not configured on this install: the account is
                     // made, the modules are noted, somebody follows up by hand.
                     await uiAlert('Профилът е готов. Ще се свържем с теб за '

@@ -70,9 +70,11 @@ function renderLocked(el, detail, retry) {
             ${priceBlock}
         </div>`;
 
-    // A locked feature takes over its whole tab. Leaving the other sections
-    // behind shows empty headings for content the visitor cannot have.
-    hideSiblingSections(el);
+    // By default a locked feature takes over its whole tab: leaving the other
+    // sections behind would show empty headings for content the visitor cannot
+    // have. Panels that are only partly paid (the astro portrait, whose data is
+    // free and whose reading is not) pass keepSiblings and stay in place.
+    if (!detail.keepSiblings) hideSiblingSections(el);
 
     const btn = el.querySelector('.locked-btn[data-feature]');
     if (btn) btn.addEventListener('click', () => requestUnlock(btn, btn.dataset.feature, retry));
@@ -119,11 +121,38 @@ function restoreLockedSections(panelOrEl) {
     });
 }
 
+// Whether this build can complete a purchase without a processor.
+let lockedMockPay = null;
+
+async function lockedCanMockPay() {
+    if (lockedMockPay !== null) return lockedMockPay;
+    try {
+        const r = await fetch('/api/public/config');
+        lockedMockPay = r.ok ? !!(await r.json()).mock_payments : false;
+    } catch (e) { lockedMockPay = false; }
+    return lockedMockPay;
+}
+
 async function requestUnlock(btn, featureKey, retry) {
     btn.disabled = true;
     const original = btn.textContent;
     btn.textContent = 'Изпращане…';
     try {
+        // Test builds unlock straight away, so the paywall can be walked
+        // through end to end before Stripe is wired up.
+        if (await lockedCanMockPay()) {
+            const r = await fetch('/api/dev/mock-pay', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: JSON.stringify({ keys: [featureKey] }),
+            });
+            if (r.ok) {
+                uiToast('Отключено (тестово плащане).', 'ok');
+                setTimeout(() => location.reload(), 900);
+                return;
+            }
+        }
+
         const resp = await fetch('/api/features/' + encodeURIComponent(featureKey) + '/request', {
             method: 'POST', headers: authHeaders(),
         });

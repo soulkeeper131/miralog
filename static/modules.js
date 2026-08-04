@@ -52,11 +52,40 @@
         </article>`;
     }
 
+    // Whether this build can complete a purchase without a processor.
+    let mockPayments = null;
+
+    async function canMockPay() {
+        if (mockPayments !== null) return mockPayments;
+        try {
+            const r = await fetch('/api/public/config');
+            mockPayments = r.ok ? !!(await r.json()).mock_payments : false;
+        } catch (e) { mockPayments = false; }
+        return mockPayments;
+    }
+
     async function unlock(btn, key) {
         const original = btn.textContent;
         btn.disabled = true;
         btn.textContent = 'Момент…';
         try {
+            // Test builds hand the module over immediately, so the whole
+            // purchase path can be walked before Stripe is wired up.
+            if (await canMockPay()) {
+                const r = await fetch('/api/dev/mock-pay', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                    body: JSON.stringify({ keys: [key] }),
+                });
+                if (r.ok) {
+                    btn.textContent = 'Отключено';
+                    btn.disabled = true;
+                    uiToast('Отключено (тестово плащане).', 'ok');
+                    setTimeout(() => location.reload(), 1200);
+                    return;
+                }
+            }
+
             const resp = await fetch('/api/features/' + encodeURIComponent(key) + '/request', {
                 method: 'POST', headers: authHeaders(),
             });
