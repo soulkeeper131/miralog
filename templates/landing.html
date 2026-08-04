@@ -317,9 +317,9 @@
         }
         section:nth-of-type(even)::before { top: 0; }
         section:nth-of-type(even)::after { bottom: 0; }
-        /* The closing call to action follows the pricing directly; a full
-           section gap between them reads as a dead zone. */
-        section + section:last-of-type { padding-top: 0; }
+        /* The closing box is a card of its own and must not touch the section
+           above it; removing its top padding pulled it up into that band. */
+        section:last-of-type { padding-top: var(--space-block); }
         /* --- ephemeris strip: today's real positions, set like a data table --- */
         .ephemeris {
             border-top: 1px solid var(--border-soft);
@@ -402,17 +402,11 @@
             display: grid; grid-template-columns: repeat(12, 1fr);
             gap: 14px; align-items: stretch;
         }
-        /* Two wide panels on the first row for what people come for, then four
-           quarters. Twelve columns divide evenly both ways, so no card is ever
-           orphaned on a row of its own. */
-        .card { grid-column: span 3; }
-        .card:nth-child(1), .card:nth-child(2) { grid-column: span 6; }
-        @media (max-width: 1000px) {
-            .card { grid-column: span 6; }
-            .card:nth-child(1), .card:nth-child(2) { grid-column: span 6; }
-        }
+        /* Two per row: every module now carries the same five-point list, so
+           none of them deserves a wider panel than the others. */
+        .card { grid-column: span 6; }
         @media (max-width: 600px) {
-            .card, .card:nth-child(1), .card:nth-child(2) { grid-column: span 12; }
+            .card { grid-column: span 12; }
         }
         @media (max-width: 600px) {
             .cards { grid-template-columns: 1fr; }
@@ -830,19 +824,32 @@
             font-size: clamp(1.6rem, 3.6vw, 2.1rem); line-height: 1.15;
             color: var(--text-heading); margin-bottom: 10px;
         }
-        .entry-main > p {
-            color: var(--text-muted); font-size: .95rem; line-height: 1.7;
-            margin-bottom: 18px; max-width: 52ch;
+        .entry-lede {
+            font-family: var(--font-display);
+            font-variation-settings: 'opsz' 40, 'SOFT' 22;
+            font-size: 1.16rem; line-height: 1.5; font-style: italic;
+            color: var(--text-heading); opacity: .92;
+            margin-bottom: 22px; max-width: 40ch;
         }
         .entry-list { list-style: none; padding: 0; margin: 0; }
         .entry-list li {
-            position: relative; padding: 7px 0 7px 26px;
-            font-size: .9rem; color: var(--text-soft);
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 9px 0;
+            font-family: var(--font-display);
+            font-variation-settings: 'opsz' 20, 'SOFT' 22;
+            font-size: 1.02rem; line-height: 1.5; color: var(--text);
         }
-        .entry-list li::before {
-            content: "△"; position: absolute; left: 0; top: 7px;
-            width: 18px; text-align: center;
-            font-size: .68rem; color: var(--on-icy);
+        .entry-list li + li { border-top: 1px solid var(--border-soft); }
+        .entry-list strong { color: var(--text-heading); font-weight: 700; }
+        /* A medallion per line: the glyph names what the line is about, and the
+           row of them reads as a small ephemeris down the panel. */
+        .el-glyph {
+            flex-shrink: 0;
+            width: 30px; height: 30px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: var(--gilt-soft); color: var(--gilt);
+            font-size: .92rem; line-height: 1;
+            margin-top: 1px;
         }
 
         .entry-side {
@@ -1144,13 +1151,20 @@
                         <li>Какво да правиш и какво да избягваш</li>
                         <li>Какви емоции ще ти донесе денят</li>
                         <li>Какъв ще бъде денят ти</li>
+                        <li>Може да ти пристига и на имейла всяка сутрин</li>
                     </ol>
                 </article>
                 <article class="card">
                     <div class="card-scene s-chart" aria-hidden="true"><i></i><i></i></div>
                     <h3>Натална карта</h3>
-                    <p class="card-src">Плацидус · 12 дома</p>
-                    <p>Истинско колело с домовете по Плацидус, аспектите и всяка планета. Плюс обяснение до всяка позиция какво означава — на български.</p>
+                    <p class="card-src">Какво ще узнаеш?</p>
+                    <ol class="card-list">
+                        <li>Къде са били планетите в мига на раждането ти</li>
+                        <li>В кой дом попада всяка от тях и защо е важно</li>
+                        <li>Кои аспекти оформят характера ти</li>
+                        <li>Какво означава всяка позиция — на български</li>
+                        <li>Изчислено със Swiss Ephemeris, до градус</li>
+                    </ol>
                 </article>
                 <article class="card">
                     <div class="card-scene s-period" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -1173,7 +1187,7 @@
                         <li>Кое ви свързва и кое ви дели</li>
                         <li>Къде да подходите предпазливо</li>
                         <li>Имате ли дългосрочен потенциал</li>
-                        <li>Пълна синастрия, ако знаеш рождените му данни</li>
+                        <li>Пълна синастрия по рождени данни, или само по зодия</li>
                     </ol>
                 </article>
                 <article class="card">
@@ -1185,6 +1199,7 @@
                         <li>Кармичните уроци, които трябва да научиш</li>
                         <li>Какво носиш в душата си</li>
                         <li>Как да развиеш потенциала си</li>
+                        <li>Кое носиш от миналото и кое тепърва предстои</li>
                     </ol>
                 </article>
             </div>
@@ -1342,16 +1357,27 @@
                 <div class="entry-main">
                     <span class="entry-eyebrow">Започва оттук</span>
                     <h3>Натална карта</h3>
-                    <p>Пълното колело с домовете по Плацидус, всяка планета и всички
-                       аспекти — плюс обяснение до всяка позиция на български.
-                       Изчислена със Swiss Ephemeris.</p>
+                    <p class="entry-lede">Небето в мига на раждането ти — изчислено
+                       до градус и преведено дума по дума.</p>
                     <ul class="entry-list">
-                        <li>Колелото на картата ти</li>
-                        <li>Планети, точки и домове с тълкуване</li>
-                        <li>Аспектите и какво носят</li>
-                        <li><strong>Астро портрет</strong> — Слънце, Луна, Асцендент и стихиите ти</li>
-                        <li><strong>Дневен хороскоп</strong> — всеки ден, по желание и на имейла ти</li>
-                        <li>Сваляне като PDF</li>
+                        <li><span class="el-glyph" aria-hidden="true">⊕</span>
+                            <span><strong>Пълното колело</strong> с дванадесетте дома
+                            по Плацидус</span></li>
+                        <li><span class="el-glyph" aria-hidden="true">☿</span>
+                            <span><strong>Всяка планета и точка</strong>, с обяснение
+                            какво носи за теб</span></li>
+                        <li><span class="el-glyph" aria-hidden="true">△</span>
+                            <span><strong>Аспектите</strong> — кое в теб си
+                            сътрудничи и кое се бори</span></li>
+                        <li><span class="el-glyph" aria-hidden="true">☉</span>
+                            <span><strong>Астро портрет</strong> — Слънце, Луна,
+                            Асцендент и стихиите ти</span></li>
+                        <li><span class="el-glyph" aria-hidden="true">☽</span>
+                            <span><strong>Дневен хороскоп</strong> — всеки ден, по
+                            желание и на имейла ти</span></li>
+                        <li><span class="el-glyph" aria-hidden="true">✧</span>
+                            <span><strong>Сваляне като PDF</strong>, за да я
+                            запазиш или разпечаташ</span></li>
                     </ul>
                 </div>
                 <div class="entry-side">
@@ -1450,7 +1476,6 @@
     <footer>
         <div class="wrap">
             МираСкоп · Астрология на разбираем език<br>
-            Разчитанията са за размисъл и себепознание, не заместват професионален съвет.<br>
             <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
         </div>
     </footer>
