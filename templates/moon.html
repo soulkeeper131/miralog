@@ -20,6 +20,17 @@
     <link rel="stylesheet" href="/static/ui.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* The mark takes you home — the convention every visitor knows. */
+        .logo-home {
+            display: inline-flex; flex-shrink: 0; line-height: 0;
+            border-radius: 50%; text-decoration: none;
+            transition: transform .15s ease, opacity .15s ease;
+        }
+        .logo-home:hover { transform: scale(1.05); opacity: .9; }
+        .logo-home:focus-visible {
+            outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124,58,237,.28));
+        }
+
         /* Any display value beats the hidden attribute, so state it explicitly —
            otherwise a hidden button with display:inline-flex stays on screen. */
         [hidden] { display: none !important; }
@@ -284,7 +295,7 @@
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
         <div class="page-nav">
-            <img class="page-mark" src="/static/logo-header.png" alt="МираСкоп">
+            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-mark" src="/static/logo-header.png" alt="МираСкоп"></a>
             <a href="#" id="backLink" class="back-link">← Табло</a>
         </div>
 
