@@ -586,14 +586,17 @@
         }
         .card-list li {
             counter-increment: cl; position: relative;
-            padding: 5px 0 5px 26px;
-            font-size: .88rem; line-height: 1.55; color: var(--text-soft);
+            padding: 6px 0 6px 28px;
+            font-family: var(--font-display);
+            font-variation-settings: 'opsz' 20, 'SOFT' 22;
+            font-size: 1.02rem; line-height: 1.5; color: var(--text);
         }
         .card-list li::before {
             content: counter(cl) ".";
-            position: absolute; left: 2px; top: 5px;
-            font-family: var(--font-mono); font-size: .72rem;
-            color: var(--gilt); font-variant-numeric: tabular-nums;
+            position: absolute; left: 3px; top: 6px;
+            font-family: var(--font-display); font-weight: 700;
+            font-size: .92rem; color: var(--gilt);
+            font-variant-numeric: tabular-nums;
         }
 
         .card h3 {
@@ -605,9 +608,11 @@
         /* The mono line under each title names the source of the reading —
            it is the strongest honesty signal the page has. */
         .card-src {
-            font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: .12em;
-            text-transform: uppercase; color: var(--gilt); opacity: .85;
-            margin-bottom: 10px;
+            font-family: var(--font-display);
+            font-variation-settings: 'opsz' 24, 'SOFT' 20;
+            font-size: 1rem; font-style: italic; letter-spacing: .01em;
+            color: var(--gilt); opacity: .9;
+            margin-bottom: 12px;
         }
         .card p {
             font-size: 0.9rem; color: var(--text-soft); line-height: 1.65;

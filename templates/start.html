@@ -100,7 +100,12 @@
         .wrap {
             max-width: 620px; margin: 0 auto;
             padding: clamp(28px, 6vw, 56px) clamp(20px, 5vw, 32px) 64px;
+            transition: max-width .3s ease;
         }
+        /* Once the chart is on screen there is a wheel and a grid of modules to
+           show; a form-width column squeezes them into a phone layout on a
+           desktop. */
+        .wrap.wide { max-width: 980px; }
         .page-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
         .page-logo {
             width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
@@ -227,6 +232,9 @@
             font-family: var(--font-mono); font-size: .74rem;
             color: var(--gilt); line-height: 1.5;
         }
+        .result-wheel {
+            max-width: 560px; margin: 0 auto;
+        }
         .result-wheel svg { width: 100%; height: auto; display: block; }
         .result-h3 {
             font-family: var(--font-display); font-weight: 600;
@@ -273,6 +281,9 @@
             max-width: 52ch; margin: 0 auto;
         }
         .offer-grid { display: grid; gap: 10px; }
+        @media (min-width: 760px) {
+            .wrap.wide .offer-grid { grid-template-columns: repeat(2, 1fr); }
+        }
         .offer-loading {
             text-align: center; padding: 24px; color: var(--text-muted); font-size: .9rem;
         }
@@ -770,6 +781,7 @@
             document.getElementById('resultPoints').innerHTML = points;
 
             document.getElementById('result').hidden = false;
+            document.querySelector('.wrap').classList.add('wide');
             loadOffers();
             document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
