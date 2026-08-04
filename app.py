@@ -371,6 +371,16 @@ def init_db():
             "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
             " SELECT DISTINCT user_id, 'chart', 0, 'EUR' FROM persons")
 
+        # Synastry folded into the love module: one purchase covers both. Anybody
+        # who bought it separately keeps their access through that key.
+        conn.execute(
+            "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
+            " WHERE feature_key = 'synastry'")
+        conn.execute(
+            "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
+            " SELECT user_id, 'love', 0, 'EUR' FROM feature_purchases"
+            " WHERE feature_key = 'synastry'")
+
         # The daily horoscope used to cost 3 EUR; it now comes with the chart.
         conn.execute(
             "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
@@ -1389,47 +1399,42 @@ FEATURE_CATALOGUE = [
                  "Какви емоции ще ти донесе денят",
                  "Какъв ще бъде денят ти"]},
 
-    {"key": "period", "name": "Периоди напред",
-     "note": "Кога да действаш и кога да чакаш", "glyph": "♃",
-     "bullets": ["Кои дни носят обрат — до два месеца напред",
-                 "Кога прозорецът се отваря и кога се затваря",
-                 "Полезно за подписване, местене, започване",
-                 "Виждаш го, преди да е дошло"]},
+    {"key": "period", "name": "Хороскоп за конкретен период",
+     "note": "Какво ще узнаеш?", "glyph": "♃",
+     "bullets": ["Какво да очакваш до 60 дни напред",
+                 "Как са ти повлияли минали събития",
+                 "Кога да планираш важни събития",
+                 "Как да елиминираш неприятни ситуации",
+                 "Къде да насочиш енергията си"]},
 
-    {"key": "love", "name": "Любовен хороскоп",
-     "note": "Как се получава с другия", "glyph": "♀",
-     "bullets": ["Достатъчна е зодията му — или пълните данни",
-                 "Къде има истинско привличане",
-                 "Кое ще ви дразни и след години",
-                 "Какво да правиш и къде да отстъпиш"]},
-
-    {"key": "synastry", "name": "Съвместимост",
-     "note": "Двете карти една до друга", "glyph": "☍",
-     "bullets": ["Пълно сравнение между двама души",
-                 "Кои теми ви свързват и кои ви разделят",
-                 "Разбирате ли се емоционално наистина",
-                 "Има ли го дългосрочното"]},
+    {"key": "love", "name": "Любовен хороскоп и емоционална съвместимост",
+     "note": "Какво ще узнаеш?", "glyph": "♀",
+     "bullets": ["Дали между вас има истинско привличане",
+                 "Кое ви свързва и кое ви дели",
+                 "Къде да подходите предпазливо",
+                 "Имате ли дългосрочен потенциал",
+                 "Пълна синастрия, ако знаеш рождените му данни"]},
 
     {"key": "akashic", "name": "Акашови записи",
-     "note": "Повтарящите се теми в живота ти", "glyph": "☊",
-     "bullets": ["Защо някои неща ти се случват отново и отново",
-                 "Какво носиш наготово и какво трябва да научиш",
-                 "Раната, която се оказва дарба",
-                 "Накъде води пътят ти"]},
+     "note": "Какво ще узнаеш?", "glyph": "☊",
+     "bullets": ["Твоята мисия",
+                 "Кармичните уроци, които трябва да научиш",
+                 "Какво носиш в душата си",
+                 "Как да развиеш потенциала си"]},
 
     {"key": "numerology", "name": "Нумерология",
-     "note": "Числата зад името и датата", "glyph": "7",
-     "bullets": ["Числото на съдбата ти и какво иска от теб",
-                 "Какво търсиш всъщност, зад думите",
-                 "Как те виждат хората отвън",
-                 "Изчислено по питагоровата система"]},
+     "note": "Какво ще узнаеш?", "glyph": "7",
+     "bullets": ["Каква е символиката на числата, свързани с раждането ти",
+                 "Каква е жизнената ти мисия",
+                 "Какво е влиянието на цифрите върху живота и съдбата ти",
+                 "Коя е твоята лична година"]},
 
-    {"key": "moon", "name": "Лунен календар",
-     "note": "Кой ден за какво е добър", "glyph": "◐",
-     "bullets": ["Фазата на Луната за всеки ден от месеца",
-                 "Кога да започваш и кога да завършваш",
-                 "Кои дни са за почивка, а не за напъване",
-                 "Полезно, когато избираш дата"]},
+    {"key": "moon", "name": "Лунен хороскоп календар",
+     "note": "Какво ще узнаеш?", "glyph": "◐",
+     "bullets": ["Как Луната влияе върху ежедневието ти",
+                 "Защо понякога нещата не се получават, въпреки усилията ти",
+                 "Ежедневни съвети за здраве, дом и красота",
+                 "Благоприятни периоди за диети и други начинания"]},
 ]
 
 
@@ -3869,7 +3874,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 
 
 @app.post("/api/synastry")
-def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_feature("synastry"))):
+def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_feature("love"))):
     """Compute synastry (composite) chart between two persons."""
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)
@@ -3882,7 +3887,7 @@ def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_
 
 
 @app.post("/api/synastry/interpretation")
-def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("synastry"))):
+def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("love"))):
     """Generate an AI interpretation of synastry between two persons."""
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)

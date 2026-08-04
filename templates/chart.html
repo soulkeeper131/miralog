@@ -791,6 +791,26 @@
         }
         .mode-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
+        /* Picking another chart from the profile to compare against. */
+        .saved-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+        }
+        .saved-person {
+            display: flex; flex-direction: column; gap: 3px; text-align: left;
+            padding: 13px 15px; border-radius: 12px; cursor: pointer;
+            border: 1px solid var(--border-soft); background: var(--bg-input);
+            color: var(--text); font-family: var(--font-body); min-height: 60px;
+            transition: border-color .15s ease, background-color .15s ease;
+        }
+        .saved-person:hover { border-color: var(--accent-light); }
+        .saved-person.picked { border-color: var(--accent); background: var(--surface-thistle); }
+        .saved-person:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .saved-name { font-weight: 600; color: var(--text-heading); font-size: .95rem; }
+        .saved-meta {
+            font-family: var(--font-mono); font-size: .7rem; color: var(--text-dim);
+        }
+
         #mode-full-panel .form-group { margin-bottom: 14px; }
         #mode-full-panel label {
             display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem;
@@ -1271,6 +1291,16 @@
                 <div class="mode-switch">
                     <button class="mode-btn active" id="modeSign" onclick="setLoveMode('sign')">Знам само зодията</button>
                     <button class="mode-btn" id="modeFull" onclick="setLoveMode('full')">Знам рождените данни</button>
+                    <button class="mode-btn" id="modeSaved" onclick="setLoveMode('saved')" hidden>Друг мой профил</button>
+                </div>
+
+                <!-- Only shown when the account holds more than one chart. -->
+                <div id="mode-saved-panel" style="display:none;">
+                    <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                        Избери човек от профила си — сравняваме двете карти изцяло,
+                        а не само по зодия.
+                    </p>
+                    <div id="saved-people" class="saved-grid"></div>
                 </div>
 
                 <div id="mode-sign-panel">
@@ -1592,10 +1622,10 @@
             const panel = document.getElementById(panelId);
             if (!panel || panel.dataset.gated === '1') return true;
             const meta = {
-                period: { name: 'Периоди напред',
-                          msg: 'Виж кои дни носят промяна — до два месеца напред.' },
-                love:   { name: 'Любовен хороскоп',
-                          msg: 'Съвместимост по зодия или по пълни рождени данни.' },
+                period: { name: 'Хороскоп за конкретен период',
+                          msg: 'Какво да очакваш до 60 дни напред и кога да планираш важните неща.' },
+                love:   { name: 'Любовен хороскоп и емоционална съвместимост',
+                          msg: 'Има ли истинско привличане, кое ви свързва и имате ли дългосрочен потенциал.' },
             }[feature] || { name: feature, msg: '' };
 
             const host = document.createElement('div');
@@ -1642,6 +1672,7 @@
             if (name === 'love' && !window._signsLoaded) {
                 window._signsLoaded = true;
                 loadSignPicker();
+                loadSavedPeople();
             }
             // Tabs whose whole panel is a form: show the offer instead, so the
             // visitor never fills in dates that cannot be submitted.
@@ -2229,10 +2260,109 @@
         let partnerPlaceTimer = null;
 
         function setLoveMode(mode) {
-            document.getElementById('modeSign').classList.toggle('active', mode === 'sign');
-            document.getElementById('modeFull').classList.toggle('active', mode === 'full');
-            document.getElementById('mode-sign-panel').style.display = mode === 'sign' ? '' : 'none';
-            document.getElementById('mode-full-panel').style.display = mode === 'full' ? '' : 'none';
+            ['Sign', 'Full', 'Saved'].forEach(suffix => {
+                const btn = document.getElementById('mode' + suffix);
+                if (btn) btn.classList.toggle('active', mode === suffix.toLowerCase());
+            });
+            ['sign', 'full', 'saved'].forEach(m => {
+                const panel = document.getElementById('mode-' + m + '-panel');
+                if (panel) panel.style.display = mode === m ? '' : 'none';
+            });
+        }
+
+        // The third mode only makes sense with a second chart to compare
+        // against, so the button stays hidden until there is one.
+        async function loadSavedPeople() {
+            try {
+                const resp = await fetch('/api/persons', { headers: authHeaders() });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const others = (data.persons || []).filter(p => p.id !== {{ person.id }});
+                if (!others.length) return;
+
+                document.getElementById('modeSaved').hidden = false;
+                document.getElementById('saved-people').innerHTML = others.map(p => `
+                    <button type="button" class="saved-person" data-id="${p.id}">
+                        <span class="saved-name">${escapeHtmlText(p.name)}</span>
+                        <span class="saved-meta">${p.day}.${p.month}.${p.year} г.</span>
+                    </button>`).join('');
+
+                document.querySelectorAll('.saved-person').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.querySelectorAll('.saved-person')
+                            .forEach(b => b.classList.remove('picked'));
+                        btn.classList.add('picked');
+                        runSynastry(+btn.dataset.id);
+                    });
+                });
+            } catch (e) { /* the two other modes still work */ }
+        }
+
+        // Full chart-to-chart comparison, rendered into the love panel.
+        async function runSynastry(otherId) {
+            const el = document.getElementById('love-content');
+            const aiEl = document.getElementById('love-ai-content');
+            el.innerHTML = crystalLoader('Сравняваме двете карти...');
+            aiEl.innerHTML = '';
+            unlockPanel(el);
+            try {
+                const resp = await guardedFetch('/api/synastry', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person1_id: {{ person.id }}, person2_id: otherId }),
+                });
+                if (!resp.ok) {
+                    const d = await resp.json().catch(() => ({}));
+                    const msg = typeof d.detail === 'string' ? d.detail
+                              : (d.detail && d.detail.message) || ('Грешка ' + resp.status);
+                    throw new Error(msg);
+                }
+                const d = await resp.json();
+                let html = '<div class="love-strips">';
+                (d.aspects || []).slice(0, 12).forEach(a => {
+                    html += `<div class="love-strip">
+                        <span class="love-strip-label">${escapeHtmlText(a.active_bg || a.active)}
+                            ${escapeHtmlText(a.type_bg || a.type)}
+                            ${escapeHtmlText(a.passive_bg || a.passive)}</span>
+                        <span>${a.meaning ? escapeHtmlText(a.meaning) : ''}</span>
+                    </div>`;
+                });
+                html += '</div>';
+                el.innerHTML = html;
+                loadSynastryAI(otherId);
+            } catch (e) {
+                if (e instanceof LockedFeature) {
+                    renderLocked(el, e.detail, () => runSynastry(otherId));
+                    return;
+                }
+                el.innerHTML = '<div class="error">Грешка при сравняването: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadSynastryAI(otherId, refresh) {
+            const el = document.getElementById('love-ai-content');
+            el.innerHTML = crystalLoader('Разчитаме съвместимостта...');
+            try {
+                const url = '/api/synastry/interpretation' + (refresh ? '?refresh=true' : '');
+                const resp = await guardedFetch(url, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ person1_id: {{ person.id }}, person2_id: otherId }),
+                });
+                const data = await resp.json();
+                if (data.interpretation) {
+                    el.innerHTML = cachedBadge(data, `loadSynastryAI(${otherId}, true)`) +
+                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                } else {
+                    el.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
+                }
+            } catch (e) {
+                if (e instanceof LockedFeature) {
+                    renderLocked(el, e.detail, () => loadSynastryAI(otherId));
+                    return;
+                }
+                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+            }
         }
 
         function closePartnerPlaces() {

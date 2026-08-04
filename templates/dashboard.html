@@ -455,7 +455,8 @@
             </div>
             <div class="topbar-right">
                 <a class="btn btn-cancel" id="moonLink" href="#"><span class="btn-ico" aria-hidden="true">🌙</span>Лунен календар</a>
-                <a class="btn btn-cancel" id="synastryLink" href="#"><span class="btn-ico" aria-hidden="true">💞</span>Съвместимост</a>
+                <!-- Съвместимостта живее в „Любовен хороскоп“ на самата карта,
+                     където има кого да сравняваш. -->
                 <a class="btn btn-cancel" id="adminLink" href="#" hidden><span class="btn-ico" aria-hidden="true">🛠</span>Админ</a>
                 <a class="btn btn-cancel" id="settingsLink" href="#"><span class="btn-ico" aria-hidden="true">⚙</span>Настройки</a>
                 <span class="nav-divider" aria-hidden="true"></span>
@@ -594,7 +595,7 @@
         const email = localStorage.getItem('miralog_email') || '...';
         document.getElementById('userEmail').textContent = email;
         document.getElementById('settingsLink').href = '/settings';
-        document.getElementById('synastryLink').href = '/synastry';
+        // synastryLink е премахнат от навигацията.
         document.getElementById('moonLink').href = '/moon';
 
         // The admin link only appears for accounts that actually hold the role.
