@@ -1112,7 +1112,7 @@
                 <div id="profile-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
-                <h2>Разчитане на портрета</h2>
+                <h2>Пълен астрологически профил</h2>
                 <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме...</div></div>
             </div>
         </div>
@@ -1910,8 +1910,8 @@
                 const el = document.getElementById('profile-ai-content');
                 renderLocked(el, {
                     feature: 'profile',
-                    feature_name: 'Разчитане на портрета',
-                    message: 'Портретът горе е твой. Подробното разчитане се отключва отделно.',
+                    feature_name: 'Пълен астрологически профил',
+                    message: 'Данните горе са твои. Пълният профил се отключва отделно.',
                     offer: await featureOffer('profile'),
                     keepSiblings: true,   // the portrait data above stays visible
                 }, loadProfileAI);

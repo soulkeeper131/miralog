@@ -579,6 +579,23 @@
         .i-pink { color: var(--on-pink); }
         .i-gilt { color: var(--gilt); }
 
+        /* Numbered list inside a feature card: the modules answer questions
+           in order, and the numbers carry that. */
+        .card-list {
+            list-style: none; counter-reset: cl; padding: 0; margin: 0;
+        }
+        .card-list li {
+            counter-increment: cl; position: relative;
+            padding: 5px 0 5px 26px;
+            font-size: .88rem; line-height: 1.55; color: var(--text-soft);
+        }
+        .card-list li::before {
+            content: counter(cl) ".";
+            position: absolute; left: 2px; top: 5px;
+            font-family: var(--font-mono); font-size: .72rem;
+            color: var(--gilt); font-variant-numeric: tabular-nums;
+        }
+
         .card h3 {
             font-family: var(--font-display); font-weight: 600;
             font-variation-settings: 'opsz' 30, 'SOFT' 20;
@@ -1103,15 +1120,26 @@
             <div class="cards">
                 <article class="card">
                     <div class="card-scene s-self" aria-hidden="true"><i></i><i></i><i></i></div>
-                    <h3>Астро портрет</h3>
-                    <p class="card-src">Слънце · Луна · Асцендент</p>
-                    <p>Същността ти, емоциите, как те виждат другите — извадени от картата веднага. Подробното разчитане на портрета се отключва отделно.</p>
+                    <h3>Пълен астрологически профил</h3>
+                    <p class="card-src">Какво ще узнаеш?</p>
+                    <ol class="card-list">
+                        <li>Своята същност</li>
+                        <li>Твоето призвание</li>
+                        <li>Как те виждат отстрани</li>
+                        <li>Твоят емоционален свят и темпераментът ти</li>
+                        <li>Къде да насочиш енергията си</li>
+                    </ol>
                 </article>
                 <article class="card">
                     <div class="card-scene s-day" aria-hidden="true"><i></i><i></i></div>
-                    <h3>Денят ти</h3>
-                    <p class="card-src">Транзити за днес · и по имейл</p>
-                    <p>Какво е благоприятно днес и какво не. Конкретно: какво да свършиш, какво да отложиш, в какво да внимаваш — всяко от тях изведено от реален транзит. Може да ти пристига и на имейла всяка сутрин.</p>
+                    <h3>Дневен хороскоп</h3>
+                    <p class="card-src">Какво ще узнаеш?</p>
+                    <ol class="card-list">
+                        <li>Какви са активните транзитни аспекти</li>
+                        <li>Какво да правиш и какво да избягваш</li>
+                        <li>Какви емоции ще ти донесе денят</li>
+                        <li>Какъв ще бъде денят ти</li>
+                    </ol>
                 </article>
                 <article class="card">
                     <div class="card-scene s-chart" aria-hidden="true"><i></i><i></i></div>
@@ -1342,8 +1370,9 @@
                                 <td class="col-price">4 €</td>
                             </tr>
                             <tr>
-                                <th scope="row"><span class="pt-glyph">☉</span>Разчитане на портрета</th>
-                                <td>Кой си ти — силни страни, слепи петна, вътрешни противоречия.</td>
+                                <th scope="row"><span class="pt-glyph">☉</span>Пълен астрологически профил</th>
+                                <td>Същността, призванието, темпераментът ти — и къде да
+                                    насочиш енергията си.</td>
                                 <td class="col-price">5 €</td>
                             </tr>
                             <tr>
