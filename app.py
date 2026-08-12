@@ -738,16 +738,22 @@ def require_feature(feature: str):
             # panel instead of a bare refusal.
             offer = feature_offer(feature)
             meta = next((f for f in FEATURE_CATALOGUE if f["key"] == feature), {})
+            # A withdrawn module has no catalogue entry, so there is no Bulgarian
+            # name to show and nothing to sell. Naming the raw key would leak
+            # English at the customer; say plainly that it is unavailable.
+            name = meta.get("name") or (offer or {}).get("name")
+            if not name:
+                message = "Тази възможност не е достъпна в момента."
+            elif not offer:
+                message = f"„{name}“ не е включена в пакета ти."
+            else:
+                message = (f"„{name}“ не е включена в пакета ти, "
+                           f"но можеш да я отключиш еднократно.")
             detail = {
                 "reason": "locked",
                 "feature": feature,
-                "feature_name": meta.get("name", feature),
-                "message": (
-                    f"„{meta.get('name', feature)}“ не е включена в пакета ти."
-                    if not offer else
-                    f"„{offer['name']}“ не е включена в пакета ти, "
-                    f"но можеш да я отключиш еднократно."
-                ),
+                "feature_name": name or "",
+                "message": message,
                 "offer": offer,
             }
             raise HTTPException(402, detail)
