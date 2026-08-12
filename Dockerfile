@@ -29,8 +29,9 @@ RUN mkdir -p /app/static /app/ephe /app/data && \
 ENV SE_EPHE_PATH=/app/ephe
 ENV HOSTNAME=0.0.0.0
 
-# The SQLite file must outlive the container. Mount a persistent volume here,
-# otherwise every deploy starts with an empty database.
+# The SQLite file and the admin-uploaded logos (in data/uploads) must outlive
+# the container. Mount a persistent volume here, otherwise every deploy starts
+# with an empty database and a missing logo.
 VOLUME ["/app/data"]
 
 EXPOSE 8000

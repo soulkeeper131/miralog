@@ -15,7 +15,7 @@ if os.path.isdir(_ephe_path):
     swe.set_ephe_path(_ephe_path)
     os.environ["SE_EPHE_PATH"] = _ephe_path
 
-from fastapi import FastAPI, Request, Form, HTTPException, Depends
+from fastapi import FastAPI, Request, Form, File, UploadFile, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -45,6 +45,11 @@ BASE_DIR = Path(__file__).parent
 # without that the file lives inside the container and dies with it.
 DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR / "data" / "persons.db"))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Uploaded logos live beside the database rather than in static/, so they sit
+# on the same persistent volume. Putting them under static/ would mean a new
+# deploy wipes the file while the database still points at it.
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", DB_PATH.parent / "uploads"))
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
 
@@ -66,7 +71,10 @@ DEV_ADMIN_PASSWORD = "admin123"
 DEV_DEMO_PASSWORD = "demo123"
 
 SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@miralog.bg")
+# The mail domain for the built-in accounts. Everything below derives from it,
+# so moving to a new domain is one variable rather than a search-and-replace.
+BRAND_DOMAIN = os.environ.get("BRAND_DOMAIN", "miralog.bg").strip() or "miralog.bg"
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", f"admin@{BRAND_DOMAIN}")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", DEV_ADMIN_PASSWORD)
 # A standing demo account, so the locked/paywalled views can be checked without
 # touching a real user. Set DEMO_EMAIL="" to skip creating it in production.
@@ -75,10 +83,10 @@ DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "").strip()
 # supplied. Relying on DEMO_EMAIL="" would not work, because some platforms
 # (Coolify among them) drop empty environment variables entirely.
 if IS_PRODUCTION:
-    DEMO_EMAIL = (os.environ.get("DEMO_EMAIL", "").strip() or "demo@miraskop.bg") \
+    DEMO_EMAIL = (os.environ.get("DEMO_EMAIL", "").strip() or f"demo@{BRAND_DOMAIN}") \
         if DEMO_PASSWORD else ""
 else:
-    DEMO_EMAIL = os.environ.get("DEMO_EMAIL", "demo@miralog.bg").strip()
+    DEMO_EMAIL = os.environ.get("DEMO_EMAIL", f"demo@{BRAND_DOMAIN}").strip()
     DEMO_PASSWORD = DEMO_PASSWORD or DEV_DEMO_PASSWORD
 
 
@@ -316,6 +324,23 @@ def init_db():
         conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
                      (ADMIN_EMAIL,))
 
+        # Installations from before the brand became configurable have the old
+        # name baked into their saved SEO title. Swap it for the {brand}
+        # placeholder so a rename reaches the search results too; a title an
+        # admin has since rewritten by hand is left exactly as it is.
+        legacy_seo_title = "МираСкоп — твоята натална карта, разчетена на разбираем език"
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'seo_title' AND value = ?",
+                     (SEO_DEFAULTS["seo_title"], legacy_seo_title))
+        # Same for a share image still pointing at the bundled logo: blank means
+        # "follow the logo", which is what an uploaded mark should replace.
+        conn.execute("UPDATE settings SET value = '' "
+                     "WHERE key = 'seo_og_image' AND value = '/static/logo-header.png'")
+        # Logos uploaded before they moved onto the data volume are unreachable
+        # at their old path, so clear them rather than serve a broken image.
+        conn.execute("UPDATE settings SET value = '' "
+                     "WHERE key IN ('brand_logo', 'brand_logo_full') "
+                     "AND value LIKE '/static/uploads/%'")
+
         # A demo account on the demo plan, for checking what a paying customer
         # does and does not see. It is deliberately never an admin.
         if DEMO_EMAIL:
@@ -473,12 +498,50 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+# --- Brand ---
+# The app's name and logo live here, not scattered through the templates.
+# Three tiers, most specific first: what an admin saved, then the environment,
+# then the built-in default. Renaming the app is one field in the admin panel.
+BRAND_DEFAULTS = {
+    "brand_name": os.environ.get("BRAND_NAME", "МираСкоп").strip() or "МираСкоп",
+    "brand_tagline": os.environ.get("BRAND_TAGLINE", "Астрология на разбираем език").strip(),
+    "brand_domain": BRAND_DOMAIN,
+    "brand_logo": "/static/logo-header.png",
+    "brand_logo_full": "/static/logo-full.png",
+}
+
+def brand() -> dict:
+    """The current brand, with saved values overriding the defaults.
+
+    Exposed to every template as `brand`, so a rename never means editing
+    markup. Uploaded logos fall back to the bundled files when unset.
+    """
+    values = {key: (get_setting(key) or default)
+              for key, default in BRAND_DEFAULTS.items()}
+    return {
+        "name": values["brand_name"],
+        "tagline": values["brand_tagline"],
+        "domain": values["brand_domain"],
+        "logo": values["brand_logo"],
+        "logo_full": values["brand_logo_full"],
+    }
+
+def brand_name() -> str:
+    """Shorthand for the places that only need the name (emails, PDFs)."""
+    return get_setting("brand_name") or BRAND_DEFAULTS["brand_name"]
+
 templates = Jinja2Templates(directory="templates")
 # Fix for Jinja2 3.1.6 + Starlette 1.0.1: request object is not hashable
 templates.env.cache_size = 0
+# `brand` is a global rather than per-route context: every template needs it,
+# and it is a callable so an admin's rename shows up without a restart.
+templates.env.globals["brand"] = brand
 
-app = FastAPI(title="МираСкоп", lifespan=lifespan)
+app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+# Admin-uploaded files (logos) are served from their own mount because they
+# live on the data volume, not in the image.
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 async def _background_jobs_loop():
     """Hourly lifecycle + digest emails. Failures are logged, never crash the app."""
@@ -1309,6 +1372,7 @@ def api_onboard(data: OnboardRequest, request: Request):
                        for o in offers],
                 success_url=f"{base}/chart/{person_id}?paid=1",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
+                brand=brand_name(),
             )
         except Exception as e:
             log.warning("Onboarding checkout за %s се провали: %s", email, e)
@@ -1440,26 +1504,28 @@ FEATURE_CATALOGUE = [
 
 
 # Default wording for the automated emails; admins can edit these.
+# {brand} is filled in from the brand settings, so renaming the app does not
+# mean rewriting every template by hand.
 EMAIL_TEMPLATES = {
-    "welcome_subject": "Добре дошъл в МираСкоп",
+    "welcome_subject": "Добре дошъл в {brand}",
     "welcome_body": (
         "Здравей, {name}!\n\n"
-        "Акаунтът ти в МираСкоп е готов. Влез и създай първата си натална карта.\n\n"
-        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+        "Акаунтът ти в {brand} е готов. Влез и създай първата си натална карта.\n\n"
+        "{link}\n\nПоздрави,\nЕкипът на {brand}"
     ),
     "expiring_subject": "Абонаментът ти изтича скоро",
     "expiring_body": (
         "Здравей, {name}!\n\n"
-        "Абонаментът ти за МираСкоп изтича на {expires}. "
+        "Абонаментът ти за {brand} изтича на {expires}. "
         "След това акаунтът остава активен, но с демо достъп.\n\n"
-        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+        "{link}\n\nПоздрави,\nЕкипът на {brand}"
     ),
     "expired_subject": "Абонаментът ти изтече",
     "expired_body": (
         "Здравей, {name}!\n\n"
         "Абонаментът ти изтече и акаунтът мина на демо достъп. "
         "Картите и разчитанията ти остават запазени.\n\n"
-        "{link}\n\nПоздрави,\nЕкипът на МираСкоп"
+        "{link}\n\nПоздрави,\nЕкипът на {brand}"
     ),
 }
 
@@ -1467,20 +1533,31 @@ EMAIL_TEMPLATES = {
 # pages fall back to when nothing has been saved yet.
 SEO_DEFAULTS = {
     "seo_site_url": "",
-    "seo_title": "МираСкоп — твоята натална карта, разчетена на разбираем език",
+    # {brand} is substituted at read time, so renaming the app does not leave
+    # a stale title in the search results.
+    "seo_title": "{brand} — твоята натална карта, разчетена на разбираем език",
     "seo_description": (
         "Точна натална карта по Swiss Ephemeris, разчетена на български: кой си, "
         "какво ти предстои днес, кармичните ти теми и нумерологията ти."
     ),
     "seo_keywords": "натална карта, хороскоп, астрология, зодия, нумерология, лунен календар",
-    "seo_og_image": "/static/logo-header.png",
+    "seo_og_image": "",
     "seo_robots": "index,follow",
     "seo_verification": "",
 }
 
 def seo_settings() -> dict:
     """Current SEO values, falling back to the defaults for anything unset."""
-    return {key: (get_setting(key) or default) for key, default in SEO_DEFAULTS.items()}
+    name = brand_name()
+    values = {key: (get_setting(key) or default)
+              for key, default in SEO_DEFAULTS.items()}
+    # Admins write {brand} in their own titles too, so substitute after reading.
+    for key in ("seo_title", "seo_description"):
+        values[key] = values[key].replace("{brand}", name)
+    # An unset share image follows the logo, uploaded or bundled.
+    if not values["seo_og_image"]:
+        values["seo_og_image"] = brand()["logo"]
+    return values
 
 def sky_today() -> list:
     """Where the main bodies actually are right now, for the landing strip.
@@ -1979,6 +2056,7 @@ def api_request_feature(feature_key: str, request: Request,
                 currency=offer["currency"],
                 success_url=success,
                 cancel_url=cancel,
+                brand=brand_name(),
             )
             return {"ok": True, "checkout_url": url, "offer": offer}
         except Exception as e:
@@ -2028,6 +2106,8 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             for key, default in EMAIL_TEMPLATES.items()
         },
         "seo": seo_settings(),
+        "brand": {key: (get_setting(key) or default)
+                  for key, default in BRAND_DEFAULTS.items()},
     }
 
 @app.post("/api/admin/settings")
@@ -2063,6 +2143,12 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
         if key in SEO_DEFAULTS:
             set_setting(key, str(value or "").strip())
 
+    # A blank brand field means "go back to the default", so it is stored empty
+    # and brand() falls through — that is why this does not skip empty values.
+    for key, value in (payload.get("brand") or {}).items():
+        if key in BRAND_DEFAULTS:
+            set_setting(key, str(value or "").strip())
+
     return {"ok": True}
 
 def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> None:
@@ -2080,7 +2166,8 @@ def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> No
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = get_setting("smtp_from") or get_setting("smtp_user") or "noreply@miraskop.bg"
+    msg["From"] = (get_setting("smtp_from") or get_setting("smtp_user")
+                   or f"noreply@{brand()['domain']}")
     msg["To"] = to
     msg.set_content(body)
 
@@ -2112,13 +2199,77 @@ def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> No
     except Exception as e:
         raise HTTPException(502, f"Изпращането се провали: {e}")
 
+# Logos are written to UPLOAD_DIR rather than over the bundled files, so a bad
+# upload never destroys the originals and reverting is a matter of clearing the
+# field. They are served from /uploads, mounted separately from /static.
+BRAND_LOGO_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
+BRAND_LOGO_MAX_BYTES = 2 * 1024 * 1024
+
+@app.post("/api/admin/settings/logo")
+async def api_admin_upload_logo(file: UploadFile = File(...),
+                                slot: str = Form("brand_logo"),
+                                admin: dict = Depends(require_admin)):
+    """Replace one of the two logos. `slot` picks the header or the full mark."""
+    if slot not in ("brand_logo", "brand_logo_full"):
+        raise HTTPException(400, "Непознато място за лого.")
+
+    suffix = BRAND_LOGO_TYPES.get((file.content_type or "").lower())
+    if not suffix:
+        raise HTTPException(400, "Логото трябва да е PNG, JPG, WebP или SVG.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Файлът е празен.")
+    if len(data) > BRAND_LOGO_MAX_BYTES:
+        raise HTTPException(400, "Логото е над 2 MB. Смали го и опитай пак.")
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    # The random suffix busts caches: browsers and Coolify's proxy both hold
+    # onto static assets aggressively, and a reused name would show the old mark.
+    name = f"{slot}-{secrets.token_hex(4)}{suffix}"
+    (UPLOAD_DIR / name).write_bytes(data)
+
+    previous = get_setting(slot) or ""
+    set_setting(slot, f"/uploads/{name}")
+    _remove_upload(previous)
+
+    return {"ok": True, "url": f"/uploads/{name}"}
+
+def _remove_upload(url: str) -> None:
+    """Delete an uploaded logo, ignoring the bundled defaults and stray paths."""
+    if not url.startswith("/uploads/"):
+        return
+    name = Path(url).name  # never trust the URL for anything but the filename
+    try:
+        target = UPLOAD_DIR / name
+        if target.is_file():
+            target.unlink()
+    except OSError:
+        log.warning("could not remove the logo %s", url, exc_info=True)
+
+@app.post("/api/admin/settings/logo/reset")
+def api_admin_reset_logo(payload: dict, admin: dict = Depends(require_admin)):
+    """Drop an uploaded logo and fall back to the bundled file."""
+    slot = (payload.get("slot") or "").strip()
+    if slot not in ("brand_logo", "brand_logo_full"):
+        raise HTTPException(400, "Непознато място за лого.")
+    current = get_setting(slot) or ""
+    set_setting(slot, "")
+    _remove_upload(current)
+    return {"ok": True, "url": BRAND_DEFAULTS[slot]}
+
 @app.post("/api/admin/settings/test-email")
 def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
     """Send a test message through the configured SMTP server."""
     to = (payload.get("to") or "").strip()
     if "@" not in to:
         raise HTTPException(400, "Въведи валиден имейл адрес.")
-    send_email(to, "Тестов имейл от МираСкоп",
+    send_email(to, f"Тестов имейл от {brand_name()}",
                "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
     return {"ok": True}
 
@@ -2137,6 +2288,8 @@ def render_email_template(kind: str, **fields) -> Tuple[str, str]:
     subject = get_setting(f"tpl_{kind}_subject") or EMAIL_TEMPLATES[f"{kind}_subject"]
     body = get_setting(f"tpl_{kind}_body") or EMAIL_TEMPLATES[f"{kind}_body"]
     safe = {k: ("" if v is None else str(v)) for k, v in fields.items()}
+    # Every template may reference {brand}; a caller-supplied value wins.
+    safe.setdefault("brand", brand_name())
     try:
         return subject.format(**safe), body.format(**safe)
     except Exception:
@@ -2360,7 +2513,7 @@ def send_welcome_set_password(user_id: int) -> None:
             + link + "\n\n"
             "Връзката е валидна 2 часа. Ако изтече, използвай "
             "„Забравена парола“ на страницата за вход.\n\n"
-            "— МираСкоп"
+            "— " + brand_name()
         )
         send_email(row["email"], "Картата ти е готова — задай парола", body)
     except Exception as e:
@@ -2450,19 +2603,19 @@ def run_digest_emails() -> None:
                 f"Здравей, {name}!\n\n"
                 f"Дневното разчитане за {person['name']}:\n\n{excerpt}\n\n"
                 f"Пълният текст: {chart_link}\n\n"
-                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\nМираСкоп"
+                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\n{brand_name()}"
             )
         else:
             body = (
                 f"Здравей, {name}!\n\n"
-                f"Дневният хороскоп за {person['name']} те чака в МираСкоп:\n"
+                f"Дневният хороскоп за {person['name']} те чака в {brand_name()}:\n"
                 f"{chart_link}\n\n"
-                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\nМираСкоп"
+                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\n{brand_name()}"
             )
         if not get_setting("smtp_host"):
             return
         try:
-            send_email(u["email"], f"Денят ти в МираСкоп — {today}", body)
+            send_email(u["email"], f"Денят ти в {brand_name()} — {today}", body)
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?",
                              (today, u["id"]))
@@ -2500,10 +2653,10 @@ def api_forgot_password(data: ForgotPasswordRequest, request: Request):
             try:
                 send_email(
                     email,
-                    "Нулиране на парола — МираСкоп",
+                    f"Нулиране на парола — {brand_name()}",
                     f"Здравей, {name}!\n\n"
                     f"Заяви нулиране на паролата си. Линкът е валиден 2 часа:\n\n"
-                    f"{link}\n\nАко не си го заявили, игнорирай това писмо.\n\nМираСкоп",
+                    f"{link}\n\nАко не си го заявили, игнорирай това писмо.\n\n{brand_name()}",
                 )
             except Exception as e:
                 log.warning("Forgot-password имейл се провали: %s", e)
@@ -2560,7 +2713,7 @@ def api_checkout_subscription(request: Request, user: Tuple[int, str] = Depends(
             user_id=user_id,
             amount_cents=int(plan.get("price_cents") or 500),
             currency=plan.get("currency") or "EUR",
-            product_name=f"МираСкоп — {plan.get('name') or 'Пълен достъп'}",
+            product_name=f"{brand_name()} — {plan.get('name') or 'Пълен достъп'}",
             success_url=success,
             cancel_url=cancel,
         )
@@ -2596,6 +2749,7 @@ def api_checkout_feature(feature_key: str, request: Request,
             currency=offer["currency"],
             success_url=success,
             cancel_url=cancel,
+            brand=brand_name(),
         )
     except Exception as e:
         raise HTTPException(502, f"Stripe грешка: {e}") from e
@@ -4476,6 +4630,7 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
         facts=facts,
         body=body,
         logo_path=str(logo) if logo.exists() else None,
+        brand=brand_name(),
     )
 
     safe = re.sub(r"[^0-9A-Za-zА-Яа-я]+", "-", person["name"]).strip("-") or "razchitane"
@@ -4527,9 +4682,9 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
         to,
         f"{title} — {person['name']}",
         f"Здравей!\n\n"
-        f"Прикачено е разчитането „{title}“ за {name}, изготвено от МираСкоп.\n"
+        f"Прикачено е разчитането „{title}“ за {name}, изготвено от {brand_name()}.\n"
         f"Позициите в него са изчислени със Swiss Ephemeris.\n\n"
-        f"Приятно четене!\n— МираСкоп",
+        f"Приятно четене!\n— {brand_name()}",
         attachment=(filename, pdf, "application/pdf"),
     )
     return {"ok": True, "to": to}

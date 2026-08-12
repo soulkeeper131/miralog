@@ -198,7 +198,7 @@ def _fact_cards(facts: list, st: dict):
 
 def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
                       facts: list = None, body: str = "",
-                      logo_path: str = None) -> bytes:
+                      logo_path: str = None, brand: str = "МираСкоп") -> bytes:
     """Render one reading as a PDF and return the bytes."""
     st = _styles()
     regular, bold, _ = _register_fonts()
@@ -213,7 +213,7 @@ def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
         canvas.rect(0, A4[1] - 6 * mm, A4[0], 6 * mm, stroke=0, fill=1)
         canvas.setFont(regular, 8)
         canvas.setFillColor(MUTED)
-        canvas.drawString(20 * mm, 12 * mm, f"МираСкоп · {person_name}")
+        canvas.drawString(20 * mm, 12 * mm, f"{brand} · {person_name}")
         canvas.drawRightString(A4[0] - 20 * mm, 12 * mm, f"стр. {doc.page}")
         canvas.setStrokeColor(RULE)
         canvas.setLineWidth(0.5)
@@ -224,7 +224,7 @@ def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
         buf, pagesize=A4,
         leftMargin=20 * mm, rightMargin=20 * mm,
         topMargin=18 * mm, bottomMargin=22 * mm,
-        title=f"{title} — {person_name}", author="МираСкоп",
+        title=f"{title} — {person_name}", author=brand,
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main")
     doc.addPageTemplates([PageTemplate(id="all", frames=[frame], onPage=decorate)])

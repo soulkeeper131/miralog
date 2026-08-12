@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Създай своята натална карта — МираСкоп</title>
+    <title>Създай своята натална карта — {{ brand().name }}</title>
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
@@ -453,7 +453,7 @@
 
     <div class="wrap">
         <div class="page-nav">
-            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="/static/logo-header.png" alt="МираСкоп"></a>
+            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
             <a href="/" class="back-link">← Начало</a>
         </div>
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Политика за поверителност — МираСкоп</title>
+    <title>Политика за поверителност — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <style>
         body { font-family: Georgia, serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #2d2438; }
@@ -13,10 +13,10 @@
     </style>
 </head>
 <body>
-    <p><a href="/">← МираСкоп</a></p>
+    <p><a href="/">← {{ brand().name }}</a></p>
     <h1>Политика за поверителност</h1>
     <p class="muted">Последна актуализация: август 2026</p>
-    <p>МираСкоп обработва лични данни, за да предостави астрологични разчитания и акаунт услуги.</p>
+    <p>{{ brand().name }} обработва лични данни, за да предостави астрологични разчитания и акаунт услуги.</p>
     <h2>Какви данни събираме</h2>
     <ul>
         <li>Имейл и парола (хеширана) за вход</li>

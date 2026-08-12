@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Регистрация — МираСкоп</title>
+    <title>Регистрация — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
@@ -275,8 +275,8 @@
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <img class="logo-img" src="/static/logo-header.png" alt="МираСкоп">
-        <h1>МираСкоп</h1>
+        <img class="logo-img" src="{{ brand().logo }}" alt="{{ brand().name }}">
+        <h1>{{ brand().name }}</h1>
         <p class="subtitle">Създайте своя астрологичен профил</p>
 
         <div class="card">

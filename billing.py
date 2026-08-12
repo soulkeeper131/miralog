@@ -81,6 +81,7 @@ def create_feature_checkout(
     currency: str,
     success_url: str,
     cancel_url: str,
+    brand: str = "МираСкоп",
 ) -> str:
     """Return a Checkout Session URL for a one-off feature unlock."""
     stripe = get_stripe()
@@ -90,7 +91,7 @@ def create_feature_checkout(
             "price_data": {
                 "currency": (currency or "eur").lower(),
                 "unit_amount": int(amount_cents),
-                "product_data": {"name": f"МираСкоп — {feature_name}"},
+                "product_data": {"name": f"{brand} — {feature_name}"},
             },
             "quantity": 1,
         }],
@@ -120,6 +121,7 @@ def create_features_checkout(
     items: list,
     success_url: str,
     cancel_url: str,
+    brand: str = "МираСкоп",
 ) -> str:
     """Checkout for several one-off unlocks at once.
 
@@ -138,7 +140,7 @@ def create_features_checkout(
             "price_data": {
                 "currency": (i.get("currency") or "eur").lower(),
                 "unit_amount": int(i["amount_cents"]),
-                "product_data": {"name": f"МираСкоп — {i['name']}"},
+                "product_data": {"name": f"{brand} — {i['name']}"},
             },
             "quantity": 1,
         } for i in items],

@@ -11,7 +11,7 @@
     {% if seo_verification %}<meta name="google-site-verification" content="{{ seo_verification }}">{% endif %}
 
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="МираСкоп">
+    <meta property="og:site_name" content="{{ brand().name }}">
     <meta property="og:locale" content="bg_BG">
     <meta property="og:title" content="{{ seo_title }}">
     <meta property="og:description" content="{{ seo_description }}">
@@ -26,7 +26,7 @@
     {
         "@context": "https://schema.org",
         "@type": "WebApplication",
-        "name": "МираСкоп",
+        "name": "{{ brand().name }}",
         "url": "{{ seo_url }}",
         "applicationCategory": "LifestyleApplication",
         "inLanguage": "bg",
@@ -1088,9 +1088,9 @@
             </svg>
         </div>
         <div class="wrap">
-            <img class="hero-logo" src="/static/logo-full.png" alt="МираСкоп">
+            <img class="hero-logo" src="{{ brand().logo_full }}" alt="{{ brand().name }}">
             <p><span class="kicker">Астрология на разбираем език</span></p>
-            <h1>МираСкоп</h1>
+            <h1>{{ brand().name }}</h1>
             <p class="lede">Небето в мига на раждането ти казва повече, отколкото предполагаш. Тук то е преведено на човешки.</p>
             <p class="sub">Точни изчисления по Swiss Ephemeris, разчетени дума по дума — без мъгла, без общи приказки, без термини, които трябва да гуглиш.</p>
 
@@ -1475,7 +1475,7 @@
 
     <footer>
         <div class="wrap">
-            МираСкоп · Астрология на разбираем език<br>
+            {{ brand().name }} · {{ brand().tagline }}<br>
             <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
         </div>
     </footer>

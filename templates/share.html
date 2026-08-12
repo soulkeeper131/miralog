@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Споделено разчитане — МираСкоп</title>
+    <title>Споделено разчитане — {{ brand().name }}</title>
     <meta name="robots" content="noindex">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
@@ -43,7 +43,7 @@
 </head>
 <body>
     <div class="wrap">
-        <div class="brand">МираСкоп</div>
+        <div class="brand">{{ brand().name }}</div>
         <div id="root" class="card"><p class="err">Зареждане…</p></div>
     </div>
     <script>
@@ -53,7 +53,7 @@
                 const resp = await fetch('/api/share/{{ token }}');
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(data.detail || 'Линкът не е валиден');
-                document.title = (data.title || 'Разчитане') + ' — МираСкоп';
+                document.title = (data.title || 'Разчитане') + ' — {{ brand().name }}';
                 root.innerHTML =
                     '<h1>' + escapeHtml(data.title || 'Разчитане') + '</h1>' +
                     '<div class="meta">за ' + escapeHtml(data.person_name || '') +

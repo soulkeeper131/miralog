@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Админ панел — МираСкоп</title>
+    <title>Админ панел — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
@@ -259,6 +259,37 @@
         input:hover, select:hover, textarea:hover { border-color: var(--accent-light); }
         input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
         .hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 5px; line-height: 1.5; }
+        /* The file picker is a browser control; only the frame around it and
+           its button are ours to style. */
+        input[type="file"] {
+            width: 100%; padding: 8px 10px; border-radius: 12px;
+            border: 1px dashed var(--border); background: var(--bg-input);
+            color: var(--text-dim); font-family: var(--font-body); font-size: 0.82rem;
+        }
+        input[type="file"]:hover { border-color: var(--accent-light); }
+        input[type="file"]:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        input[type="file"]::file-selector-button {
+            margin-right: 10px; padding: 7px 12px; border-radius: 9px; cursor: pointer;
+            border: 1px solid var(--border); background: var(--bg-card);
+            color: var(--text-heading); font-family: var(--font-body); font-size: 0.8rem;
+        }
+        input[type="file"]::file-selector-button:hover { border-color: var(--accent); color: var(--accent-light); }
+        /* A checkerboard behind the logo, so a transparent PNG is readable in
+           either theme instead of vanishing into the panel. */
+        .logo-preview {
+            display: flex; align-items: center; justify-content: center;
+            min-height: 92px; margin-bottom: 8px; padding: 10px;
+            border: 1px solid var(--border-soft); border-radius: 12px;
+            background-color: var(--bg-input);
+            background-image:
+                linear-gradient(45deg, rgba(128,128,128,.14) 25%, transparent 25%),
+                linear-gradient(-45deg, rgba(128,128,128,.14) 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, rgba(128,128,128,.14) 75%),
+                linear-gradient(-45deg, transparent 75%, rgba(128,128,128,.14) 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+        }
+        .logo-preview img { max-width: 100%; max-height: 72px; object-fit: contain; }
         .check {
             display: flex; align-items: center; gap: 9px; min-height: 44px;
             color: var(--text); font-size: 0.88rem; cursor: pointer;
@@ -422,7 +453,7 @@
 
     <div class="container">
         <div class="page-nav">
-            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-mark" src="/static/logo-header.png" alt="МираСкоп"></a>
+            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-mark" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
             <a href="#" id="backLink" class="back-link">← Табло</a>
         </div>
 
@@ -1390,6 +1421,43 @@
                     '</div>' +
                     '<div class="btn-row"><button class="btn btn-ghost" id="testEmailBtn">Изпрати тест</button></div></div>';
 
+                const brand = d.brand || {};
+                html += '<div class="section"><h2>Марка</h2>' +
+                    '<div class="hint" style="margin-bottom:14px;">' +
+                        'Името се показва навсякъде — заглавия на страници, имейли, ' +
+                        'PDF разчитания и касовата бележка от Stripe. Празно поле връща ' +
+                        'стойността по подразбиране.</div>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="brandName">Име на приложението</label>' +
+                            '<input type="text" id="brandName" maxlength="40" value="' +
+                            escapeHtml(brand.brand_name || '') + '">' +
+                            '<div class="hint">Смяната важи веднага, без ново пускане.</div></div>' +
+                        '<div class="form-group"><label for="brandDomain">Домейн за имейли</label>' +
+                            '<input type="text" id="brandDomain" value="' +
+                            escapeHtml(brand.brand_domain || '') + '">' +
+                            '<div class="hint">Ползва се за подателя, когато SMTP „От“ е празно.</div></div>' +
+                    '</div>' +
+                    '<div class="form-group"><label for="brandTagline">Подзаглавие</label>' +
+                        '<input type="text" id="brandTagline" maxlength="80" value="' +
+                        escapeHtml(brand.brand_tagline || '') + '">' +
+                        '<div class="hint">Появява се във футъра на началната страница.</div></div>' +
+                    '<h3 style="margin-top:20px;">Лого</h3>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label>В лентата горе</label>' +
+                            '<div class="logo-preview"><img id="logoHeaderImg" alt="" src="' +
+                            escapeHtml(brand.brand_logo || '') + '"></div>' +
+                            '<input type="file" id="logoHeaderFile" accept="image/png,image/jpeg,image/webp,image/svg+xml">' +
+                            '<div class="btn-row"><button class="btn btn-ghost" data-logo-reset="brand_logo">Върни оригинала</button></div>' +
+                            '<div class="hint">Квадратно, поне 96×96 px. До 2 MB.</div></div>' +
+                        '<div class="form-group"><label>На началната страница</label>' +
+                            '<div class="logo-preview"><img id="logoFullImg" alt="" src="' +
+                            escapeHtml(brand.brand_logo_full || '') + '"></div>' +
+                            '<input type="file" id="logoFullFile" accept="image/png,image/jpeg,image/webp,image/svg+xml">' +
+                            '<div class="btn-row"><button class="btn btn-ghost" data-logo-reset="brand_logo_full">Върни оригинала</button></div>' +
+                            '<div class="hint">Голямото лого над заглавието. До 2 MB.</div></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveBrandBtn">Запази марката</button></div></div>';
+
                 const seo = d.seo || {};
                 html += '<div class="section"><h2>SEO</h2>' +
                     '<div class="hint" style="margin-bottom:14px;">' +
@@ -1488,6 +1556,53 @@
                 if (pwd) payload.smtp.password = pwd;
                 await saveSettings(payload, 'SMTP настройките са запазени.');
                 document.getElementById('smtpPassword').value = '';
+            });
+
+            document.getElementById('saveBrandBtn').addEventListener('click', async function() {
+                await saveSettings({
+                    brand: {
+                        brand_name: document.getElementById('brandName').value.trim(),
+                        brand_tagline: document.getElementById('brandTagline').value.trim(),
+                        brand_domain: document.getElementById('brandDomain').value.trim(),
+                    },
+                }, 'Марката е запазена. Презареди, за да видиш промяната навсякъде.');
+            });
+
+            /* Logo upload: no Content-Type header here — the browser has to set
+               the multipart boundary itself. */
+            function wireLogo(inputId, imgId, slot) {
+                document.getElementById(inputId).addEventListener('change', async function() {
+                    const file = this.files && this.files[0];
+                    if (!file) return;
+                    const body = new FormData();
+                    body.append('file', file);
+                    body.append('slot', slot);
+                    try {
+                        const res = await api('/api/admin/settings/logo', {
+                            method: 'POST', headers: authHeaders(), body: body,
+                        });
+                        document.getElementById(imgId).src = res.url + '?v=' + Date.now();
+                        notify('Логото е качено.');
+                    } catch (e) { notifyError(e); }
+                    this.value = '';
+                });
+            }
+            wireLogo('logoHeaderFile', 'logoHeaderImg', 'brand_logo');
+            wireLogo('logoFullFile', 'logoFullImg', 'brand_logo_full');
+
+            document.querySelectorAll('[data-logo-reset]').forEach(function(btn) {
+                btn.addEventListener('click', async function() {
+                    const slot = this.getAttribute('data-logo-reset');
+                    try {
+                        const res = await api('/api/admin/settings/logo/reset', {
+                            method: 'POST', headers: jsonHeaders(),
+                            body: JSON.stringify({ slot: slot }),
+                        });
+                        const imgId = slot === 'brand_logo' ? 'logoHeaderImg' : 'logoFullImg';
+                        document.getElementById(imgId).src = res.url + '?v=' + Date.now();
+                        notify('Върнато е оригиналното лого.');
+                    } catch (e) { notifyError(e); }
+                });
             });
 
             document.getElementById('saveSeoBtn').addEventListener('click', async function() {

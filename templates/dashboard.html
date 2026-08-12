@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Табло — МираСкоп</title>
+    <title>Табло — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
@@ -458,9 +458,9 @@
         <!-- Top bar -->
         <div class="topbar">
             <div class="topbar-left">
-                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="brand-logo" src="/static/logo-header.png" alt="МираСкоп"></a>
+                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="brand-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
                 <div>
-                    <h1>МираСкоп</h1>
+                    <h1>{{ brand().name }}</h1>
                     <div class="greeting">Здравей, <span id="userEmail">...</span>!</div>
                 </div>
             </div>

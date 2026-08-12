@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Лунен календар — МираСкоп</title>
+    <title>Лунен календар — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
@@ -295,7 +295,7 @@
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
         <div class="page-nav">
-            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-mark" src="/static/logo-header.png" alt="МираСкоп"></a>
+            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-mark" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
             <a href="#" id="backLink" class="back-link">← Табло</a>
         </div>
 
