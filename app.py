@@ -427,6 +427,39 @@ def init_db():
             conn.execute("UPDATE plans SET features = ? WHERE key = ?",
                          (json.dumps(feats), plan_key))
 
+        # The monthly plan is gone: everything is a one-off purchase now.
+        # Anybody who paid for a subscription keeps what they paid for, turned
+        # into permanent purchases — an expiry date would otherwise lock them
+        # out of modules they already bought. This runs before the plan rows
+        # are rewritten, so it still sees what each plan granted.
+        paid_plans = {
+            key: feats for key, feats in conn.execute(
+                "SELECT key, features FROM plans WHERE key != 'demo'").fetchall()
+        }
+        for user_id, plan_key in conn.execute(
+                "SELECT id, plan_key FROM users WHERE plan_key IS NOT NULL"
+                " AND plan_key != 'demo'").fetchall():
+            try:
+                feats = json.loads(paid_plans.get(plan_key) or "[]")
+            except Exception:
+                continue
+            for key in feats:
+                conn.execute(
+                    "INSERT OR IGNORE INTO feature_purchases"
+                    " (user_id, feature_key, price_cents, currency)"
+                    " VALUES (?, ?, 0, 'EUR')", (user_id, key))
+        # With the modules now owned outright, the expiry date has no meaning.
+        conn.execute("UPDATE users SET plan_expires = NULL WHERE plan_expires IS NOT NULL")
+        # The lifecycle emails announced an expiry that can no longer happen.
+        conn.execute("DELETE FROM settings WHERE key IN"
+                     " ('tpl_expiring_subject', 'tpl_expiring_body',"
+                     "  'tpl_expired_subject', 'tpl_expired_body')")
+        # „Пълен достъп“ was the monthly plan. Everyone keeps their modules via
+        # the purchases written above, so the plan row itself is retired and
+        # every account returns to the shared baseline.
+        conn.execute("UPDATE users SET plan_key = 'demo' WHERE plan_key != 'demo'")
+        conn.execute("DELETE FROM plans WHERE key != 'demo'")
+
         # The chart was briefly sold for 9 EUR; it is now granted at signup,
         # so any install that seeded the old price must stop offering it.
         conn.execute(
@@ -448,28 +481,20 @@ def init_db():
                 conn.execute("UPDATE plans SET features = ? WHERE key = ?",
                              (json.dumps(feats), key))
 
-        # Seed the two plans the landing page advertises.
+        # One baseline every account shares. There are no tiers to sell any
+        # more: every reading is bought outright, so this row only fixes how
+        # many charts an account may hold. "planets" and "aspects" ride along
+        # with a chart, which is granted free at signup.
         if conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0:
-            conn.executemany(
+            conn.execute(
                 "INSERT INTO plans (key, name, price_cents, currency, period, max_persons, features, sort_order)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    # There is no free tier: every reading is bought outright.
-                    # This plan grants nothing on its own — it only sets how many
-                    # charts an account may hold. "planets" and "aspects" ride
-                    # along with a purchased chart, so they stay listed here.
-                    ("demo", "Основен", 0, "EUR", "month", 2,
-                     json.dumps(["planets", "aspects"]), 0),
-                    ("full", "Пълен достъп", 500, "EUR", "month", 50,
-                     json.dumps(["chart", "planets", "aspects", "numerology", "profile",
-                                 "horoscope", "period", "synastry", "love", "akashic",
-                                 "moon"]), 1),
-                ]
-            )
+                " VALUES ('demo', 'Основен', 0, 'EUR', 'once', 2, ?, 0)",
+                (json.dumps(["planets", "aspects"]),))
 
-        # The first account created is the administrator.
+        # The first account created is the administrator. Admins bypass every
+        # gate by role, so the plan they sit on does not matter.
         conn.execute(
-            "UPDATE users SET role = 'admin', plan_key = 'full' WHERE email = ?",
+            "UPDATE users SET role = 'admin' WHERE email = ?",
             (ADMIN_EMAIL,)
         )
         conn.commit()
@@ -658,22 +683,15 @@ def get_plan(plan_key: Optional[str]) -> Optional[dict]:
             plan["features"] = []
         return plan
 
-def plan_is_active(user: dict) -> bool:
-    """A paid plan lapses on its expiry date; demo never expires."""
-    if not user.get("plan_expires"):
-        return True
-    try:
-        expires = datetime.datetime.fromisoformat(str(user["plan_expires"]))
-    except ValueError:
-        return True
-    return expires.date() >= datetime.date.today()
-
 def effective_plan(user: dict) -> dict:
-    """The plan actually in force — falls back to demo once a paid one expires."""
-    plan = get_plan(user.get("plan_key")) if plan_is_active(user) else None
-    return plan or get_plan("demo") or {
-        "key": "demo", "name": "Демо", "max_persons": 2,
-        "features": ["chart", "planets", "aspects", "numerology"],
+    """The plan in force. Nothing expires any more — modules are bought outright.
+
+    The plan survives only as the baseline every account starts from; what a
+    customer paid for lives in feature_purchases and never lapses.
+    """
+    return get_plan(user.get("plan_key")) or get_plan("demo") or {
+        "key": "demo", "name": "Основен", "max_persons": 2,
+        "features": ["planets", "aspects"],
     }
 
 def purchased_features(user_id: int) -> list:
@@ -1450,8 +1468,6 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
             "max_persons": person_limit(row),
             # Admins are never gated by plan.
             "features": [f["key"] for f in FEATURE_CATALOGUE] if is_admin else plan.get("features", []),
-            "expires": row.get("plan_expires"),
-            "active": plan_is_active(row),
         },
         # What the account may actually open, and what the rest would cost.
         "features": unlocked_features(row),
@@ -1540,20 +1556,6 @@ EMAIL_TEMPLATES = {
     "welcome_body": (
         "Здравей, {name}!\n\n"
         "Акаунтът ти в {brand} е готов. Влез и създай първата си натална карта.\n\n"
-        "{link}\n\nПоздрави,\nЕкипът на {brand}"
-    ),
-    "expiring_subject": "Абонаментът ти изтича скоро",
-    "expiring_body": (
-        "Здравей, {name}!\n\n"
-        "Абонаментът ти за {brand} изтича на {expires}. "
-        "След това акаунтът остава активен, но с демо достъп.\n\n"
-        "{link}\n\nПоздрави,\nЕкипът на {brand}"
-    ),
-    "expired_subject": "Абонаментът ти изтече",
-    "expired_body": (
-        "Здравей, {name}!\n\n"
-        "Абонаментът ти изтече и акаунтът мина на демо достъп. "
-        "Картите и разчитанията ти остават запазени.\n\n"
         "{link}\n\nПоздрави,\nЕкипът на {brand}"
     ),
 }
@@ -1693,11 +1695,19 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
             "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments WHERE paid_at >= ?",
             (month_start,)
         ).fetchone()["s"]
-        expiring = [dict(r) for r in conn.execute(
-            "SELECT id, email, plan_key, plan_expires FROM users "
-            "WHERE plan_expires IS NOT NULL AND date(plan_expires) <= date('now', '+14 day') "
-            "ORDER BY plan_expires LIMIT 20"
-        )]
+        # Nothing expires any more, so the old "expiring soon" list would always
+        # be empty. What an admin can act on instead is which modules sell.
+        names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+        top_modules = [
+            {"key": r["feature_key"],
+             "name": names.get(r["feature_key"], r["feature_key"]),
+             "sold": r["sold"], "revenue_cents": r["revenue"]}
+            for r in conn.execute(
+                "SELECT feature_key, COUNT(*) sold,"
+                " COALESCE(SUM(price_cents), 0) revenue"
+                " FROM feature_purchases WHERE price_cents > 0"
+                " GROUP BY feature_key ORDER BY sold DESC, revenue DESC LIMIT 10")
+        ]
         recent = [dict(r) for r in conn.execute(
             "SELECT p.id, p.amount_cents, p.currency, p.paid_at, p.plan_key, u.email "
             "FROM payments p JOIN users u ON u.id = p.user_id "
@@ -1707,7 +1717,7 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
         "users": users, "blocked": blocked, "persons": persons,
         "by_plan": by_plan,
         "revenue_cents": revenue, "revenue_month_cents": revenue_month,
-        "expiring": expiring, "recent_payments": recent,
+        "top_modules": top_modules, "recent_payments": recent,
     }
 
 @app.get("/api/admin/users")
@@ -2336,41 +2346,6 @@ def try_send_template(to: str, kind: str, **fields) -> bool:
         log.warning("Неуспешен %s имейл до %s: %s", kind, to, e)
         return False
 
-def add_months(base: datetime.date, months: int) -> datetime.date:
-    month = base.month - 1 + months
-    year = base.year + month // 12
-    month = month % 12 + 1
-    day = min(base.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
-                         31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
-    return datetime.date(year, month, day)
-
-def extend_user_plan(user_id: int, plan_key: str, months: int = 1,
-                     subscription_id: Optional[str] = None,
-                     customer_id: Optional[str] = None) -> None:
-    target = get_user_by_id(user_id)
-    if not target:
-        return
-    base = datetime.date.today()
-    if target.get("plan_expires"):
-        try:
-            current = datetime.date.fromisoformat(str(target["plan_expires"])[:10])
-            base = max(base, current)
-        except ValueError:
-            pass
-    new_date = add_months(base, max(1, months))
-    sets = ["plan_key = ?", "plan_expires = ?"]
-    params: list = [plan_key, new_date.isoformat()]
-    if subscription_id:
-        sets.append("stripe_subscription_id = ?")
-        params.append(subscription_id)
-    if customer_id:
-        sets.append("stripe_customer_id = ?")
-        params.append(customer_id)
-    params.append(user_id)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
-        conn.commit()
-
 def record_payment(user_id: int, *, plan_key: Optional[str], amount_cents: int,
                    currency: str, method: str, note: str) -> int:
     with sqlite3.connect(DB_PATH) as conn:
@@ -2410,19 +2385,6 @@ def fulfill_checkout_session(session: dict) -> None:
     customer_id = session.get("customer")
     if isinstance(customer_id, dict):
         customer_id = customer_id.get("id")
-    subscription_id = session.get("subscription")
-    if isinstance(subscription_id, dict):
-        subscription_id = subscription_id.get("id")
-
-    if kind == "subscription" or session.get("mode") == "subscription":
-        plan_key = meta.get("plan_key") or "full"
-        pay_id = record_payment(
-            user_id, plan_key=plan_key, amount_cents=amount, currency=currency,
-            method="stripe", note=f"checkout {session.get('id')}")
-        extend_user_plan(user_id, plan_key, months=1,
-                         subscription_id=subscription_id, customer_id=customer_id)
-        log.info("Stripe абонамент активиран за user=%s payment=%s", user_id, pay_id)
-        return
 
     # A basket of modules bought in one go, from the signup flow.
     if kind == "features" and meta.get("feature_keys"):
@@ -2463,49 +2425,6 @@ def fulfill_checkout_session(session: dict) -> None:
         # usable password yet; this is the visitor's way in.
         if feature_key == "chart":
             send_welcome_set_password(user_id)
-
-def handle_subscription_deleted(subscription: dict) -> None:
-    sub_id = subscription.get("id")
-    if not sub_id:
-        return
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "UPDATE users SET plan_key = 'demo', stripe_subscription_id = NULL"
-            " WHERE stripe_subscription_id = ?",
-            (sub_id,))
-        conn.commit()
-
-def handle_subscription_updated(subscription: dict) -> None:
-    """Keep plan_expires in sync with Stripe's current_period_end."""
-    sub_id = subscription.get("id")
-    meta = subscription.get("metadata") or {}
-    try:
-        user_id = int(meta.get("user_id") or 0)
-    except (TypeError, ValueError):
-        user_id = 0
-    period_end = subscription.get("current_period_end")
-    if not sub_id:
-        return
-    expires = None
-    if period_end:
-        expires = datetime.datetime.utcfromtimestamp(int(period_end)).date().isoformat()
-    status = subscription.get("status")
-    with sqlite3.connect(DB_PATH) as conn:
-        if user_id:
-            if status in ("active", "trialing", "past_due"):
-                conn.execute(
-                    "UPDATE users SET plan_key = 'full', plan_expires = COALESCE(?, plan_expires),"
-                    " stripe_subscription_id = ? WHERE id = ?",
-                    (expires, sub_id, user_id))
-            elif status in ("canceled", "unpaid", "incomplete_expired"):
-                conn.execute(
-                    "UPDATE users SET plan_key = 'demo', stripe_subscription_id = NULL WHERE id = ?",
-                    (user_id,))
-        elif expires:
-            conn.execute(
-                "UPDATE users SET plan_expires = ? WHERE stripe_subscription_id = ?",
-                (expires, sub_id))
-        conn.commit()
 
 def hash_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -2568,39 +2487,6 @@ def consume_password_reset(token: str) -> Optional[int]:
             return None
         return int(user_id)
 
-def run_lifecycle_emails() -> None:
-    today = datetime.date.today()
-    warn_before = today + datetime.timedelta(days=3)
-    base = site_base_url()
-    link = f"{base}/settings"
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = [dict(r) for r in conn.execute(
-            "SELECT id, email, display_name, plan_key, plan_expires,"
-            " lifecycle_expiring_for, lifecycle_expired_for FROM users"
-            " WHERE plan_expires IS NOT NULL AND role != 'admin'")]
-    for u in rows:
-        try:
-            expires = datetime.date.fromisoformat(str(u["plan_expires"])[:10])
-        except ValueError:
-            continue
-        name = u.get("display_name") or (u.get("email") or "").split("@")[0]
-        expires_s = expires.isoformat()
-        if expires == warn_before and u.get("lifecycle_expiring_for") != expires_s:
-            if try_send_template(u["email"], "expiring", name=name, link=link, expires=expires_s):
-                with sqlite3.connect(DB_PATH) as conn:
-                    conn.execute(
-                        "UPDATE users SET lifecycle_expiring_for = ? WHERE id = ?",
-                        (expires_s, u["id"]))
-                    conn.commit()
-        if expires < today and u.get("lifecycle_expired_for") != expires_s:
-            if try_send_template(u["email"], "expired", name=name, link=link, expires=expires_s):
-                with sqlite3.connect(DB_PATH) as conn:
-                    conn.execute(
-                        "UPDATE users SET lifecycle_expired_for = ? WHERE id = ?",
-                        (expires_s, u["id"]))
-                    conn.commit()
-
 def run_digest_emails() -> None:
     """Opt-in daily nudge. Uses cached horoscope text when available; never calls AI."""
     today = datetime.date.today().isoformat()
@@ -2653,7 +2539,6 @@ def run_digest_emails() -> None:
             log.warning("Digest до %s се провали: %s", u["email"], e)
 
 def run_scheduled_jobs() -> None:
-    run_lifecycle_emails()
     run_digest_emails()
 
 class ForgotPasswordRequest(BaseModel):
@@ -2709,46 +2594,12 @@ def api_billing_status(user: Tuple[int, str] = Depends(get_current_user)):
     row = get_user_by_id(user[0])
     if not row:
         raise HTTPException(401, "Невалиден акаунт.")
-    plan = get_plan("full") or {}
     return {
         "stripe_enabled": billing.stripe_enabled(),
-        "has_subscription": bool(row.get("stripe_subscription_id")),
-        "subscription_id": row.get("stripe_subscription_id"),
         "plan_key": row.get("plan_key"),
-        "plan_expires": row.get("plan_expires"),
-        "full_price_cents": plan.get("price_cents", 500),
-        "currency": plan.get("currency", "EUR"),
+        "purchased": purchased_features(user[0]),
         "digest_opt_in": bool(row.get("digest_opt_in")),
     }
-
-@app.post("/api/billing/checkout/subscription")
-def api_checkout_subscription(request: Request, user: Tuple[int, str] = Depends(get_current_user)):
-    if not billing.stripe_enabled():
-        raise HTTPException(503, "Онлайн плащанията още не са включени.")
-    user_id, email = user
-    row = get_user_by_id(user_id)
-    if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
-    plan = get_plan("full")
-    if not plan:
-        raise HTTPException(500, "Пакетът „Пълен достъп“ липсва.")
-    base = site_base_url(request)
-    success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
-    cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
-    try:
-        url = billing.create_subscription_checkout(
-            customer_email=email,
-            customer_id=row.get("stripe_customer_id"),
-            user_id=user_id,
-            amount_cents=int(plan.get("price_cents") or 500),
-            currency=plan.get("currency") or "EUR",
-            product_name=f"{brand_name()} — {plan.get('name') or 'Пълен достъп'}",
-            success_url=success,
-            cancel_url=cancel,
-        )
-    except Exception as e:
-        raise HTTPException(502, f"Stripe грешка: {e}") from e
-    return {"url": url}
 
 @app.post("/api/billing/checkout/feature/{feature_key}")
 def api_checkout_feature(feature_key: str, request: Request,
@@ -2784,19 +2635,6 @@ def api_checkout_feature(feature_key: str, request: Request,
         raise HTTPException(502, f"Stripe грешка: {e}") from e
     return {"url": url}
 
-@app.post("/api/billing/cancel")
-def api_billing_cancel(user: Tuple[int, str] = Depends(get_current_user)):
-    if not billing.stripe_enabled():
-        raise HTTPException(503, "Онлайн плащанията още не са включени.")
-    row = get_user_by_id(user[0])
-    if not row or not row.get("stripe_subscription_id"):
-        raise HTTPException(400, "Няма активен Stripe абонамент за отказ.")
-    try:
-        info = billing.cancel_subscription_at_period_end(row["stripe_subscription_id"])
-    except Exception as e:
-        raise HTTPException(502, f"Stripe грешка: {e}") from e
-    return {"ok": True, "subscription": info}
-
 @app.post("/api/stripe/webhook")
 async def api_stripe_webhook(request: Request):
     payload = await request.body()
@@ -2809,12 +2647,10 @@ async def api_stripe_webhook(request: Request):
     etype = event["type"]
     obj = event["data"]["object"]
     try:
+        # Only one-off purchases exist now, so the subscription events that
+        # used to arrive here have nothing left to update.
         if etype == "checkout.session.completed":
             fulfill_checkout_session(obj)
-        elif etype == "customer.subscription.updated":
-            handle_subscription_updated(obj)
-        elif etype == "customer.subscription.deleted":
-            handle_subscription_deleted(obj)
     except Exception:
         log.exception("Обработка на Stripe event %s се провали", etype)
         raise HTTPException(500, "Вътрешна грешка при webhook.")
@@ -2903,12 +2739,16 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
             "key": plan.get("key"),
             "name": plan.get("name"),
             "max_persons": person_limit(row),
-            "expires": row.get("plan_expires"),
-            "active": plan_is_active(row),
         },
+        # What the account actually owns, by name — purchases never expire, so
+        # this is the whole story of what was paid for.
+        "owned_modules": [
+            {"key": f["key"], "name": f["name"]}
+            for f in FEATURE_CATALOGUE
+            if not f.get("included") and f["key"] in set(purchased_features(user_id))
+        ],
         "digest_opt_in": bool(row.get("digest_opt_in")),
         "stripe_enabled": billing.stripe_enabled(),
-        "has_subscription": bool(row.get("stripe_subscription_id")),
     }
 
 @app.post("/api/account")

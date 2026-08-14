@@ -737,16 +737,17 @@
                 }
                 html += '</div></div>';
 
-                html += '<div class="section"><h2>Изтичащи до 14 дни</h2><div class="rows">';
-                const expiring = d.expiring || [];
-                if (!expiring.length) {
-                    html += '<div class="empty">Няма абонаменти, които изтичат скоро.</div>';
+                html += '<div class="section"><h2>Най-продавани модули</h2><div class="rows">';
+                const topModules = d.top_modules || [];
+                if (!topModules.length) {
+                    html += '<div class="empty">Още няма продадени модули.</div>';
                 } else {
-                    expiring.forEach(function(u) {
-                        html += '<div class="row-item"><div><div class="row-main">' + escapeHtml(u.email) + '</div>' +
-                            '<div class="row-meta"><span class="badge badge-plan">' +
-                            escapeHtml(u.plan_key || 'demo') + '</span></div></div>' +
-                            '<span class="row-meta">до ' + fmtDate(u.plan_expires) + '</span></div>';
+                    topModules.forEach(function(m) {
+                        html += '<div class="row-item"><div><div class="row-main">' +
+                            escapeHtml(m.name) + '</div>' +
+                            '<div class="row-meta">' + m.sold +
+                            (m.sold === 1 ? ' продажба' : ' продажби') + '</div></div>' +
+                            '<span class="row-meta">' + money(m.revenue_cents) + '</span></div>';
                     });
                 }
                 html += '</div></div>';
@@ -1497,10 +1498,8 @@
                         '<a class="btn btn-ghost" href="/" target="_blank" rel="noopener">Виж страницата</a></div></div>';
 
                 html += '<div class="section"><h2>Шаблони за имейли</h2>' +
-                    '<div class="hint" style="margin-bottom:14px;">Налични плейсхолдъри: {name}, {link}, {expires}</div>' +
+                    '<div class="hint" style="margin-bottom:14px;">Налични плейсхолдъри: {name}, {link}, {brand}</div>' +
                     tplBlock('Добре дошъл', 'welcome', tpl.welcome_subject, tpl.welcome_body) +
-                    tplBlock('Изтичащ абонамент', 'expiring', tpl.expiring_subject, tpl.expiring_body) +
-                    tplBlock('Изтекъл абонамент', 'expired', tpl.expired_subject, tpl.expired_body) +
                     '<div class="btn-row"><button class="btn" id="saveTplBtn">Запази шаблоните</button></div></div>';
 
                 el.innerHTML = html;
@@ -1621,7 +1620,7 @@
 
             document.getElementById('saveTplBtn').addEventListener('click', async function() {
                 const templates = {};
-                ['welcome', 'expiring', 'expired'].forEach(function(key) {
+                ['welcome'].forEach(function(key) {
                     templates[key + '_subject'] = document.getElementById('tpl_' + key + '_subject').value;
                     templates[key + '_body'] = document.getElementById('tpl_' + key + '_body').value;
                 });

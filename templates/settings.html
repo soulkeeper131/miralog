@@ -16,6 +16,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/modules.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         /* The mark takes you home — the convention every visitor knows. */
@@ -282,7 +284,7 @@
             <a href="#" id="backLink" class="back-link">← Табло</a>
         </div>
         <h1>Моят акаунт</h1>
-        <div class="subtitle">Данни за профила и абонамента</div>
+        <div class="subtitle">Данни за профила и отключените модули</div>
 
         <div id="banner"></div>
 
@@ -334,8 +336,8 @@
             </div>
 
             <div class="section">
-                <h2>Абонамент</h2>
-                <div class="desc">Текущият ти пакет и какво включва той.</div>
+                <h2>Модули</h2>
+                <div class="desc">Какво си отключил. Всяка покупка е еднократна и остава завинаги.</div>
                 <div id="planInfo"></div>
                 <div id="billingActions" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;"></div>
             </div>
@@ -362,6 +364,8 @@
         </div>
     </div>
 
+    <script src="/static/ui.js"></script>
+    <script src="/static/modules.js"></script>
     <script>
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -431,21 +435,22 @@
         function renderPlan(acc) {
             const p = acc.plan || {};
             const limit = p.max_persons ? p.max_persons + ' карти' : 'без ограничение';
-            const state = (acc.is_admin || p.active)
-                ? '<span class="pill">активен</span>'
-                : '<span class="pill warn">изтекъл</span>';
+            // Nothing expires: what the account owns is a list of modules
+            // bought outright, so the panel reports those instead of a term.
+            const owned = (acc.owned_modules || []);
+            const ownedText = acc.is_admin
+                ? 'всички (администратор)'
+                : (owned.length
+                    ? owned.map(m => escapeHtml(m.name)).join(', ')
+                    : 'още никакви — картата и дневният хороскоп са безплатни');
             document.getElementById('planInfo').innerHTML = `
                 <div class="info-row">
-                    <span class="info-label">Пакет</span>
-                    <span class="info-value">${escapeHtml(p.name || p.key || '—')} ${state}</span>
+                    <span class="info-label">Отключени модули</span>
+                    <span class="info-value">${ownedText}</span>
                 </div>
                 <div class="info-row">
-                    <span class="info-label">Включва</span>
+                    <span class="info-label">Може да пазиш</span>
                     <span class="info-value">${escapeHtml(limit)}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Валиден до</span>
-                    <span class="info-value">${acc.is_admin ? 'безсрочно' : escapeHtml(formatDate(p.expires))}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Регистриран на</span>
@@ -454,57 +459,22 @@
 
             const actions = document.getElementById('billingActions');
             actions.innerHTML = '';
-            if (!acc.is_admin && acc.stripe_enabled) {
-                if (p.key !== 'full' || !p.active) {
-                    const pay = document.createElement('button');
-                    pay.className = 'btn btn-primary';
-                    pay.textContent = 'Абонирай се за 5 €/мес';
-                    pay.onclick = () => startSubscriptionCheckout(pay);
-                    actions.appendChild(pay);
-                } else if (acc.has_subscription) {
-                    const cancel = document.createElement('button');
-                    cancel.className = 'btn btn-primary';
-                    cancel.textContent = 'Откажи абонамента в края на периода';
-                    cancel.onclick = () => cancelSubscription(cancel);
-                    actions.appendChild(cancel);
+            if (!acc.is_admin) {
+                const pick = document.createElement('button');
+                pick.className = 'btn btn-primary';
+                pick.textContent = 'Разгледай модулите';
+                pick.onclick = () => openModulePicker();
+                actions.appendChild(pick);
+                if (!acc.stripe_enabled) {
+                    const hint = document.createElement('div');
+                    hint.className = 'hint';
+                    hint.textContent = 'Онлайн плащането още не е включено. ' +
+                        'Заявка от модулите стига до нас и я обработваме ръчно.';
+                    actions.appendChild(hint);
                 }
-            } else if (!acc.is_admin && !acc.stripe_enabled) {
-                actions.innerHTML = '<div class="hint">Онлайн плащането още не е включено. Пиши ни за абонамент.</div>';
             }
 
             document.getElementById('digestOptIn').checked = !!acc.digest_opt_in;
-        }
-
-        async function startSubscriptionCheckout(btn) {
-            btn.disabled = true;
-            try {
-                const resp = await fetch('/api/billing/checkout/subscription', {
-                    method: 'POST', headers: authHeaders(),
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка');
-                if (data.url) window.location.href = data.url;
-            } catch (e) {
-                showBanner(e.message, 'error');
-                btn.disabled = false;
-            }
-        }
-
-        async function cancelSubscription(btn) {
-            if (!confirm('Абонаментът ще остане активен до края на платения период. Продължаваме?')) return;
-            btn.disabled = true;
-            try {
-                const resp = await fetch('/api/billing/cancel', {
-                    method: 'POST', headers: authHeaders(),
-                });
-                const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка');
-                showBanner('Абонаментът ще се прекрати в края на периода.', 'success');
-                loadAccount();
-            } catch (e) {
-                showBanner(e.message, 'error');
-                btn.disabled = false;
-            }
         }
 
         async function loadAccount() {
