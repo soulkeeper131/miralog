@@ -1,6 +1,6 @@
 # 📡 API Reference
 
-МираСкоп използва REST API с JSON отговори. Базов URL: `https://miralog.blv.bg`
+АстроКарта използва REST API с JSON отговори. Базов URL: `https://astrokarta.bg`
 
 ---
 
@@ -13,7 +13,7 @@
 ```json
 // Request
 {
-  "email": "admin@miralog.bg",
+  "email": "admin@astrokarta.bg",
   "password": "admin123"
 }
 
@@ -22,7 +22,7 @@
   "access_token": "eyJhbGci...",
   "token_type": "bearer",
   "user_id": 1,
-  "email": "admin@miralog.bg"
+  "email": "admin@astrokarta.bg"
 }
 ```
 
@@ -39,7 +39,7 @@ Authorization: Bearer eyJhbGci...
 // Response 200
 {
   "user_id": 1,
-  "email": "admin@miralog.bg"
+  "email": "admin@astrokarta.bg"
 }
 ```
 

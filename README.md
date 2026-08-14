@@ -1,8 +1,8 @@
-# 🔮 МираСкоп (Miraskop)
+# 🔮 АстроКарта (AstroKarta)
 
 **Персонален астролог с изкуствен интелект** — изчислява натални карти, синастрия, транзити и нумерология с професионален астрологичен енджин и AI интерпретации на български език.
 
-🌐 **https://miralog.blv.bg**
+🌐 **https://astrokarta.bg**
 
 ---
 
@@ -29,7 +29,7 @@
 
 ## 🧠 AI Интерпретации
 
-МираСкоп поддържа два AI провайдъра за генериране на персонализирани астрологични четения:
+АстроКарта поддържа два AI провайдъра за генериране на персонализирани астрологични четения:
 
 - **Anthropic Claude 3.5 Sonnet** (препоръчителен) — `ANTHROPIC_API_KEY`
 - **DeepSeek** — `DEEPSEEK_API_KEY`
@@ -123,11 +123,11 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ### Docker
 
 ```bash
-docker build -t miraskop .
+docker build -t astrokarta .
 docker run -p 8000:8000 \
   -v $(pwd)/data:/app/data \
   -e ANTHROPIC_API_KEY=sk-ant-... \
-  miraskop
+  astrokarta
 ```
 
 ---
@@ -138,9 +138,9 @@ docker run -p 8000:8000 \
 |-----------|----------|---------|
 | `SE_EPHE_PATH` | Път до Swiss Ephemeris файлове | `/app/ephe` |
 | `SECRET_KEY` | JWT secret ключ | `change-me-in-production...` |
-| `BRAND_NAME` | Име на приложението | `МираСкоп` |
-| `BRAND_TAGLINE` | Подзаглавие във футъра | `Астрология на разбираем език` |
-| `BRAND_DOMAIN` | Домейн за служебните имейли | `miralog.bg` |
+| `BRAND_NAME` | Име на приложението | `АстроКарта` |
+| `BRAND_TAGLINE` | Подзаглавие във футъра | `Астрология с точността на астрономията` |
+| `BRAND_DOMAIN` | Домейн за служебните имейли | `astrokarta.bg` |
 | `ADMIN_EMAIL` | Имейл на администратора | `admin@${BRAND_DOMAIN}` |
 | `ADMIN_PASSWORD` | Парола на администратора | `admin123` |
 | `ANTHROPIC_API_KEY` | API ключ за Claude | — |
