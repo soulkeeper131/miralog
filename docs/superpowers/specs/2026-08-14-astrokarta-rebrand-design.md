@@ -66,10 +66,10 @@ CSS-ът ползва `object-fit: contain` с фиксирани размери
 
 ## Част 4: Документация
 
-- `README.md`: заглавие „МираСкоп (Miraskop)“ → „АстроКарта (AstroKarta)“; URL `https://miralog.blv.bg` → `https://astrokarta.bg`; клониращ линк и име на репо (github.com/soulkeeper131/…) — ако репото се преименува; env таблица (BRAND_NAME, BRAND_TAGLINE, BRAND_DOMAIN); docker build таг `miraskop` → `astrokarta`; секция „Смяна на името и логото“ да отразява новите стойности
+- `README.md`: заглавие „МираСкоп (Miraskop)“ → „АстроКарта (AstroKarta)“; URL `https://miralog.blv.bg` → `https://astrokarta.bg`; env таблица (BRAND_NAME, BRAND_TAGLINE, BRAND_DOMAIN); docker build таг `miraskop` → `astrokarta`; секция „Смяна на името и логото“ да отразява новите стойности. Клониращият линк `github.com/soulkeeper131/miralog.git` остава непроменен (преименуването на репото в GitHub е извън обхвата)
 - `docs/API.md`: базов URL → `https://astrokarta.bg`; примерни имейли `admin@miralog.bg` → `admin@astrokarta.bg`; „МираСкоп използва…“ → „АстроКарта използва…“
 - `.env.example`: коментар на ред 1; `ADMIN_EMAIL=admin@miraskop.bg` → `admin@astrokarta.bg`; `DEMO_EMAIL=demo@miraskop.bg` → `demo@astrokarta.bg`
-- `docs/PLAN-pricing.md` — да се провери за препратки към марката
+- `docs/PLAN-pricing.md`: проверено — няма препратки към марката, без промяна
 
 ## Част 5: Оперативен чеклист за домейна (извън кода, за потребителя)
 
