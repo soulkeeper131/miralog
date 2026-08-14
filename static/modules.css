@@ -30,12 +30,12 @@
 .mod-overlay.mod-open .mod-sheet { transform: translateY(0) scale(1); }
 
 .mod-close {
-    position: absolute; top: 16px; right: 16px;
-    width: 38px; height: 38px; border-radius: 50%;
+    position: absolute; top: 12px; right: 12px;
+    width: 44px; height: 44px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border, #2b2752);
     background: transparent; color: var(--text-muted, #9a93b8);
-    font-size: .9rem; cursor: pointer;
+    font-size: .9rem; cursor: pointer; box-sizing: border-box;
 }
 .mod-close:hover { border-color: var(--accent, #7c3aed); color: var(--text, #e6e2f4); }
 .mod-close:focus-visible {
@@ -66,6 +66,43 @@
 .mod-loading {
     grid-column: 1 / -1; text-align: center; padding: 30px;
     color: var(--text-muted, #9a93b8); font-size: .9rem;
+}
+
+/* The bundle is a different kind of choice from the module cards, so it reads
+   as a band above them rather than a seventh card in the grid. */
+.mod-bundle {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 18px; padding: 16px 18px;
+    border-radius: 16px;
+    /* The accent shows in the border, not the fill: a tinted background makes
+       the theme's text tokens fail contrast in light mode. The surface stays
+       the same one the cards use, which is defined in both themes. */
+    border: 1px solid var(--accent, #7c3aed);
+    background: var(--bg-input, #0f0e26);
+}
+.mod-bundle-text { flex: 1 1 240px; min-width: 0; }
+.mod-bundle-text h4 {
+    margin: 0 0 4px; font-size: 1.02rem; font-weight: 700;
+    color: var(--text-heading, #f2eefc);
+}
+.mod-bundle-text p {
+    margin: 0; font-size: .85rem; line-height: 1.5;
+    color: var(--text, #d9d4ea);
+}
+.mod-bundle-buy {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.mod-bundle-price {
+    display: flex; flex-direction: column; line-height: 1.15;
+    font-size: 1.5rem; font-weight: 700; color: var(--text-heading, #f2eefc);
+    font-variant-numeric: tabular-nums;
+}
+.mod-bundle-price span {
+    font-size: .74rem; font-weight: 600; letter-spacing: .01em;
+    color: var(--accent-light, #a78bfa);
+}
+@media (max-width: 560px) {
+    .mod-bundle-buy { width: 100%; justify-content: space-between; }
 }
 
 .mod-card {
@@ -143,7 +180,10 @@
     padding: 9px 18px; border-radius: 10px; border: none;
     background: var(--accent, #7c3aed); color: #fff; cursor: pointer;
     font-family: inherit; font-size: .85rem; font-weight: 600; line-height: 1.2;
-    min-height: 40px;
+    /* 44px is the comfortable touch target; these are the buttons that take
+       money, so they are the last place to be stingy about it. */
+    min-height: 44px;
+    box-sizing: border-box;
     transition: background-color .15s ease;
 }
 .mod-btn:hover { background: var(--accent-hover, #6d28d9); }

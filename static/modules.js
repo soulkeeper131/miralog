@@ -112,9 +112,12 @@
                 }
             }
 
-            const resp = await fetch('/api/features/' + encodeURIComponent(key) + '/request', {
-                method: 'POST', headers: authHeaders(),
-            });
+            // The bundle has its own endpoint: it works out what is still
+            // missing rather than taking a single key.
+            const url = key === 'bundle'
+                ? '/api/features/bundle/request'
+                : '/api/features/' + encodeURIComponent(key) + '/request';
+            const resp = await fetch(url, { method: 'POST', headers: authHeaders() });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
                 const detail = data.detail;
@@ -192,6 +195,30 @@
             grid.innerHTML = sellable.length
                 ? sellable.map(cardHtml).join('')
                 : '<div class="mod-loading">Няма допълнителни модули в момента.</div>';
+
+            // The bundle sits above the grid: it is a different kind of choice
+            // from "pick this one module", and burying it among the cards
+            // would make it read as a seventh module.
+            if (data.bundle) {
+                const b = data.bundle;
+                const banner = document.createElement('div');
+                banner.className = 'mod-bundle';
+                banner.innerHTML = `
+                    <div class="mod-bundle-text">
+                        <h4>${esc(b.name)}</h4>
+                        <p>Всички останали ${b.keys.length} модула наведнъж.
+                           Поотделно излизат ${money(b.full_price_cents, b.currency)}.</p>
+                    </div>
+                    <div class="mod-bundle-buy">
+                        <div class="mod-bundle-price">${money(b.price_cents, b.currency)}
+                            <span>спестяваш ${money(b.saving_cents, b.currency)}</span></div>
+                        <button class="mod-btn mod-btn-bundle" data-bundle="1"
+                                aria-label="Отключи всички модули за ${esc(money(b.price_cents, b.currency))}">Вземи всички</button>
+                    </div>`;
+                grid.parentNode.insertBefore(banner, grid);
+                banner.querySelector('[data-bundle]')
+                      .addEventListener('click', ev => unlock(ev.currentTarget, 'bundle'));
+            }
 
             grid.querySelectorAll('.mod-btn').forEach(btn => {
                 btn.addEventListener('click', () => unlock(btn, btn.dataset.key));

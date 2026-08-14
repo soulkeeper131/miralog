@@ -705,6 +705,39 @@ def purchased_features(user_id: int) -> list:
 # leave the customer unable to add the partner they bought it for.
 FEATURE_PERSON_GRANTS = {"love": 1}
 
+# One payment for every module, cheaper than buying them one by one. It is not
+# a plan: it grants the same individual purchases, so there is still only one
+# way an account can own something.
+BUNDLE_KEY = "bundle"
+BUNDLE_NAME = "Всички модули"
+BUNDLE_PRICE_CENTS = 2500
+
+def bundle_offer(user: dict) -> Optional[dict]:
+    """The bundle as it applies to this account, or None when it cannot help.
+
+    Somebody who already owns everything has nothing to buy; somebody holding
+    one module still sees the full price, because the bundle is a fixed offer
+    rather than a running total.
+    """
+    unlocked = set(unlocked_features(user))
+    missing = [f["key"] for f in FEATURE_CATALOGUE
+               if not f.get("included") and f["key"] not in unlocked
+               and feature_offer(f["key"])]
+    if len(missing) < 2:
+        return None          # one module left is cheaper on its own
+    full_price = sum(feature_offer(k)["price_cents"] for k in missing)
+    if full_price <= BUNDLE_PRICE_CENTS:
+        return None          # never offer a "discount" that costs more
+    return {
+        "key": BUNDLE_KEY,
+        "name": BUNDLE_NAME,
+        "keys": missing,
+        "price_cents": BUNDLE_PRICE_CENTS,
+        "full_price_cents": full_price,
+        "saving_cents": full_price - BUNDLE_PRICE_CENTS,
+        "currency": "EUR",
+    }
+
 def person_limit(user: dict) -> Optional[int]:
     """How many charts this account may keep. None means unlimited.
 
@@ -1216,8 +1249,25 @@ def api_mock_pay(data: MockPayRequest,
     if not row:
         raise HTTPException(401, "Невалиден акаунт.")
 
+    requested = list(data.keys or [])
+    # "bundle" is not a feature: it stands for everything still missing, at
+    # the bundle price rather than the sum of the parts.
+    if BUNDLE_KEY in requested:
+        bundle = bundle_offer(row)
+        if not bundle:
+            return {"ok": True, "granted": [], "note": "Няма достатъчно модули за пакет."}
+        pay_id = record_payment(
+            user_id, plan_key=None, amount_cents=bundle["price_cents"],
+            currency=bundle["currency"], method="тест",
+            note=f"mock-bundle:{','.join(bundle['keys'])}")
+        for key in bundle["keys"]:
+            grant_feature_purchase(user_id, key, 0, bundle["currency"], pay_id)
+        return {"ok": True, "granted": bundle["keys"],
+                "amount_cents": bundle["price_cents"], "currency": bundle["currency"],
+                "bundle": True}
+
     keys, total, currency = [], 0, "EUR"
-    for key in (data.keys or []):
+    for key in requested:
         offer = feature_offer(key)
         if not offer or key in unlocked_features(row):
             continue
@@ -2055,6 +2105,7 @@ def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
     return {
         "unlocked": unlocked,
         "purchased": purchased_features(user_id),
+        "bundle": bundle_offer(row),
         "catalogue": [
             {
                 **f,
@@ -2114,6 +2165,68 @@ def api_request_feature(feature_key: str, request: Request,
             # A missing SMTP config must not make the button look broken.
             pass
     return {"ok": True, "offer": offer, "manual": True}
+
+@app.post("/api/features/bundle/request")
+def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_current_user)):
+    """Buy every remaining module in one payment, at the bundle price.
+
+    The discount is applied by splitting it across the line items, so Stripe
+    charges the bundle price while the webhook still sees the individual keys
+    it already knows how to grant.
+    """
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+
+    bundle = bundle_offer(row)
+    if not bundle:
+        raise HTTPException(400, "Няма достатъчно модули за пакет.")
+
+    keys = bundle["keys"]
+    if billing.stripe_enabled():
+        # Spread the discount over the items, giving the remainder to the
+        # first one so the line items add up to the bundle price exactly.
+        share = BUNDLE_PRICE_CENTS // len(keys)
+        remainder = BUNDLE_PRICE_CENTS - share * len(keys)
+        items = []
+        for i, key in enumerate(keys):
+            offer = feature_offer(key)
+            items.append({
+                "key": key,
+                "name": offer["name"],
+                "amount_cents": share + (remainder if i == 0 else 0),
+                "currency": offer["currency"],
+            })
+        base = site_base_url(request)
+        success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        try:
+            url = billing.create_features_checkout(
+                customer_email=email,
+                customer_id=row.get("stripe_customer_id"),
+                user_id=user_id,
+                items=items,
+                success_url=success,
+                cancel_url=cancel,
+                brand=brand_name(),
+            )
+            return {"ok": True, "checkout_url": url, "bundle": bundle}
+        except Exception as e:
+            log.warning("Stripe checkout за пакета се провали: %s", e)
+
+    to = get_setting("smtp_from") or get_setting("smtp_user")
+    if to:
+        try:
+            send_email(
+                to,
+                f"Заявка за пакет: {BUNDLE_NAME}",
+                f"Потребител {email} (ID {user_id}) иска пакета "
+                f"({', '.join(keys)}) за {BUNDLE_PRICE_CENTS / 100:.2f} EUR.",
+            )
+        except HTTPException:
+            pass
+    return {"ok": True, "bundle": bundle, "manual": True}
 
 @app.get("/api/admin/settings")
 def api_admin_settings(admin: dict = Depends(require_admin)):
