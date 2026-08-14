@@ -10,6 +10,25 @@
 
     const SEEN_KEY = 'miraskop_modules_seen';
 
+    /* One trip for /api/features per page load. Three separate callers used to
+       ask for the same list on the way in — the tab padlocks, the price lookup
+       and the first-visit picker. They share this promise instead; a purchase
+       calls invalidate() so the next read sees the new state. */
+    let featuresPromise = null;
+    window.loadFeatures = function (force) {
+        if (force) featuresPromise = null;
+        if (!featuresPromise) {
+            featuresPromise = fetch('/api/features', { headers: authHeaders() })
+                .then(resp => {
+                    if (!resp.ok) throw new Error('Грешка ' + resp.status);
+                    return resp.json();
+                })
+                .catch(err => { featuresPromise = null; throw err; });
+        }
+        return featuresPromise;
+    };
+    window.invalidateFeatures = function () { featuresPromise = null; };
+
     function esc(text) {
         const d = document.createElement('div');
         d.textContent = text == null ? '' : String(text);
@@ -163,9 +182,7 @@
         overlay.querySelector('.mod-close').addEventListener('click', close);
 
         try {
-            const resp = await fetch('/api/features', { headers: authHeaders() });
-            if (!resp.ok) throw new Error('Грешка ' + resp.status);
-            const data = await resp.json();
+            const data = await loadFeatures();
 
             // Everything a bought chart already carries is not for sale here.
             const sellable = (data.catalogue || []).filter(item =>
@@ -193,9 +210,7 @@
     window.maybeShowModulePicker = async function () {
         if (localStorage.getItem(SEEN_KEY)) return;
         try {
-            const resp = await fetch('/api/features', { headers: authHeaders() });
-            if (!resp.ok) return;
-            const data = await resp.json();
+            const data = await loadFeatures();
             const forSale = (data.catalogue || []).filter(item =>
                 !item.included && !item.unlocked && item.offer);
             if (!forSale.length) {

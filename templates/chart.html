@@ -1982,9 +1982,7 @@
         // Look up one feature's price without hard-coding it in the page.
         async function featureOffer(key) {
             try {
-                const resp = await fetch('/api/features', { headers: authHeaders() });
-                if (!resp.ok) return null;
-                const data = await resp.json();
+                const data = await loadFeatures();
                 const item = (data.catalogue || []).find(i => i.key === key);
                 return item ? item.offer : null;
             } catch (e) { return null; }
@@ -2457,11 +2455,9 @@
         }
 
         // Put a padlock on every tab whose feature is not unlocked yet.
-        async function markLockedTabs() {
+        async function markLockedTabs(force) {
             try {
-                const resp = await fetch('/api/features', { headers: authHeaders() });
-                if (!resp.ok) return;
-                const data = await resp.json();
+                const data = await loadFeatures(force);
                 const unlocked = new Set(data.unlocked || []);
                 unlockedFeatures = unlocked;
                 document.querySelectorAll('.tab[data-feature]').forEach(tab => {
