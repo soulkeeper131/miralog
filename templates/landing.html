@@ -891,6 +891,15 @@
             overflow-x: auto;
             border: 1px solid var(--border-soft); border-radius: 16px;
             background: var(--bg-card);
+            /* On a narrow screen the price column is the part that scrolls out
+               of sight. The shadow on the right edge says there is more, and
+               disappears once the table is scrolled to the end. */
+            background-image: linear-gradient(to left, var(--bg-card), transparent 34px),
+                              linear-gradient(to left, rgba(0,0,0,.22), transparent 22px);
+            background-position: right center, right center;
+            background-repeat: no-repeat;
+            background-size: 100% 100%, 22px 100%;
+            background-attachment: local, scroll;
         }
         .price-table {
             width: 100%; border-collapse: collapse; min-width: 520px;
@@ -915,6 +924,17 @@
         .price-table tbody tr { border-bottom: 1px solid var(--border-soft); }
         .price-table tbody tr:last-child { border-bottom: none; }
         .price-table tbody tr:hover { background: var(--surface-thistle); }
+        /* The bundle closes the table: it is the sum of everything above it,
+           so it gets a rule above and a little more weight, not a colour that
+           would make it read as a seventh module. */
+        .price-table tbody tr.pt-bundle {
+            border-top: 2px solid var(--gilt);
+            background: var(--surface-thistle);
+        }
+        .price-table tbody tr.pt-bundle th,
+        .price-table tbody tr.pt-bundle .col-price {
+            color: var(--text-heading); font-weight: 700;
+        }
         .pt-glyph {
             display: inline-flex; align-items: center; justify-content: center;
             width: 26px; height: 26px; border-radius: 50%; margin-right: 9px;
@@ -1435,7 +1455,8 @@
                                 <th scope="row"><span class="pt-glyph">♀</span>Любовен хороскоп и емоционална съвместимост</th>
                                 <td>Има ли истинско привличане, кое ви свързва и
                                     имате ли дългосрочен потенциал.
-                                    <span class="pt-extra">Включва съвпадения по рождени данни или зодия.</span></td>
+                                    <span class="pt-extra">Включва съвпадения по рождени данни или зодия
+                                    и още една карта, за да добавиш партньора си.</span></td>
                                 <td class="col-price">5 €</td>
                             </tr>
                             <tr>
@@ -1443,6 +1464,12 @@
                                 <td>Твоята мисия, кармичните уроци и как да развиеш
                                     потенциала си.</td>
                                 <td class="col-price">9 €</td>
+                            </tr>
+                            <tr class="pt-bundle">
+                                <th scope="row"><span class="pt-glyph">✦</span>Всички модули заедно</th>
+                                <td>Шестте по-горе с едно плащане.
+                                    <span class="pt-extra">Поотделно излизат 31 € — спестяваш 6 €.</span></td>
+                                <td class="col-price">25 €</td>
                             </tr>
                         </tbody>
                     </table>
