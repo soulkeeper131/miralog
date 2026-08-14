@@ -1400,12 +1400,6 @@
             </div>
         </div>
 
-        <div id="tab-interpretation" class="tab-content">
-            <div class="section">
-                <h2>Пълно разчитане</h2>
-                <div id="interpretation-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме картата...</div></div>
-            </div>
-        </div>
     </div>
 
     <script src="/static/locked.js"></script>
@@ -1661,9 +1655,6 @@
             event.target.classList.add('active');
             document.getElementById('tab-' + name).classList.add('active');
 
-            if (name === 'interpretation' && !window._interpretationLoaded) {
-                loadInterpretation();
-            }
             if (name === 'horoscope' && !window._horoscopeLoaded) {
                 window._horoscopeLoaded = true;
                 loadHoroscope();
@@ -2051,30 +2042,6 @@
                 <div><strong>Внимавай:</strong> ${escapeHtmlText(s.caution)}</div></div>`;
 
             return html;
-        }
-
-        async function loadInterpretation(refresh) {
-            window._interpretationLoaded = true;
-            const el = document.getElementById('interpretation-content');
-            el.innerHTML = crystalLoader('Разчитаме картата...');
-            unlockPanel(el);
-            try {
-                const url = '/api/persons/{{ person.id }}/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, { headers: authHeaders() });
-                const data = await resp.json();
-                if (data.interpretation) {
-                    el.innerHTML = cachedBadge(data, 'loadInterpretation(true)') +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
-                } else {
-                    el.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
-                }
-            } catch (e) {
-                if (e instanceof LockedFeature) {
-                    renderLocked(el, e.detail, loadInterpretation);
-                    return;
-                }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
-            }
         }
 
         function fmtDateShortBg(iso) {

@@ -31,16 +31,21 @@ function money(cents, currency) {
 }
 
 // Filler text sitting under the blur — long enough to look like a real
-// reading, vague enough to give nothing away.
+// reading, vague enough to give nothing away. Each section says something
+// different: one paragraph repeated three times reads as a bug, not a blur.
 function teaserText(featureName) {
-    const para = 'Разчитането е изготвено на база точните позиции в картата ти и обяснява какво означават те за теб — къде са силните ти страни, какво те дърпа назад и кои периоди работят във твоя полза.';
+    const paras = [
+        'Разчитането стъпва на точните позиции в твоята карта и обяснява какво означават те за теб — не общи думи за зодията, а конкретните градуси и домове от мига на раждането ти.',
+        'Тук се описват страните, на които можеш да разчиташ: къде идва увереността ти, кои умения ти се удават без усилие и в кои периоди начинанията ти вървят по-леко от обикновено.',
+        'А тук — местата, които искат внимание: кое те дърпа назад, кои повтарящи се ситуации имат общ корен и как да подходиш към тях, вместо да ги приемаш за случайност.',
+    ];
     return `<div class="locked-teaser">
         <h4>${escapeHtml(featureName || 'Разчитане')}</h4>
-        <p>${para}</p>
+        <p>${paras[0]}</p>
         <h4>Какво ти помага</h4>
-        <p>${para}</p>
+        <p>${paras[1]}</p>
         <h4>За какво да внимаваш</h4>
-        <p>${para}</p>
+        <p>${paras[2]}</p>
     </div>`;
 }
 

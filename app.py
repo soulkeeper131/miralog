@@ -381,7 +381,6 @@ def init_db():
                     ("planets", 0, 0),
                     ("aspects", 0, 0),
                     ("numerology", 400, 1),
-                    ("interpretation", 600, 1),
                 ])
 
         # Older installs gave the demo plan a free chart and numerology.
@@ -414,10 +413,19 @@ def init_db():
             "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
             " SELECT DISTINCT user_id, 'horoscope', 0, 'EUR' FROM persons")
 
-        # „Пълно разчитане“ is withdrawn for now: no price, not purchasable.
-        conn.execute(
-            "UPDATE feature_prices SET is_purchasable = 0"
-            " WHERE feature_key = 'interpretation'")
+        # „Пълно разчитане“ was withdrawn: the module, its endpoint and its
+        # price are gone, so clear the leftover rows rather than leave a key
+        # nothing can serve.
+        conn.execute("DELETE FROM feature_prices WHERE feature_key = 'interpretation'")
+        conn.execute("DELETE FROM feature_purchases WHERE feature_key = 'interpretation'")
+        for plan_key, feats_json in conn.execute(
+                "SELECT key, features FROM plans WHERE features LIKE '%interpretation%'").fetchall():
+            try:
+                feats = [f for f in json.loads(feats_json) if f != "interpretation"]
+            except Exception:
+                continue
+            conn.execute("UPDATE plans SET features = ? WHERE key = ?",
+                         (json.dumps(feats), plan_key))
 
         # The chart was briefly sold for 9 EUR; it is now granted at signup,
         # so any install that seeded the old price must stop offering it.
@@ -425,17 +433,9 @@ def init_db():
             "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
             " WHERE feature_key = 'chart'")
 
-        # Same for the price list: it is only seeded when empty, so later
-        # features would have no price and could never be bought on their own.
-        for feature_key, cents in [("interpretation", 600)]:
-            conn.execute(
-                "INSERT INTO feature_prices (feature_key, price_cents, currency, is_purchasable)"
-                " VALUES (?, ?, 'EUR', 1) ON CONFLICT(feature_key) DO NOTHING",
-                (feature_key, cents))
-
         # Features added after a plan was first seeded do not appear in existing
         # rows, so the paid plan would silently lose access to them.
-        for key, feature in []:   # "interpretation" is currently withdrawn
+        for key, feature in []:
             row = conn.execute("SELECT features FROM plans WHERE key = ?", (key,)).fetchone()
             if not row:
                 continue
@@ -463,7 +463,7 @@ def init_db():
                     ("full", "Пълен достъп", 500, "EUR", "month", 50,
                      json.dumps(["chart", "planets", "aspects", "numerology", "profile",
                                  "horoscope", "period", "synastry", "love", "akashic",
-                                 "moon", "interpretation"]), 1),
+                                 "moon"]), 1),
                 ]
             )
 
@@ -4461,105 +4461,11 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
     except urllib.error.URLError as e:
         raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
 
-@app.get("/api/persons/{person_id}/interpretation")
-def api_interpretation(person_id: int, refresh: bool = False,
-                       user: Tuple[int, str] = Depends(require_feature("interpretation"))):
-    """Generate AI interpretation of a natal chart. Cached — pass ?refresh=true to regenerate."""
-    user_id, email = user
-    p = get_person(person_id, user_id)
-    if not p:
-        raise HTTPException(404, "Този човек не е намерен в профила ти.")
-
-    cache_key = "natal"
-    if not refresh:
-        cached = get_ai_cache(person_id, cache_key)
-        if cached:
-            return {"interpretation": cached["content"], "cached": True,
-                    "generated_at": cached["generated_at"], "cache_key": cache_key}
-
-    chart_data = compute_natal(p)
-
-    # Build prompt for AI
-    sun = moon = rising = "Unknown"
-    planets_lines = []
-    for oid, obj in chart_data["objects"].items():
-        name = obj["name"]
-        retro = " (ретрограден)" if obj.get("movement") == "Retrograde" else ""
-        line = f"- {name}: {obj['sign']} {obj['sign_longitude']}, {obj['house']}{retro}"
-        planets_lines.append(line)
-        if name == "Sun": sun = line
-        if name == "Moon": moon = line
-        if name == "Asc": rising = line
-
-    houses_lines = [f"- {h['number']}-ти дом: начало в {h['sign']} {h['sign_longitude']}"
-                     for h in chart_data.get("houses", [])]
-
-    aspects_lines = []
-    for a in chart_data["aspects"]:
-        orb = f", орб {a['orb']:.1f}°" if a.get("orb") is not None else ""
-        aspects_lines.append(f"- {a['active']} {a['type']} {a['passive']}{orb}")
-
-    prompt = f"""Ти си професионален астролог с дългогодишен опит. Интерпретирай СТРИКТНО следната натална карта, изчислена астрономически точно с Swiss Ephemeris. Не измисляй, не добавяй и не променяй никакви позиции, знаци, домове или аспекти извън изброените по-долу — те са точен астрономически факт. Твоята задача е да ОБЯСНИШ подробно, задълбочено и практично какво означават дадените данни за живота на човека — не просто да ги изредиш.
-
-=== ДАННИ ЗА ЛИЧНОСТТА ===
-Име: {chart_data['native']['name']}
-Малко име (обръщай се само с него): {first_name(chart_data['native']['name'])}
-Дата и час на раждане: {chart_data['native']['datetime']}
-Място: {chart_data['native']['lat']}, {chart_data['native']['lon']} ({chart_data['native']['timezone']})
-
-Слънце: {sun}
-Луна: {moon}
-Асцендент: {rising}
-
-=== ВСИЧКИ ПЛАНЕТИ И ТОЧКИ (точни изчислени позиции) ===
-{chr(10).join(planets_lines)}
-
-=== ДОМОВЕ (система Плацидус) ===
-{chr(10).join(houses_lines) if houses_lines else "Няма данни"}
-
-=== ВСИЧКИ АСПЕКТИ (точно изчислени, с орб) ===
-{chr(10).join(aspects_lines) if aspects_lines else "Няма данни"}
-
-=== ОБЩИ ХАРАКТЕРИСТИКИ ===
-Форма на хороскопа: {chart_data.get('shape', 'N/A')}
-Лунна фаза: {chart_data.get('moon_phase', 'N/A')}
-Дневно/Нощно раждане: {'Дневно' if chart_data.get('diurnal') else 'Нощно'}
-Домова система: {chart_data.get('house_system', 'Placidus')}
-
-=== ЗАДАЧА ===
-Направи ПОДРОБНА и ИЗЧЕРПАТЕЛНА интерпретация (не кратко резюме — реален задълбочен анализ, всеки раздел с по няколко изречения конкретен коментар, не общи фрази) в следната структура:
-
-1. **Обща характеристика на личността** — синтез на Слънце/Луна/Асцендент триадата, темперамент, доминиращи стихии (огън/земя/въздух/вода) и качества (кардинални/фиксирани/променливи) сред планетите.
-2. **Слънце, Луна и Асцендент подробно** — всяко поотделно: какво означава знакът и домът им конкретно за тази карта, после как трите си взаимодействат.
-3. **Меркурий, Венера, Марс** — стил на мислене/комуникация, стил на обич и естетика, начин на действие и желание.
-4. **Социалните и поколенчески планети** (Юпитер, Сатурн, Уран, Нептун, Плутон) — къде носят растеж/ограничения/трансформация в конкретните домове.
-5. **Домовете** — кои области от живота (кариера, дом, взаимоотношения и т.н.) са най-акцентирани заради концентрация на планети, и какво означава това практически.
-6. **Силни страни и предизвикателства** — конкретни, изведени от реалните аспекти, не общи клишета.
-7. **Любов и взаимоотношения** — базирано на Венера, 7-ми дом, аспекти към тях.
-8. **Кариера и призвание** — базирано на MC, 10-ти дом, Сатурн, Слънце.
-9. **Кармични уроци** — Лунни възли (Северен/Южен), какво трябва да развие и какво да остави.
-10. **Най-важните 5-8 аспекта** — обяснени поотделно, всеки с конкретно практическо значение.
-""" + STYLE_RULES
-
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
-            set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
-
 # --- PDF export and email delivery ---
 
 # Every reading the user can export. The label becomes the PDF's title, and the
 # cache key is either fixed or a prefix the client completes (date, period, sign).
 READING_TITLES = {
-    "natal":      "Тълкуване на наталната карта",
     "profile":    "Личен портрет",
     "akashic":    "Акашови записи",
     "numerology": "Нумерологичен анализ",
@@ -4643,9 +4549,12 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
     # Only the first key segment goes in the filename; suffixes like a partner's
     # full birth data would make it unreadable.
     base, _, rest = cache_key.partition(":")
-    slug = base if base in ("love-full", "natal", "profile", "akashic") else \
+    slug = base if base in ("love-full", "profile", "akashic") else \
         re.sub(r"[^0-9A-Za-z-]+", "-", cache_key).strip("-")
-    return pdf, f"MiraSkop-{safe}-{slug}.pdf"
+    # The filename follows the brand, so a rename does not keep shipping PDFs
+    # named after the old one. ASCII only — some mail clients mangle the rest.
+    prefix = re.sub(r"[^0-9A-Za-z-]+", "-", brand_name()).strip("-") or "razchitane"
+    return pdf, f"{prefix}-{safe}-{slug}.pdf"
 
 @app.get("/api/persons/{person_id}/reading.pdf")
 def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(get_current_user)):
