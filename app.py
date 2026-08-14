@@ -682,6 +682,26 @@ def purchased_features(user_id: int) -> list:
         return [r[0] for r in conn.execute(
             "SELECT feature_key FROM feature_purchases WHERE user_id = ?", (user_id,))]
 
+# Modules that need more than one chart to be usable carry their own allowance.
+# The love reading compares two people, so buying it while capped at two would
+# leave the customer unable to add the partner they bought it for.
+FEATURE_PERSON_GRANTS = {"love": 1}
+
+def person_limit(user: dict) -> Optional[int]:
+    """How many charts this account may keep. None means unlimited.
+
+    The plan sets the floor; modules that compare people raise it, so a
+    purchase never lands the customer against a wall it created.
+    """
+    if user.get("role") == "admin":
+        return None
+    base = effective_plan(user).get("max_persons") or 0
+    if not base:
+        return None
+    extra = sum(FEATURE_PERSON_GRANTS.get(key, 0)
+                for key in set(purchased_features(user["id"])))
+    return base + extra
+
 def unlocked_features(user: dict) -> list:
     """Everything the user may reach: the plan's features plus one-off purchases.
 
@@ -1425,7 +1445,9 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
         "plan": {
             "key": plan.get("key"),
             "name": plan.get("name"),
-            "max_persons": plan.get("max_persons"),
+            # The effective cap, not the plan's raw number: modules that compare
+            # people raise it, and the UI must show what actually applies.
+            "max_persons": person_limit(row),
             # Admins are never gated by plan.
             "features": [f["key"] for f in FEATURE_CATALOGUE] if is_admin else plan.get("features", []),
             "expires": row.get("plan_expires"),
@@ -1483,7 +1505,8 @@ FEATURE_CATALOGUE = [
                  "Кое ви свързва и кое ви дели",
                  "Къде да подходите предпазливо",
                  "Имате ли дългосрочен потенциал",
-                 "Съвпадения по рождени данни или зодия"]},
+                 "Съвпадения по рождени данни или зодия — и още една карта "
+                 "за партньора ти"]},
 
     {"key": "akashic", "name": "Акашови записи",
      "note": "Какво ще узнаеш?", "glyph": "☊",
@@ -2879,7 +2902,7 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
         "plan": {
             "key": plan.get("key"),
             "name": plan.get("name"),
-            "max_persons": plan.get("max_persons"),
+            "max_persons": person_limit(row),
             "expires": row.get("plan_expires"),
             "active": plan_is_active(row),
         },
@@ -3042,7 +3065,7 @@ def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
     persons = get_all_persons(user_id)
     row = get_user_by_id(user_id)
     is_admin = bool(row and row.get("role") == "admin")
-    limit = None if is_admin else (effective_plan(row).get("max_persons") if row else None)
+    limit = person_limit(row) if row else None
     return {
         "persons": persons,
         "quota": {
@@ -3082,17 +3105,24 @@ def api_create_person(
 
     # Plans cap how many people an account may keep; admins are exempt.
     if row.get("role") != "admin":
-        plan = effective_plan(row)
-        limit = plan.get("max_persons") or 0
+        limit = person_limit(row)
         with sqlite3.connect(DB_PATH) as conn:
             used = conn.execute(
                 "SELECT COUNT(*) FROM persons WHERE user_id = ?", (user_id,)
             ).fetchone()[0]
         if limit and used >= limit:
+            # Point at the way out that actually applies: somebody who has not
+            # bought the love reading gains a chart with it, so say so instead
+            # of sending them to a bigger plan that no longer exists.
+            owns_love = "love" in purchased_features(user_id)
+            way_out = ("Изтрий някоя, за да добавиш нова."
+                       if owns_love else
+                       "Изтрий някоя или отключи „Любовен хороскоп“ — "
+                       "той носи още една карта.")
             raise HTTPException(
                 402,
-                f"Пакетът „{plan.get('name')}“ позволява до {limit} "
-                f"{'карта' if limit == 1 else 'карти'}. Изтрий някоя или премини на по-голям пакет."
+                f"Профилът ти позволява до {limit} "
+                f"{'карта' if limit == 1 else 'карти'}. {way_out}"
             )
 
     with sqlite3.connect(DB_PATH) as conn:
