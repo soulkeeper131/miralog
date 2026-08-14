@@ -73,7 +73,7 @@ DEV_DEMO_PASSWORD = "demo123"
 SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
 # The mail domain for the built-in accounts. Everything below derives from it,
 # so moving to a new domain is one variable rather than a search-and-replace.
-BRAND_DOMAIN = os.environ.get("BRAND_DOMAIN", "miralog.bg").strip() or "miralog.bg"
+BRAND_DOMAIN = os.environ.get("BRAND_DOMAIN", "astrokarta.bg").strip() or "astrokarta.bg"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", f"admin@{BRAND_DOMAIN}")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", DEV_ADMIN_PASSWORD)
 # A standing demo account, so the locked/paywalled views can be checked without
@@ -528,8 +528,8 @@ async def lifespan(app: FastAPI):
 # Three tiers, most specific first: what an admin saved, then the environment,
 # then the built-in default. Renaming the app is one field in the admin panel.
 BRAND_DEFAULTS = {
-    "brand_name": os.environ.get("BRAND_NAME", "МираСкоп").strip() or "МираСкоп",
-    "brand_tagline": os.environ.get("BRAND_TAGLINE", "Астрология на разбираем език").strip(),
+    "brand_name": os.environ.get("BRAND_NAME", "АстроКарта").strip() or "АстроКарта",
+    "brand_tagline": os.environ.get("BRAND_TAGLINE", "Астрология с точността на астрономията").strip(),
     "brand_domain": BRAND_DOMAIN,
     "brand_logo": "/static/logo-header.png",
     "brand_logo_full": "/static/logo-full.png",
@@ -2952,7 +2952,7 @@ def geocode_place(query: str, limit: int = 6) -> list:
     })
     req = urllib.request.Request(
         f"https://nominatim.openstreetmap.org/search?{params}",
-        headers={"User-Agent": "MiraSkop/1.0 (astrology chart app)"},
+        headers={"User-Agent": "AstroKarta/1.0 (astrology chart app)"},
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:

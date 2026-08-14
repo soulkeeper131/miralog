@@ -81,7 +81,7 @@ def create_feature_checkout(
     currency: str,
     success_url: str,
     cancel_url: str,
-    brand: str = "МираСкоп",
+    brand: str = "АстроКарта",
 ) -> str:
     """Return a Checkout Session URL for a one-off feature unlock."""
     stripe = get_stripe()
@@ -121,7 +121,7 @@ def create_features_checkout(
     items: list,
     success_url: str,
     cancel_url: str,
-    brand: str = "МираСкоп",
+    brand: str = "АстроКарта",
 ) -> str:
     """Checkout for several one-off unlocks at once.
 

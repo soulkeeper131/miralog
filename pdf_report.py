@@ -198,7 +198,7 @@ def _fact_cards(facts: list, st: dict):
 
 def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
                       facts: list = None, body: str = "",
-                      logo_path: str = None, brand: str = "МираСкоп") -> bytes:
+                      logo_path: str = None, brand: str = "АстроКарта") -> bytes:
     """Render one reading as a PDF and return the bytes."""
     st = _styles()
     regular, bold, _ = _register_fonts()
