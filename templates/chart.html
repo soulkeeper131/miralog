@@ -194,6 +194,26 @@
            is no touch gesture for that, so it gets arrow buttons and a fading
            edge that shows there is more to reach. */
         .tab-bar { position: relative; margin-bottom: 20px; }
+        /* A fading edge wherever the strip continues. Touch devices get no
+           arrows, so without this the remaining tabs — and the modules behind
+           them — are invisible with nothing to suggest a swipe. The gradient
+           sits above the strip but ignores pointer events so it never eats a
+           tap meant for the tab underneath. */
+        .tab-bar::before, .tab-bar::after {
+            content: ""; position: absolute; top: 0; bottom: 0; width: 34px;
+            pointer-events: none; z-index: 4; opacity: 0;
+            transition: opacity .18s ease;
+        }
+        .tab-bar::before {
+            left: 0;
+            background: linear-gradient(to right, var(--bg) 15%, transparent);
+        }
+        .tab-bar::after {
+            right: 0;
+            background: linear-gradient(to left, var(--bg) 15%, transparent);
+        }
+        .tab-bar.can-scroll-left::before,
+        .tab-bar.can-scroll-right::after { opacity: 1; }
         .tabs {
             display: flex; gap: 5px;
             flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
@@ -1570,8 +1590,14 @@
                 const overflowing = strip.scrollWidth > strip.clientWidth + 1;
                 bar.classList.toggle('scrollable', overflowing);
                 const max = strip.scrollWidth - strip.clientWidth;
-                prev.hidden = !overflowing || strip.scrollLeft <= 1;
-                next.hidden = !overflowing || strip.scrollLeft >= max - 1;
+                const atStart = strip.scrollLeft <= 1;
+                const atEnd = strip.scrollLeft >= max - 1;
+                prev.hidden = !overflowing || atStart;
+                next.hidden = !overflowing || atEnd;
+                // The fading edges say "there is more this way" on touch
+                // devices, which never get the arrows.
+                bar.classList.toggle('can-scroll-left', overflowing && !atStart);
+                bar.classList.toggle('can-scroll-right', overflowing && !atEnd);
             }
 
             function nudge(dir) {

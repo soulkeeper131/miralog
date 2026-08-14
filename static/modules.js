@@ -32,9 +32,16 @@
                 ? `<span class="mod-price">${money(offer.price_cents, offer.currency)}</span>
                    <span class="mod-once">еднократно</span>`
                 : '');
+        // The visible label stays short so six cards line up, but every button
+        // reads "Отключи" — a screen reader would announce six identical
+        // buttons. aria-label carries the module and its price instead.
+        const aria = offer
+            ? `Отключи „${item.name}“ за ${money(offer.price_cents, offer.currency)}`
+            : `Отключи „${item.name}“`;
         const action = item.unlocked
             ? ''
-            : `<button class="mod-btn" data-key="${esc(item.key)}">Отключи</button>`;
+            : `<button class="mod-btn" data-key="${esc(item.key)}"
+                       aria-label="${esc(aria)}">Отключи</button>`;
 
         return `<article class="mod-card${item.unlocked ? ' mod-card-owned' : ''}">
             <div class="mod-head">
