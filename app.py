@@ -549,7 +549,17 @@ def brand() -> dict:
         "domain": values["brand_domain"],
         "logo": values["brand_logo"],
         "logo_full": values["brand_logo_full"],
+        "slug": brand_slug(values["brand_name"]),
     }
+
+# ASCII fallback for file names: Cyrillic brand names sanitize to an empty
+# string, so the slug cannot always be derived from them.
+BRAND_SLUG = "AstroKarta"
+
+def brand_slug(name: Optional[str] = None) -> str:
+    """ASCII slug of the brand name for file names; falls back to BRAND_SLUG."""
+    return re.sub(r"[^0-9A-Za-z-]+", "-",
+                  name if name is not None else brand_name()).strip("-") or BRAND_SLUG
 
 def brand_name() -> str:
     """Shorthand for the places that only need the name (emails, PDFs)."""
@@ -4536,7 +4546,7 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
         re.sub(r"[^0-9A-Za-z-]+", "-", cache_key).strip("-")
     # The filename follows the brand, so a rename does not keep shipping PDFs
     # named after the old one. ASCII only — some mail clients mangle the rest.
-    prefix = re.sub(r"[^0-9A-Za-z-]+", "-", brand_name()).strip("-") or "razchitane"
+    prefix = brand_slug()
     return pdf, f"{prefix}-{safe}-{slug}.pdf"
 
 @app.get("/api/persons/{person_id}/reading.pdf")
