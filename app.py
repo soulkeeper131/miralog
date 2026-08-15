@@ -4428,16 +4428,27 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
 
         if provider == "deepseek":
             url = "https://api.deepseek.com/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": max_tokens,
+                # v4 моделите мислят (reasoning) по подразбиране и харчат max_tokens
+                # за скрити разсъждения, вместо за отговора. Изключваме го, за да
+                # се върне съдържанието директно, както старият deepseek-chat.
+                "thinking": {"type": "disabled"},
+            }
         else:
             url = "https://api.openai.com/v1/chat/completions"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps({
+            payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.7,
                 "max_tokens": max_tokens
-            }).encode(),
+            }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -4446,7 +4457,13 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
         )
         with urllib.request.urlopen(req, timeout=180) as resp:
             result = json.loads(resp.read())
-            return clean_bg(result["choices"][0]["message"]["content"])
+            msg = result["choices"][0]["message"]
+            content = msg.get("content") or ""
+            # Fallback: ако все пак моделът е мислил и content е празен, вземи
+            # разсъждението, за да не се губи генерираният текст.
+            if not content and msg.get("reasoning_content"):
+                content = msg["reasoning_content"]
+            return clean_bg(content)
     except urllib.error.HTTPError as e:
         raise AIError(_explain_http_error(provider, e)) from e
     except TimeoutError:
