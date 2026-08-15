@@ -932,8 +932,11 @@ def ai_failure_message(exc: Exception) -> str:
 # Allowed chat models per provider. First entry is the default when unset/invalid.
 AI_MODELS = {
     "deepseek": [
-        ("deepseek-v4-pro", "DeepSeek V4 Pro"),
+        # Flash first: той е бързият модел (~2.5x по-бърз от Pro) и не мисли по
+        # подразбиране, затова е дефолтът за дневния хороскоп и другите дълги
+        # разчитания. Pro остава като опция за по-голяма дълбочина, но е бавен.
         ("deepseek-v4-flash", "DeepSeek V4 Flash"),
+        ("deepseek-v4-pro", "DeepSeek V4 Pro"),
     ],
     "openai": [
         ("gpt-4o-mini", "GPT-4o mini"),
