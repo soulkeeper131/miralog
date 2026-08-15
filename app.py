@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, sys, json, sqlite3, datetime, urllib.parse, secrets, hashlib, asyncio
+import os, re, sys, json, sqlite3, datetime, urllib.parse, secrets, hashlib, asyncio, threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
@@ -4140,6 +4140,32 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(require_
         raise HTTPException(400, "Невалидна дата. Очакваният формат е ГГГГ-ММ-ДД или ГГГГ-ММ-ДДTЧЧ:ММ:СС.")
     return compute_transits(p, target_date)
 
+# --- Background AI generation (спира 504 таймаутите при дълги разчитания) ---
+# Дългите AI разчитания (дневен хороскоп и др.) отнемат 30–90 сек. Ако се правят
+# синхронно в HTTP заявката, проксито (Cloudflare ~100s) връща 504 Gateway Timeout.
+# Затова генерирането става в background нишка: ендпойнтът връща {pending:true}
+# веднага, а фронтенда poll-ва докато резултатът се запише в кеша.
+_AI_JOBS = {}          # cache_key -> {"done": threading.Event, "error": str|None}
+_AI_JOBS_LOCK = threading.Lock()
+
+def ai_job(cache_key: str, fn):
+    """Стартира fn() в background нишка (ако вече не тече). Връща job dict."""
+    with _AI_JOBS_LOCK:
+        job = _AI_JOBS.get(cache_key)
+        if job and not job["done"].is_set():
+            return job
+        job = {"done": threading.Event(), "error": None}
+        _AI_JOBS[cache_key] = job
+    def _run():
+        try:
+            fn()
+        except Exception as e:
+            job["error"] = str(e)
+        finally:
+            job["done"].set()
+    threading.Thread(target=_run, daemon=True).start()
+    return job
+
 @app.get("/api/persons/{person_id}/daily-horoscope")
 def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
     """Generate an AI-written interpretation of today's transits to the person's natal chart.
@@ -4156,26 +4182,26 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
         tz = ZoneInfo("Europe/Sofia")
     now = datetime.datetime.now(tz)
     cache_key = f"horoscope:{now.date().isoformat()}"
+    date_bg = now.strftime("%d.%m.%Y")
 
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
             summary, body = split_summary(cached["content"])
             return {"interpretation": body, "summary": summary,
-                    "date": now.strftime("%d.%m.%Y"), "cached": True, "cache_key": cache_key}
+                    "date": date_bg, "cached": True, "cache_key": cache_key}
 
-    transit_data = compute_transits(p, now)
+    def _generate():
+        transit_data = compute_transits(p, now)
 
-    aspects_lines = []
-    for a in transit_data.get("transit_aspects_to_natal", []):
-        if a["type"] not in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}:
-            continue
-        orb = f", орб {a['orb']:.1f}°" if a.get("orb") is not None else ""
-        aspects_lines.append(f"- {a['active']} (транзит) {a['type']} {a['passive']} (натал){orb}")
+        aspects_lines = []
+        for a in transit_data.get("transit_aspects_to_natal", []):
+            if a["type"] not in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}:
+                continue
+            orb = f", орб {a['orb']:.1f}°" if a.get("orb") is not None else ""
+            aspects_lines.append(f"- {a['active']} (транзит) {a['type']} {a['passive']} (натал){orb}")
 
-    date_bg = now.strftime("%d.%m.%Y")
-
-    prompt = f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
+        prompt = f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
 
 Име: {p['name']}
 Малко име (обръщай се само с него): {first_name(p['name'])}
@@ -4222,20 +4248,30 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
 - Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
 - Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли."""
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
-            set_ai_cache(person_id, cache_key, raw)
-            summary, body = split_summary(raw)
-            return {"interpretation": body, "summary": summary, "date": date_bg,
-                    "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e), "date": date_bg}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e), "date": date_bg}
+        ai_key, provider = get_ai_config()
+        if not ai_key:
+            return  # няма ключ — кешът остава празен, следващият poll ще върне грешка
+        raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
+        set_ai_cache(person_id, cache_key, raw)
 
-    return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
+    # Ако предишен опит вече е завършил с грешка, показваме я веднага, вместо да
+    # рестартираме генериране при всеки poll (refresh=true позволява нов опит).
+    if not refresh:
+        with _AI_JOBS_LOCK:
+            prev = _AI_JOBS.get(cache_key)
+        if prev and prev["done"].is_set() and prev["error"]:
+            return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
+
+    job = ai_job(cache_key, _generate)
+    if job["done"].is_set():
+        # Генерирането е приключило още преди да се върне този отговор.
+        cached = get_ai_cache(person_id, cache_key)
+        if cached:
+            summary, body = split_summary(cached["content"])
+            return {"interpretation": body, "summary": summary,
+                    "date": date_bg, "cached": False, "cache_key": cache_key}
+        return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
+    return {"pending": True, "date": date_bg, "cache_key": cache_key}
 
 MAJOR_ASPECT_TYPES = {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
 # Fast-moving transit bodies (Moon, and daily-recalculated angles like Asc/MC) create
@@ -4403,10 +4439,25 @@ def _explain_http_error(provider: str, e) -> str:
         return f"{provider_name} има временен сървърен проблем ({code}). Опитайте отново след малко."
     return f"{provider_name} върна грешка {code}: {body[:200]}"
 
+# Споделени граматически правила, добавяни към всеки AI prompt — иначе моделът
+# често греши по падежи, членуване и съгласуване на български.
+BG_GRAMMAR_RULES = """=== ЕЗИКОВИ ПРАВИЛА (задължителни за целия текст) ===
+Пиши на граматически безупречен, книжовен български. Провери и коригирай:
+1. ЧЛЕНУВАНЕ: пълен член (‑ът/‑ят) за подлог — „денят започва", „планетата е силна"; кратък член (‑а/‑я) за допълнение — „през деня", „виждам промяната".
+2. СЪГЛАСУВАНЕ ПО РОД И ЧИСЛО: „напрегнатият аспект", „емоционалната сфера", „скритите напрежения".
+3. МЕСТОИМЕННИ ПАДЕЖИ: винителен „го/я/ги/те" и дателен „му/ѝ/им/ти/ми" на правилното място — „аспектът ти дава...", „помага ти", „казва ѝ". Не повтаряй „на него/на нея" там, където е нужна кратката форма.
+4. БРОЙНА ФОРМА след числителни: „два дни", „три аспекта", „четири съвета".
+5. СЛОВОРЕД: естествен български (подлог–сказуемо–допълнение). Без английски словоред и буквални преводи.
+6. Избягвай двойно членуване и несъгласувани окончания.
+Накрая прочети текста веднъж само за граматика и поправи всяка грешка."""
+
 def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) -> str:
     """Call the configured AI provider's chat completion endpoint and return the text."""
     import urllib.request
     import urllib.error
+
+    # Граматичните правила се добавят към всяко разчитане, без значение от модела.
+    prompt = BG_GRAMMAR_RULES + "\n\n" + prompt
 
     model = resolve_ai_model(provider)
     try:

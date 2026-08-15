@@ -2017,8 +2017,17 @@
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, { headers: authHeaders() });
-                const data = await resp.json();
+                let resp = await guardedFetch(url, { headers: authHeaders() });
+                let data = await resp.json();
+                // Генерирането тече в background нишка — poll-ваме докато е готово,
+                // за да не блокираме заявката и да не получаваме 504 от проксито.
+                let tries = 0;
+                while (data.pending && tries < 40) {
+                    await new Promise(r => setTimeout(r, 3000));
+                    resp = await guardedFetch('/api/persons/{{ person.id }}/daily-horoscope', { headers: authHeaders() });
+                    data = await resp.json();
+                    tries++;
+                }
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadHoroscopeAI(true)') +
                         summaryCards(data.summary) +
