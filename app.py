@@ -4185,11 +4185,20 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     date_bg = now.strftime("%d.%m.%Y")
 
     if not refresh:
+        # Ако генериране вече тече (напр. от „Разчети наново"), изчакай го,
+        # вместо да връщаш стария кеш.
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            return {"pending": True, "date": date_bg, "cache_key": cache_key}
         cached = get_ai_cache(person_id, cache_key)
         if cached:
             summary, body = split_summary(cached["content"])
             return {"interpretation": body, "summary": summary,
                     "date": date_bg, "cached": True, "cache_key": cache_key}
+        # Няма кеш, а предишен опит е завършил с грешка — покажи я, не рестартирай.
+        if running and running["done"].is_set() and running["error"]:
+            return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
 
     def _generate():
         transit_data = compute_transits(p, now)
@@ -4253,14 +4262,6 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
             return  # няма ключ — кешът остава празен, следващият poll ще върне грешка
         raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
         set_ai_cache(person_id, cache_key, raw)
-
-    # Ако предишен опит вече е завършил с грешка, показваме я веднага, вместо да
-    # рестартираме генериране при всеки poll (refresh=true позволява нов опит).
-    if not refresh:
-        with _AI_JOBS_LOCK:
-            prev = _AI_JOBS.get(cache_key)
-        if prev and prev["done"].is_set() and prev["error"]:
-            return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
 
     job = ai_job(cache_key, _generate)
     if job["done"].is_set():
