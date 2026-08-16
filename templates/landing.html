@@ -1426,51 +1426,28 @@
                                 <th scope="col" class="col-price">Цена</th>
                             </tr>
                         </thead>
+                        {# Priced from the database, not written here: an admin
+                           editing a price used to leave this table advertising
+                           a figure the checkout did not charge. #}
                         <tbody>
+                            {% for row in pricing.rows %}
                             <tr>
-                                <th scope="row"><span class="pt-glyph">◐</span>Лунен хороскоп календар</th>
-                                <td>Как Луната влияе на ежедневието ти и кои периоди
-                                    са благоприятни за начинания.</td>
-                                <td class="col-price">3 €</td>
+                                <th scope="row"><span class="pt-glyph">{{ row.glyph }}</span>{{ row.name }}</th>
+                                <td>{{ row.blurb }}
+                                    {%- if row.extra %}
+                                    <span class="pt-extra">{{ row.extra }}</span>
+                                    {%- endif %}</td>
+                                <td class="col-price">{{ row.price }}</td>
                             </tr>
-                            <tr>
-                                <th scope="row"><span class="pt-glyph">7</span>Нумерология</th>
-                                <td>Символиката на числата ти, жизнената ти мисия
-                                    и коя е твоята лична година.</td>
-                                <td class="col-price">4 €</td>
-                            </tr>
-                            <tr>
-                                <th scope="row"><span class="pt-glyph">☉</span>Пълен астрологически профил</th>
-                                <td>Същността, призванието, темпераментът ти — и къде да
-                                    насочиш енергията си.</td>
-                                <td class="col-price">5 €</td>
-                            </tr>
-                            <tr>
-                                <th scope="row"><span class="pt-glyph">♃</span>Хороскоп за конкретен период</th>
-                                <td>Какво да очакваш до 60 дни напред и кога да
-                                    планираш важните неща.</td>
-                                <td class="col-price">5 €</td>
-                            </tr>
-                            <tr>
-                                <th scope="row"><span class="pt-glyph">♀</span>Любовен хороскоп и емоционална съвместимост</th>
-                                <td>Има ли истинско привличане, кое ви свързва и
-                                    имате ли дългосрочен потенциал.
-                                    <span class="pt-extra">Включва съвпадения по рождени данни или зодия
-                                    и още една карта, за да добавиш партньора си.</span></td>
-                                <td class="col-price">5 €</td>
-                            </tr>
-                            <tr>
-                                <th scope="row"><span class="pt-glyph">☊</span>Акашови записи</th>
-                                <td>Твоята мисия, кармичните уроци и как да развиеш
-                                    потенциала си.</td>
-                                <td class="col-price">9 €</td>
-                            </tr>
+                            {% endfor %}
+                            {% if pricing.bundle %}
                             <tr class="pt-bundle">
                                 <th scope="row"><span class="pt-glyph">✦</span>Всички модули заедно</th>
-                                <td>Шестте по-горе с едно плащане.
-                                    <span class="pt-extra">Поотделно излизат 31 € — спестяваш 6 €.</span></td>
-                                <td class="col-price">25 €</td>
+                                <td>{{ pricing.bundle.count }}-те по-горе с едно плащане.
+                                    <span class="pt-extra">Поотделно излизат {{ pricing.bundle.full_price }} — спестяваш {{ pricing.bundle.saving }}.</span></td>
+                                <td class="col-price">{{ pricing.bundle.price }}</td>
                             </tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>

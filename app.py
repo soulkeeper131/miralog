@@ -1413,6 +1413,74 @@ def api_public_config():
     }
 
 
+def price_label(cents: int, currency: str = "EUR") -> str:
+    """A price the way a customer reads it: `5 €`, `6.99 €`, `2.97 €`."""
+    value = (cents or 0) / 100
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    symbol = "€" if (currency or "EUR").upper() == "EUR" else currency
+    return f"{text} {symbol}"
+
+# Wording for the landing table. The catalogue's bullets are written for the
+# module picker, where each one gets its own card; the table needs one flowing
+# sentence per row, so the copy lives here and only the price comes from the DB.
+LANDING_PRICE_COPY = {
+    "moon": "Как Луната влияе на ежедневието ти и кои периоди "
+            "са благоприятни за начинания.",
+    "numerology": "Символиката на числата ти, жизнената ти мисия "
+                  "и коя е твоята лична година.",
+    "profile": "Същността, призванието, темпераментът ти — и къде да "
+               "насочиш енергията си.",
+    "period": "Какво да очакваш до 60 дни напред и кога да "
+              "планираш важните неща.",
+    "love": "Има ли истинско привличане, кое ви свързва и "
+            "имате ли дългосрочен потенциал.",
+    "akashic": "Твоята мисия, кармичните уроци и как да развиеш "
+               "потенциала си.",
+}
+LANDING_PRICE_EXTRA = {
+    "love": "Включва съвпадения по рождени данни или зодия "
+            "и още една карта, за да добавиш партньора си.",
+}
+
+def landing_pricing() -> dict:
+    """Rows for the landing price table, priced from the database.
+
+    The table used to carry its prices as text, which drifted the moment an
+    admin edited one — the page advertised a figure the checkout did not
+    charge. Everything numeric here comes from `feature_prices`.
+    """
+    rows, total = [], 0
+    for f in FEATURE_CATALOGUE:
+        if f.get("included"):
+            continue
+        offer = feature_offer(f["key"])
+        if not offer:
+            continue
+        total += offer["price_cents"]
+        rows.append({
+            "key": f["key"],
+            "name": f["name"],
+            "glyph": f.get("glyph", "✦"),
+            "blurb": LANDING_PRICE_COPY.get(f["key"], f.get("note", "")),
+            "extra": LANDING_PRICE_EXTRA.get(f["key"], ""),
+            "price": price_label(offer["price_cents"], offer["currency"]),
+            "price_cents": offer["price_cents"],
+        })
+    rows.sort(key=lambda r: r["price_cents"])
+
+    bundle = None
+    # The bundle only earns a row when it actually saves money against the
+    # current price list — the same rule the picker applies.
+    if len(rows) >= 2 and total > BUNDLE_PRICE_CENTS:
+        bundle = {
+            "name": BUNDLE_NAME,
+            "count": len(rows),
+            "price": price_label(BUNDLE_PRICE_CENTS),
+            "full_price": price_label(total),
+            "saving": price_label(total - BUNDLE_PRICE_CENTS),
+        }
+    return {"rows": rows, "bundle": bundle}
+
 @app.get("/api/public/catalogue")
 def api_public_catalogue():
     """The module list with prices, for visitors who have no account yet.
@@ -4774,7 +4842,8 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
 async def index(request: Request):
     """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
     return HTMLResponse(templates.get_template("landing.html").render(
-        {"request": request, "sky": sky_today(), **seo_context(request, path="/")}))
+        {"request": request, "sky": sky_today(), "pricing": landing_pricing(),
+         **seo_context(request, path="/")}))
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt(request: Request):
