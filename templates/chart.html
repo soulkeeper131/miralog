@@ -157,6 +157,32 @@
         .tab-locked { color: var(--text-dim); }
         .tab-locked.active { color: inherit; }
 
+        /* --- section grid (phones) ---
+           Hidden by default; switched on in the mobile media query below. */
+        .sec-grid { display: none; }
+        .sec-card {
+            display: flex; flex-direction: column; gap: 4px;
+            padding: 12px 12px 11px; min-height: 68px;
+            border-radius: 14px; cursor: pointer; text-align: left;
+            border: 1px solid var(--border); background: var(--bg-card);
+            color: var(--text); font-family: var(--font-body);
+            -webkit-tap-highlight-color: transparent;
+            transition: border-color .15s ease, background-color .15s ease;
+        }
+        .sec-card-ico { font-size: 1.15rem; line-height: 1; color: var(--accent-light); }
+        .sec-card-name {
+            font-size: .84rem; font-weight: 600; line-height: 1.25;
+            color: var(--text-heading);
+        }
+        .sec-card-meta { font-size: .68rem; line-height: 1.2; color: var(--text-dim); }
+        .sec-card.is-active {
+            border-color: var(--accent);
+            background: var(--surface-thistle);
+        }
+        .sec-card.is-locked .sec-card-name { color: var(--text-dim); }
+        .sec-card.is-locked .sec-card-ico { color: var(--text-dim); }
+        .sec-card:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
         /* Pushed to the far right so it never crowds the back link. */
         .nav-modules {
             margin-left: auto; flex-shrink: 0;
@@ -1085,6 +1111,14 @@
             .planet-meaning { font-size: 0.8rem; }
             .tabs { gap: 4px; margin-bottom: 16px; }
             .tab { padding: 8px 12px; font-size: 0.8rem; min-height: 44px; }
+
+            /* The scrolling strip gives way to the grid: nine sections in two
+               columns, all of them on screen, none hidden behind a swipe. */
+            .tab-bar { display: none; }
+            .sec-grid {
+                display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+                margin-bottom: 20px;
+            }
         }
     </style>
 </head>
@@ -1146,6 +1180,12 @@
         <button class="tab-nav tab-nav-next" id="tabNext" type="button"
                 aria-label="Следващи менюта" hidden>›</button>
         </div>
+
+        <!-- Phone navigation for the sections. The strip above scrolls, which
+             on a 375px screen showed three of nine tabs and hid every paid
+             module. Here everything is visible at once. Built from the tabs
+             themselves, so the two can never drift apart. -->
+        <nav class="sec-grid" id="secGrid" aria-label="Раздели"></nav>
 
         <div id="tab-wheel" class="tab-content active">
             <div class="section wheel-section">
@@ -1678,8 +1718,13 @@
         function showTab(name) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
+            // Find the tab by what it opens rather than by what was clicked:
+            // the phone grid calls this too, and there `event.target` is a card.
+            const tab = [...document.querySelectorAll('.tab')].find(
+                t => (t.getAttribute('onclick') || '').includes("'" + name + "'"));
+            if (tab) tab.classList.add('active');
             document.getElementById('tab-' + name).classList.add('active');
+            if (typeof syncSectionGrid === 'function') syncSectionGrid(name);
 
             if (name === 'horoscope' && !window._horoscopeLoaded) {
                 window._horoscopeLoaded = true;
@@ -2472,7 +2517,63 @@
                 document.querySelectorAll('.tab[data-feature]').forEach(tab => {
                     tab.classList.toggle('tab-locked', !unlocked.has(tab.dataset.feature));
                 });
+                // The grid carries the price of what is still locked, so it
+                // needs the same answer the padlocks were built from.
+                buildSectionGrid(data);
             } catch (e) { /* no padlocks is better than a broken tab bar */ }
+        }
+
+        /* --- section grid (phones) ---
+           One card per tab, built from the tabs themselves so a tab added
+           later shows up here without a second edit. Locked sections keep
+           their card and show the price: hiding them would hide the shop. */
+        const SECTION_ICONS = {
+            wheel: '⊕', profile: '☉', planets: '☿', aspects: '△',
+            horoscope: '☽', period: '♃', numerology: '7',
+            love: '♀', akashic: '☊',
+        };
+
+        function buildSectionGrid(features) {
+            const grid = document.getElementById('secGrid');
+            if (!grid) return;
+            const offers = {};
+            (features && features.catalogue || []).forEach(item => {
+                if (item.offer) offers[item.key] = item.offer;
+            });
+
+            grid.innerHTML = '';
+            document.querySelectorAll('#tabStrip .tab').forEach(tab => {
+                const target = ((tab.getAttribute('onclick') || '')
+                    .match(/showTab\('([^']+)'\)/) || [])[1];
+                if (!target) return;
+                const feature = tab.dataset.feature || '';
+                const locked = tab.classList.contains('tab-locked');
+                const offer = offers[feature];
+
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'sec-card'
+                    + (tab.classList.contains('active') ? ' is-active' : '')
+                    + (locked ? ' is-locked' : '');
+                card.dataset.target = target;
+
+                const meta = locked
+                    ? (offer ? money(offer.price_cents, offer.currency) : 'заключено')
+                    : '';
+                card.innerHTML =
+                    '<span class="sec-card-ico" aria-hidden="true">'
+                        + (locked ? '🔒' : (SECTION_ICONS[target] || '✦')) + '</span>'
+                    + '<span class="sec-card-name">' + escapeHtmlText(tab.textContent.trim()) + '</span>'
+                    + (meta ? '<span class="sec-card-meta">' + escapeHtmlText(meta) + '</span>' : '');
+                card.addEventListener('click', () => showTab(target));
+                grid.appendChild(card);
+            });
+        }
+
+        function syncSectionGrid(activeTarget) {
+            document.querySelectorAll('#secGrid .sec-card').forEach(card => {
+                card.classList.toggle('is-active', card.dataset.target === activeTarget);
+            });
         }
 
         document.addEventListener('DOMContentLoaded', () => {

@@ -511,7 +511,7 @@
                 <a class="btn btn-cancel" id="moonLink" href="#"><span class="btn-ico" aria-hidden="true">🌙</span>Лунен календар</a>
                 <!-- Съвместимостта живее в „Любовен хороскоп“ на самата карта,
                      където има кого да сравняваш. -->
-                <a class="btn btn-cancel" id="adminLink" href="#" hidden><span class="btn-ico" aria-hidden="true">🛠</span>Админ</a>
+                <a class="btn btn-cancel" id="adminLink" href="#" hidden><span class="btn-ico" aria-hidden="true">⚒</span>Админ</a>
                 <a class="btn btn-cancel" id="settingsLink" href="#"><span class="btn-ico" aria-hidden="true">⚙</span>Настройки</a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <button class="btn btn-danger" onclick="logout()">Изход</button>
@@ -543,16 +543,16 @@
         <a href="/dashboard" class="bn-current" aria-current="page">
             <span class="bn-ico" aria-hidden="true">✦</span>Табло</a>
         <a href="#" id="moonLinkMobile">
-            <span class="bn-ico" aria-hidden="true">🌙</span>Луна</a>
+            <span class="bn-ico" aria-hidden="true">☾</span>Луна</a>
         <a href="#" id="settingsLinkMobile">
             <span class="bn-ico" aria-hidden="true">⚙</span>Настройки</a>
         <a href="#" id="adminLinkMobile" hidden>
-            <span class="bn-ico" aria-hidden="true">🛠</span>Админ</a>
+            <span class="bn-ico" aria-hidden="true">⚒</span>Админ</a>
         <button type="button" onclick="toggleTheme()" id="themeToggleMobile"
                 aria-label="Смяна на тема">
             <span class="bn-ico" aria-hidden="true">☀</span>Тема</button>
         <button type="button" onclick="logout()" class="bn-danger">
-            <span class="bn-ico" aria-hidden="true">⏻</span>Изход</button>
+            <span class="bn-ico" aria-hidden="true">↪</span>Изход</button>
     </nav>
 
     <!-- Add Person Modal -->
@@ -627,8 +627,10 @@
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
             document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
             // The bottom bar keeps its label, so only its glyph changes.
+            // Monochrome here: a colour emoji among the outline icons stands
+            // out as a mistake rather than a highlight.
             const mobileIco = document.querySelector('#themeToggleMobile .bn-ico');
-            if (mobileIco) mobileIco.textContent = isLight ? '🌙' : '☀';
+            if (mobileIco) mobileIco.textContent = isLight ? '☾' : '☀';
         }
         function toggleTheme() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
