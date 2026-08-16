@@ -443,13 +443,56 @@
             .container { padding: 12px; }
             .person-card { flex-direction: column; align-items: flex-start; }
             .person-actions { width: 100%; justify-content: flex-end; }
-            .topbar { flex-direction: column; align-items: stretch; gap: 14px; }
-            .topbar h1 { font-size: 1.6rem; }
-            .brand-logo { width: 44px; height: 44px; }
-            .topbar-right { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
-            .topbar-right .nav-divider { display: none; }
-            .topbar-right .theme-toggle { margin-left: auto; }
+            .topbar { gap: 12px; margin-bottom: 20px; padding-bottom: 16px; }
+            .topbar h1 { font-size: 1.5rem; }
+            .brand-logo { width: 40px; height: 40px; }
+            /* The actions move to the bottom bar on a phone, so the header
+               goes back to being a header: logo, name, greeting. */
+            .topbar-right { display: none; }
             .modal { padding: 20px; border-radius: 12px; }
+
+            /* Room for the fixed bar, plus the home-indicator inset. */
+            body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+        }
+
+        /* --- bottom navigation (phones only) ---
+           Fixed within thumb reach, the way a native app puts its tabs. It is
+           hidden by default and only switched on inside the media query above,
+           so the desktop layout is untouched. */
+        .bottom-nav {
+            display: none;
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+            justify-content: space-around; align-items: stretch;
+            padding-bottom: env(safe-area-inset-bottom);
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            box-shadow: 0 -2px 16px rgba(0, 0, 0, .18);
+        }
+        .bottom-nav a, .bottom-nav button {
+            flex: 1 1 0; min-width: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 3px;
+            min-height: 56px; padding: 8px 4px;
+            border: none; background: none; cursor: pointer;
+            font-family: var(--font-body); font-size: .66rem; font-weight: 500;
+            /* --text, not --text-muted: at this size the muted tone sat just
+               above the AA floor in dark mode. */
+            color: var(--text); text-decoration: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .bottom-nav .bn-ico { font-size: 1.2rem; line-height: 1; }
+        .bottom-nav a:active, .bottom-nav button:active { background: var(--surface-thistle); }
+        .bottom-nav a:focus-visible, .bottom-nav button:focus-visible {
+            outline: none; box-shadow: inset 0 0 0 2px var(--accent);
+        }
+        /* The current page is not a destination — mark it, do not offer it. */
+        .bottom-nav .bn-current { color: var(--accent-light); }
+        .bottom-nav .bn-danger { color: var(--danger, #ef4444); }
+        .bottom-nav [hidden] { display: none !important; }
+        /* Switched on last, so it wins over the `display: none` above rather
+           than losing to it on source order. */
+        @media (max-width: 600px) {
+            .bottom-nav { display: flex; }
         }
     </style>
 </head>
@@ -493,6 +536,24 @@
             <button class="btn btn-primary btn-large" onclick="openAddModal()">＋ Добави човек</button>
         </div>
     </div>
+
+    <!-- Phone navigation. The same destinations as the header, within reach of
+         a thumb. Hidden on desktop, where the header already carries them. -->
+    <nav class="bottom-nav" aria-label="Основно меню">
+        <a href="/dashboard" class="bn-current" aria-current="page">
+            <span class="bn-ico" aria-hidden="true">✦</span>Табло</a>
+        <a href="#" id="moonLinkMobile">
+            <span class="bn-ico" aria-hidden="true">🌙</span>Луна</a>
+        <a href="#" id="settingsLinkMobile">
+            <span class="bn-ico" aria-hidden="true">⚙</span>Настройки</a>
+        <a href="#" id="adminLinkMobile" hidden>
+            <span class="bn-ico" aria-hidden="true">🛠</span>Админ</a>
+        <button type="button" onclick="toggleTheme()" id="themeToggleMobile"
+                aria-label="Смяна на тема">
+            <span class="bn-ico" aria-hidden="true">☀</span>Тема</button>
+        <button type="button" onclick="logout()" class="bn-danger">
+            <span class="bn-ico" aria-hidden="true">⏻</span>Изход</button>
+    </nav>
 
     <!-- Add Person Modal -->
     <div class="modal-overlay" id="addModal">
@@ -565,6 +626,9 @@
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
             document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+            // The bottom bar keeps its label, so only its glyph changes.
+            const mobileIco = document.querySelector('#themeToggleMobile .bn-ico');
+            if (mobileIco) mobileIco.textContent = isLight ? '🌙' : '☀';
         }
         function toggleTheme() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -608,6 +672,9 @@
         document.getElementById('settingsLink').href = '/settings';
         // synastryLink е премахнат от навигацията.
         document.getElementById('moonLink').href = '/moon';
+        // The bottom bar leads to the same places as the header.
+        document.getElementById('settingsLinkMobile').href = '/settings';
+        document.getElementById('moonLinkMobile').href = '/moon';
 
         // The admin link only appears for accounts that actually hold the role.
         (async function revealAdminLink() {
@@ -616,9 +683,12 @@
                 if (!resp.ok) return;
                 const me = await resp.json();
                 if (me.is_admin) {
-                    const link = document.getElementById('adminLink');
-                    link.href = '/admin';
-                    link.hidden = false;
+                    ['adminLink', 'adminLinkMobile'].forEach(function (id) {
+                        const link = document.getElementById(id);
+                        if (!link) return;
+                        link.href = '/admin';
+                        link.hidden = false;
+                    });
                 }
             } catch (e) { /* the panel stays hidden; nothing else depends on this */ }
         })();
