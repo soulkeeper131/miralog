@@ -160,27 +160,50 @@
         /* --- section grid (phones) ---
            Hidden by default; switched on in the mobile media query below. */
         .sec-grid { display: none; }
+        /* Icon and label share one line so nine sections fit above the fold;
+           stacking them looked tidier but pushed the chart itself off screen.
+           Fixed rows keep every card the same height: the label row, then the
+           price row, which stays present but empty on free sections so the
+           labels line up straight across the grid. */
         .sec-card {
-            display: flex; flex-direction: column; gap: 4px;
-            padding: 12px 12px 11px; min-height: 68px;
-            border-radius: 14px; cursor: pointer; text-align: left;
+            display: grid;
+            grid-template-rows: auto 14px;
+            align-content: center;
+            gap: 3px;
+            padding: 10px 10px 9px; min-height: 56px;
+            border-radius: 12px; cursor: pointer; text-align: left;
             border: 1px solid var(--border); background: var(--bg-card);
             color: var(--text); font-family: var(--font-body);
             -webkit-tap-highlight-color: transparent;
             transition: border-color .15s ease, background-color .15s ease;
         }
-        .sec-card-ico { font-size: 1.15rem; line-height: 1; color: var(--accent-light); }
-        .sec-card-name {
-            font-size: .84rem; font-weight: 600; line-height: 1.25;
-            color: var(--text-heading);
+        .sec-card-head {
+            display: flex; align-items: center; gap: 7px; min-width: 0;
         }
-        .sec-card-meta { font-size: .68rem; line-height: 1.2; color: var(--text-dim); }
+        .sec-card-ico {
+            flex-shrink: 0; width: 18px; text-align: center;
+            font-size: 1rem; line-height: 1; color: var(--accent-light);
+        }
+        .sec-card-name {
+            font-size: .8rem; font-weight: 600; line-height: 1.25;
+            color: var(--text-heading);
+            /* One line, clipped: a wrapping name would make its card taller
+               than the rest and break the row alignment. */
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .sec-card-meta {
+            /* Indented to sit under the label, not under the icon. */
+            height: 14px; margin-left: 25px;
+            font-size: .68rem; font-weight: 600; line-height: 1;
+            color: var(--accent-light);
+            font-variant-numeric: tabular-nums;
+        }
         .sec-card.is-active {
             border-color: var(--accent);
             background: var(--surface-thistle);
         }
-        .sec-card.is-locked .sec-card-name { color: var(--text-dim); }
-        .sec-card.is-locked .sec-card-ico { color: var(--text-dim); }
+        .sec-card.is-locked .sec-card-name { color: var(--text-soft, var(--text)); }
+        .sec-card.is-locked .sec-card-ico { color: var(--text-dim); font-size: 1.05rem; }
         .sec-card:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
         /* Pushed to the far right so it never crowds the back link. */
@@ -1119,6 +1142,19 @@
                 display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
                 margin-bottom: 20px;
             }
+            /* The four chart statistics ran to 441px and pushed the menu — and
+               with it everything the visitor came to read — below the fold.
+               On a phone they become a compact two-column strip; the same
+               figures, a fifth of the height. */
+            .chart-header .stats {
+                grid-template-columns: 1fr 1fr; gap: 8px;
+            }
+            .chart-header .stat { padding: 9px 10px; }
+            .chart-header .stat-label { font-size: .6rem; }
+            .chart-header .stat-value { font-size: .84rem; }
+            /* The explanatory sentences belong with the wheel, not stacked
+               above the navigation. */
+            .chart-header .stat-meaning { display: none; }
         }
     </style>
 </head>
@@ -2532,6 +2568,12 @@
             horoscope: '☽', period: '♃', numerology: '7',
             love: '♀', akashic: '☊',
         };
+        // Two names do not fit one card at 375px. A shortened label beats one
+        // cut off mid-word — the full name is on the tab and in the panel.
+        const SECTION_SHORT = {
+            horoscope: 'Дневен',
+            love: 'Любовен',
+        };
 
         function buildSectionGrid(features) {
             const grid = document.getElementById('secGrid');
@@ -2556,15 +2598,29 @@
                     + (tab.classList.contains('active') ? ' is-active' : '')
                     + (locked ? ' is-locked' : '');
                 card.dataset.target = target;
+                // The visible label may be shortened, so the accessible name
+                // carries the full section title and its price.
+                const fullName = tab.textContent.trim();
 
                 const meta = locked
                     ? (offer ? money(offer.price_cents, offer.currency) : 'заключено')
                     : '';
+                // The price row is always present, empty when there is nothing
+                // to say: dropping it would make that card shorter than its
+                // neighbours and leave the labels stepping up and down.
                 card.innerHTML =
-                    '<span class="sec-card-ico" aria-hidden="true">'
+                    '<span class="sec-card-head">'
+                    + '<span class="sec-card-ico" aria-hidden="true">'
                         + (locked ? '🔒' : (SECTION_ICONS[target] || '✦')) + '</span>'
-                    + '<span class="sec-card-name">' + escapeHtmlText(tab.textContent.trim()) + '</span>'
-                    + (meta ? '<span class="sec-card-meta">' + escapeHtmlText(meta) + '</span>' : '');
+                    + '<span class="sec-card-name">'
+                        + escapeHtmlText(SECTION_SHORT[target] || tab.textContent.trim())
+                    + '</span>'
+                    + '</span>'
+                    + '<span class="sec-card-meta">' + escapeHtmlText(meta) + '</span>';
+                card.setAttribute('aria-label',
+                    fullName + (locked && offer
+                        ? ' — заключено, ' + money(offer.price_cents, offer.currency)
+                        : ''));
                 card.addEventListener('click', () => showTab(target));
                 grid.appendChild(card);
             });
