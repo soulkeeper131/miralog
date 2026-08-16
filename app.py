@@ -1148,6 +1148,107 @@ def compute_composite(person1: dict, person2: dict) -> dict:
         "aspects": serialize_aspects(composite.aspects),
     }
 
+# --- Ranking transits for a reading -------------------------------------
+# The ephemeris returns every aspect within a generous orb, which for a single
+# day is around 75 of them — most too wide to mean anything. Handing that to a
+# model produces a reading that says a little about everything and nothing with
+# conviction, because nothing in the list says what matters. These rules do the
+# job an astrologer does before writing: throw out the noise, then rank.
+
+MAJOR_ASPECTS = {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
+
+# The chart angles rotate a full circle every day, so "MC conjunct natal Saturn"
+# is true for roughly forty minutes and says nothing about the day. The same
+# goes for the minor points, which need context a daily reading cannot give.
+TRANSIT_EXCLUDED = {
+    "Asc", "Desc", "MC", "IC", "Vertex", "True Lilith", "Lilith",
+    "Part of Fortune", "Syzygy",
+}
+
+# How close to exact an aspect must be to count, by how fast the transiting
+# body moves. These are real deviations, not the library's allowance: the Moon
+# moves ~13° a day so a 3° orb is still the same afternoon, while Pluto can
+# hold 1° for months and only a tight hit marks a particular day.
+TRANSIT_ORB_LIMITS = {
+    "Moon": 3.0,
+    "Sun": 2.5, "Mercury": 2.5, "Venus": 2.5, "Mars": 2.5,
+    "Jupiter": 2.0, "Saturn": 2.0,
+    "Uranus": 1.5, "Neptune": 1.5, "Pluto": 1.5, "Chiron": 1.5,
+    "True North Node": 1.5, "True South Node": 1.5,
+}
+TRANSIT_ORB_DEFAULT = 1.5
+
+def aspect_deviation(aspect: dict) -> Optional[float]:
+    """How far an aspect is from exact, in degrees.
+
+    The library's `orb` field is the allowance it permits for that body, not
+    the actual deviation — it only ever holds a handful of configured values.
+    The real figure is in `difference`, formatted as `-00°11'49"`.
+    """
+    text = (aspect.get("difference") or "").strip()
+    match = re.match(r"^-?(\d+)°(\d+)'([\d.]+)\"?$", text)
+    if not match:
+        return None
+    return (int(match.group(1))
+            + int(match.group(2)) / 60
+            + float(match.group(3)) / 3600)
+
+def rank_transit_aspects(aspects: list, limit: int = 12) -> list:
+    """Keep the aspects worth writing about, tightest first.
+
+    Returns dicts carrying the original aspect plus the true deviation and a
+    Bulgarian `strength` label, so the prompt can tell the model what to lead
+    with instead of presenting every line as equally important.
+    """
+    kept = []
+    for a in aspects or []:
+        if a.get("type") not in MAJOR_ASPECTS:
+            continue
+        active, passive = a.get("active"), a.get("passive")
+        if active in TRANSIT_EXCLUDED or passive in TRANSIT_EXCLUDED:
+            continue
+        deviation = aspect_deviation(a)
+        if deviation is None:
+            continue
+        if deviation > TRANSIT_ORB_LIMITS.get(active, TRANSIT_ORB_DEFAULT):
+            continue
+        kept.append({**a, "deviation": deviation})
+
+    # Tightest first; that ordering is itself the signal of what matters.
+    kept.sort(key=lambda a: a["deviation"])
+
+    # The lunar nodes are one axis, 180° apart: an aspect to the North Node is
+    # always mirrored on the South. Keeping both says the same thing twice and
+    # costs a slot, so only the tighter of the pair survives.
+    seen_axis = set()
+    deduped = []
+    for a in kept:
+        passive = a.get("passive")
+        axis = "Nodes" if passive in ("True North Node", "True South Node") else passive
+        key = (a.get("active"), axis)
+        if passive in ("True North Node", "True South Node"):
+            if key in seen_axis:
+                continue
+            seen_axis.add(key)
+        deduped.append(a)
+    kept = deduped
+
+    for a in kept:
+        a["strength"] = ("силен" if a["deviation"] <= 1.0
+                         else "умерен" if a["deviation"] <= 2.5
+                         else "слаб")
+    return kept[:limit]
+
+def format_transit_aspects(ranked: list) -> str:
+    """The aspect block as the prompt sees it, strength included."""
+    if not ranked:
+        return "Няма значими активни аспекти днес — денят е спокоен астрологически."
+    return "\n".join(
+        f"- {a['active']} (транзит) {a['type']} {a['passive']} (натал)"
+        f" — {a['strength']}, отклонение {a['deviation']:.1f}°"
+        for a in ranked
+    )
+
 def compute_transits(person: dict, target_date: datetime.datetime) -> dict:
     """Compute transit chart for a person at a specific date.
     Uses a Natal chart for the target date with aspects_to the person's natal chart."""
@@ -4203,12 +4304,9 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     def _generate():
         transit_data = compute_transits(p, now)
 
-        aspects_lines = []
-        for a in transit_data.get("transit_aspects_to_natal", []):
-            if a["type"] not in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}:
-                continue
-            orb = f", орб {a['orb']:.1f}°" if a.get("orb") is not None else ""
-            aspects_lines.append(f"- {a['active']} (транзит) {a['type']} {a['passive']} (натал){orb}")
+        ranked = rank_transit_aspects(
+            transit_data.get("transit_aspects_to_natal", []), limit=10)
+        aspects_block = format_transit_aspects(ranked)
 
         prompt = f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
 
@@ -4221,7 +4319,9 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
 Лунна фаза днес: {transit_data.get('moon_phase', 'N/A')}
 
 === АКТИВНИ ТРАНЗИТНИ АСПЕКТИ КЪМ НАТАЛНАТА КАРТА ===
-{chr(10).join(aspects_lines) if aspects_lines else "Няма значими активни аспекти днес."}
+Подредени са по сила — първите тежат най-много днес. Стъпи основно на
+силните и умерените; слабите спомени само ако допълват картината.
+{aspects_block}
 
 === ЗАДАЧА ===
 Отговорът ти се състои от ДВЕ части, в този ред.
@@ -4239,7 +4339,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
 ЧАСТ 2 — разгърнатият текст, веднага след ---END---, в следната структура. Използвай точно тези заглавия, номерирани:
 
 1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня.
-2. **Разчитане на аспектите** — за всеки значим аспект от списъка обясни конкретно какво носи. Обяснявай термините накратко (напр. "квадрат — напрежение, което подтиква към действие").
+2. **Разчитане на аспектите** — разгърни силните и умерените аспекти по един по един: какво конкретно носи всеки. Слабите обедини в едно-две изречения накрая или ги пропусни, ако не добавят нищо. По-добре три обяснени задълбочено, отколкото десет изброени повърхностно. Обяснявай термините накратко (напр. "квадрат — напрежение, което подтиква към действие").
 3. **Благоприятно е за** — 3-5 конкретни неща, за които днешните аспекти дават попътен вятър (напр. разговори, преговори, творчество, почивка, финансови решения, физическа активност, срещи). За всяко посочи кой аспект го подкрепя.
 4. **Не е благоприятно за** — 3-4 неща, които по-добре да се отложат днес, и защо според аспектите.
 5. **Какво да направиш днес** — 3-4 конкретни, изпълними действия (не общи фрази — реални неща, които човек може да свърши днес).
