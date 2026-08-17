@@ -1854,10 +1854,36 @@ def sky_today() -> list:
         log.warning("sky_today failed; the landing strip will be omitted", exc_info=True)
         return []
 
+def public_base_url(request: Optional[Request] = None) -> str:
+    """The address visitors actually use, as https wherever possible.
+
+    Behind Coolify the app is served plain HTTP and the proxy terminates TLS,
+    so `request.base_url` comes back as `http://` — which then went into the
+    canonical link and og:url. Search engines treat that as a different site
+    from the https one people visit, and some networks refuse to load an
+    http image on an https page.
+    """
+    configured = (seo_settings().get("seo_site_url") or "").rstrip("/")
+    if configured:
+        return configured
+    if request is None:
+        return "http://127.0.0.1:8000"
+    base = str(request.base_url).rstrip("/")
+    # Trust the proxy's own header before rewriting anything.
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    if proto == "https" and base.startswith("http://"):
+        return "https://" + base[len("http://"):]
+    # A public host reached over plain http is the proxy case above without
+    # the header; localhost genuinely is http and must stay that way.
+    host = request.url.hostname or ""
+    if base.startswith("http://") and host not in ("localhost", "127.0.0.1", "::1"):
+        return "https://" + base[len("http://"):]
+    return base
+
 def seo_context(request: Request, *, path: str = "/") -> dict:
     """Everything the public templates need to render their meta tags."""
     seo = seo_settings()
-    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    base = public_base_url(request)
     image = seo["seo_og_image"] or ""
     if image.startswith("/"):
         image = base + image
@@ -4849,7 +4875,7 @@ async def index(request: Request):
 def robots_txt(request: Request):
     """Crawler rules. The private app pages are never worth indexing."""
     seo = seo_settings()
-    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    base = public_base_url(request)
     if "noindex" in (seo["seo_robots"] or ""):
         body = "User-agent: *\nDisallow: /\n"
     else:
@@ -4870,7 +4896,7 @@ def robots_txt(request: Request):
 def sitemap_xml(request: Request):
     """Only the publicly reachable pages belong in the sitemap."""
     seo = seo_settings()
-    base = (seo["seo_site_url"] or str(request.base_url)).rstrip("/")
+    base = public_base_url(request)
     today = datetime.date.today().isoformat()
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
