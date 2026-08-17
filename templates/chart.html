@@ -221,6 +221,13 @@
         .nav-modules:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         @media (max-width: 600px) {
             .nav-modules { padding: 8px 12px; font-size: 0.75rem; }
+            /* The theme toggle is fixed in the top-right corner, and this row
+               reaches for the same corner with margin-left:auto — the circle
+               landed on top of the button. Reserving the corner keeps them
+               apart; the label shortens too, because on a 320px screen the
+               full wording still ran under the toggle. */
+            .page-nav { padding-right: 52px; flex-wrap: wrap; }
+            .nav-modules .nav-modules-long { display: none; }
         }
         .page-logo {
             width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
@@ -1164,7 +1171,8 @@
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
             <a href="/" class="back-link">← Всички хора</a>
-            <button class="nav-modules" onclick="openModulePicker()">✦ Добави разчитания</button>
+            <button class="nav-modules" onclick="openModulePicker()"
+                    aria-label="Добави разчитания">✦ Добави<span class="nav-modules-long"> разчитания</span></button>
         </div>
 
         <div class="chart-header">
@@ -2568,11 +2576,14 @@
             horoscope: '☽', period: '♃', numerology: '7',
             love: '♀', akashic: '☊',
         };
-        // Two names do not fit one card at 375px. A shortened label beats one
-        // cut off mid-word — the full name is on the tab and in the panel.
+        // Some names do not fit one card on a narrow phone. A shortened label
+        // beats one cut off mid-word — the full name stays on the tab, in the
+        // panel heading and in the card's aria-label.
         const SECTION_SHORT = {
             horoscope: 'Дневен',
             love: 'Любовен',
+            profile: 'Портрет',
+            akashic: 'Акашови',
         };
 
         function buildSectionGrid(features) {
