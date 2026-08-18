@@ -192,9 +192,11 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .sec-card-meta {
-            /* Indented to sit under the label, not under the icon. */
-            height: 14px; margin-left: 25px;
-            font-size: .68rem; font-weight: 600; line-height: 1;
+            /* Indented to sit under the label, not under the icon. The price
+               is the number that sells the module, so it does not go below
+               12px — at .68rem it rendered at 10.9px and read as fine print. */
+            height: 15px; margin-left: 25px;
+            font-size: .78rem; font-weight: 700; line-height: 1;
             color: var(--accent-light);
             font-variant-numeric: tabular-nums;
         }
@@ -1157,7 +1159,7 @@
                 grid-template-columns: 1fr 1fr; gap: 8px;
             }
             .chart-header .stat { padding: 9px 10px; }
-            .chart-header .stat-label { font-size: .6rem; }
+            .chart-header .stat-label { font-size: .72rem; }
             .chart-header .stat-value { font-size: .84rem; }
             /* The explanatory sentences belong with the wheel, not stacked
                above the navigation. */
