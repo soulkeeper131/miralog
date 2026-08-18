@@ -47,15 +47,24 @@
 }
 
 @media (max-width: 600px) {
-    /* On a phone the notice is tall enough to sit over real content, so the
-       page makes room for it rather than floating on top: the body gets
-       bottom padding while the notice is present, removed the moment it is
-       dismissed. Anything below stays reachable at first tap. */
-    .consent { bottom: max(12px, env(safe-area-inset-bottom)); }
-    .consent-ok { width: 100%; }
+    /* A storage notice should not cost a fifth of the screen. Keeping the
+       button beside the text rather than under it, and trimming the padding,
+       holds the bar to roughly two lines — small enough that the page needs
+       only a modest amount of room made for it. */
+    .consent {
+        bottom: max(10px, env(safe-area-inset-bottom));
+        gap: 10px; padding: 11px 13px; border-radius: 12px;
+    }
+    .consent-text { flex: 1 1 auto; font-size: .76rem; line-height: 1.45; }
+    .consent-ok { padding: 9px 16px; font-size: .78rem; }
     /* The script sets this class while the notice is on screen. A :has()
        selector would be neater but is not safe on every phone browser. */
-    body.consent-open { padding-bottom: 240px; }
+    body.consent-open { padding-bottom: 120px; }
+    /* The landing hero fills the first screen on its own, so bottom padding
+       on the body cannot lift it — the notice would sit on the sign-in link.
+       Trimming the hero's own bottom padding while the notice is up keeps
+       both actions tappable. */
+    body.consent-open .hero { padding-bottom: 120px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
