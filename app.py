@@ -534,6 +534,7 @@ async def lifespan(app: FastAPI):
     else:
         log.info("Stripe не е конфигуриран — плащанията остават ръчни / заявка.")
     init_db()
+    clear_smtp_db_settings()
     job_task = asyncio.create_task(_background_jobs_loop())
     try:
         yield
@@ -1035,6 +1036,24 @@ def smtp_setting(key: str) -> Optional[str]:
         if env_val:
             return env_val
     return get_setting(key)
+
+def smtp_from_env() -> bool:
+    """Дали SMTP настройките идват от env vars (Coolify), а не от DB."""
+    return any(os.environ.get(name) for name in _SMTP_ENV.values())
+
+def clear_smtp_db_settings() -> None:
+    """Изтрива SMTP ключовете от DB, когато настройките идват от env.
+
+    Когато SMTP е зададен отвън (Coolify env), DB стойностите са излишни и
+    объркващи — премахваме ги, за да няма два източника на истина. Вика се при
+    стартиране (lifespan), така че базата се самоизчиства от остарели записи.
+    """
+    if not smtp_from_env():
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executemany("DELETE FROM settings WHERE key = ?",
+                         [(k,) for k in _SMTP_ENV.keys()])
+        conn.commit()
 
 def get_ai_cache(person_id: int, cache_key: str) -> Optional[dict]:
     with sqlite3.connect(DB_PATH) as conn:
@@ -2812,14 +2831,17 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
         set_setting("ai_api_key", ai["key"].strip())
 
     smtp = payload.get("smtp") or {}
-    for field, key in [("host", "smtp_host"), ("port", "smtp_port"),
-                       ("user", "smtp_user"), ("from", "smtp_from")]:
-        if field in smtp:
-            set_setting(key, str(smtp[field] or "").strip())
-    if "use_tls" in smtp:
-        set_setting("smtp_use_tls", "1" if smtp["use_tls"] else "0")
-    if (smtp.get("password") or "").strip():
-        set_setting("smtp_password", smtp["password"].strip())
+    # Когато SMTP идва от env (Coolify), не пишем в DB — env печели и DB запис
+    # би бил мъртва данна (ще я изчистим при следващо стартиране).
+    if not smtp_from_env():
+        for field, key in [("host", "smtp_host"), ("port", "smtp_port"),
+                           ("user", "smtp_user"), ("from", "smtp_from")]:
+            if field in smtp:
+                set_setting(key, str(smtp[field] or "").strip())
+        if "use_tls" in smtp:
+            set_setting("smtp_use_tls", "1" if smtp["use_tls"] else "0")
+        if (smtp.get("password") or "").strip():
+            set_setting("smtp_password", smtp["password"].strip())
 
     for key, value in (payload.get("templates") or {}).items():
         if key in EMAIL_TEMPLATES:
