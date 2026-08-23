@@ -933,6 +933,26 @@ def set_setting(key: str, value: str) -> None:
         )
         conn.commit()
 
+# SMTP настройките се четат първо от env vars (Coolify), после от DB settings.
+# Така паролата може да стои само в Coolify env, не в базата данни.
+_SMTP_ENV = {
+    "smtp_host": "SMTP_HOST",
+    "smtp_port": "SMTP_PORT",
+    "smtp_user": "SMTP_USER",
+    "smtp_password": "SMTP_PASSWORD",
+    "smtp_from": "SMTP_FROM",
+    "smtp_use_tls": "SMTP_USE_TLS",
+}
+
+def smtp_setting(key: str) -> Optional[str]:
+    """SMTP настройка с приоритет на env var (Coolify) пред DB settings."""
+    env_name = _SMTP_ENV.get(key)
+    if env_name:
+        env_val = os.environ.get(env_name)
+        if env_val:
+            return env_val
+    return get_setting(key)
+
 def get_ai_cache(person_id: int, cache_key: str) -> Optional[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute(
@@ -2625,7 +2645,7 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             "key_masked": ("•" * 8 + ai_key[-4:]) if ai_key and len(ai_key) > 4 else None,
         },
         "smtp": {
-            "host": get_setting("smtp_host") or "",
+            "host": smtp_setting("smtp_host") or "",
             "port": get_setting("smtp_port") or "587",
             "user": get_setting("smtp_user") or "",
             "from": get_setting("smtp_from") or "",
@@ -2694,13 +2714,13 @@ def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> No
     import smtplib
     from email.message import EmailMessage
 
-    host = get_setting("smtp_host")
+    host = smtp_setting("smtp_host")
     if not host:
         raise HTTPException(400, "SMTP сървърът не е конфигуриран. Задай го в Настройки.")
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = (get_setting("smtp_from") or get_setting("smtp_user")
+    msg["From"] = (smtp_setting("smtp_from") or smtp_setting("smtp_user")
                    or f"noreply@{brand()['domain']}")
     msg["To"] = to
     msg.set_content(body)
@@ -2711,10 +2731,10 @@ def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> No
         msg.add_attachment(data, maintype=maintype, subtype=subtype or "octet-stream",
                            filename=filename)
 
-    user = get_setting("smtp_user")
-    password = get_setting("smtp_password") or ""
-    port = int(get_setting("smtp_port") or 587)
-    use_tls = (get_setting("smtp_use_tls") or "1") == "1"
+    user = smtp_setting("smtp_user")
+    password = smtp_setting("smtp_password") or ""
+    port = int(smtp_setting("smtp_port") or 587)
+    use_tls = (smtp_setting("smtp_use_tls") or "1") == "1"
 
     try:
         if use_tls:
@@ -2831,7 +2851,7 @@ def render_email_template(kind: str, **fields) -> Tuple[str, str]:
 
 def try_send_template(to: str, kind: str, **fields) -> bool:
     """Send a templated email; returns False when SMTP is missing or send fails."""
-    if not to or not get_setting("smtp_host"):
+    if not to or not smtp_setting("smtp_host"):
         return False
     subject, body = render_email_template(kind, **fields)
     try:
@@ -3041,7 +3061,7 @@ def run_digest_emails() -> None:
                 f"{chart_link}\n\n"
                 f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\n{brand_name()}"
             )
-        if not get_setting("smtp_host"):
+        if not smtp_setting("smtp_host"):
             return
         try:
             send_email(u["email"], f"Денят ти в {brand_name()} — {today}", body)
@@ -3077,7 +3097,7 @@ def api_forgot_password(data: ForgotPasswordRequest, request: Request):
         token = create_password_reset(user["id"])
         link = f"{site_base_url(request)}/reset-password?token={urllib.parse.quote(token)}"
         name = user.get("display_name") or email.split("@")[0]
-        if get_setting("smtp_host"):
+        if smtp_setting("smtp_host"):
             try:
                 send_email(
                     email,
