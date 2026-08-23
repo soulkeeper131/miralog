@@ -326,10 +326,11 @@
         const errorEl = document.getElementById('error');
         const submitBtn = document.getElementById('submitBtn');
 
-        // If already logged in, redirect to dashboard
+        // If already logged in, redirect to dashboard (админ → панел на поддомейна)
         const existingToken = localStorage.getItem('miralog_token');
         if (existingToken) {
-            window.location.replace('/dashboard');
+            const onAdminHost = window.location.hostname === '{{ admin_host }}';
+            window.location.replace(onAdminHost ? '/admin' : '/dashboard');
         }
 
         form.addEventListener('submit', async (e) => {
@@ -354,12 +355,18 @@
                     throw new Error(data.detail || 'Грешка при вход');
                 }
 
-                // Store token and redirect
+                // Store token and redirect (админ → отделен панел на поддомейна)
                 localStorage.setItem('miralog_token', data.token);
                 localStorage.setItem('miralog_email', data.user.email);
                 document.cookie = 'miralog_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=2592000';
                 window.track('login');
-                window.location.replace('/dashboard');
+                if (data.user.role === 'admin') {
+                    const onAdminHost = window.location.hostname === '{{ admin_host }}';
+                    const target = onAdminHost ? '/admin' : ('https://{{ admin_host }}/admin?token=' + encodeURIComponent(data.token));
+                    window.location.replace(target);
+                } else {
+                    window.location.replace('/dashboard');
+                }
             } catch (err) {
                 errorEl.textContent = err.message;
                 errorEl.classList.add('visible');

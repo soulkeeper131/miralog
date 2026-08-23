@@ -79,6 +79,9 @@ SECRET_KEY = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
 # The mail domain for the built-in accounts. Everything below derives from it,
 # so moving to a new domain is one variable rather than a search-and-replace.
 BRAND_DOMAIN = os.environ.get("BRAND_DOMAIN", "astrokarta.bg").strip() or "astrokarta.bg"
+# Админ панелът живее на собствен поддомейн — отделен от потребителската част.
+# Извежда се от BRAND_DOMAIN, за да не е твърдо кодиран при смяна на домейн.
+ADMIN_HOST = f"admin.{BRAND_DOMAIN}".strip().lower()
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", f"admin@{BRAND_DOMAIN}")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", DEV_ADMIN_PASSWORD)
 # A standing demo account, so the locked/paywalled views can be checked without
@@ -620,12 +623,47 @@ templates.env.globals["legal"] = legal
 # restart. Empty string means "no analytics" — the consent layer keeps gtag
 # dormant until the visitor opts in anyway.
 templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or "").strip()
+# Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
+templates.env.globals["admin_host"] = ADMIN_HOST
 
 app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Admin-uploaded files (logos) are served from their own mount because they
 # live on the data volume, not in the image.
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
+# --- Админ изолация по хост ---
+# Админ панелът се обслужва САМО на admin.<домейн>. На потребителския домейн
+# /admin и /api/admin/* връщат 404 (скрит surface), а на админ поддомейна всичко
+# освен админ + auth + static пътища е блокирано — чиста изолация без втори процес.
+_ADMIN_HOST_ALLOWED_EXACT = {
+    "/", "/admin", "/login", "/healthz", "/api/auth/login", "/api/auth/me",
+}
+_ADMIN_HOST_ALLOWED_PREFIXES = ("/api/admin/", "/static/", "/uploads/")
+
+
+@app.middleware("http")
+async def admin_host_guard(request: Request, call_next):
+    host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    path = request.url.path or "/"
+    is_admin_host = host == ADMIN_HOST
+    is_admin_path = path == "/admin" or path.startswith("/api/admin/")
+
+    if is_admin_path and not is_admin_host:
+        # Админът не се вижда от потребителския домейн.
+        return JSONResponse({"detail": "Не е намерено."}, status_code=404)
+
+    if is_admin_host:
+        allowed = (
+            path in _ADMIN_HOST_ALLOWED_EXACT
+            or any(path.startswith(p) for p in _ADMIN_HOST_ALLOWED_PREFIXES)
+        )
+        if not allowed:
+            return JSONResponse({"detail": "Не е намерено."}, status_code=404)
+        if path == "/":
+            return RedirectResponse("/admin")
+
+    return await call_next(request)
 
 async def _background_jobs_loop():
     """Hourly lifecycle + digest emails. Failures are logged, never crash the app."""
@@ -1449,7 +1487,7 @@ def api_login(data: AuthRequest, request: Request):
     audit("login", f"Вход: {user['email']}", user_id=user["id"], actor=user["email"])
     return {
         "token": token,
-        "user": {"id": user["id"], "email": user["email"]}
+        "user": {"id": user["id"], "email": user["email"], "role": user.get("role")}
     }
 
 class GuestChartRequest(BaseModel):
