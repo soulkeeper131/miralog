@@ -2972,6 +2972,12 @@ async def api_stripe_webhook(request: Request):
 
     etype = event["type"]
     obj = event["data"]["object"]
+    # StripeObject-ът няма dict методи (.get) — конвертирай в чист dict,
+    # иначе fulfill_checkout_session хвърля KeyError: 'get'.
+    if hasattr(obj, "to_dict_recursive"):
+        obj = obj.to_dict_recursive()
+    elif not isinstance(obj, dict):
+        obj = dict(obj)
     try:
         # Only one-off purchases exist now, so the subscription events that
         # used to arrive here have nothing left to update.
