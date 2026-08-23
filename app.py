@@ -319,6 +319,18 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
+                actor_email TEXT,
+                event TEXT NOT NULL,
+                detail TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_log(event)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)")
 
         # The seeded admin predates the role column, so claim it here.
         conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
@@ -1328,6 +1340,7 @@ def api_login(data: AuthRequest):
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(401, "Грешен имейл или парола.")
     token = create_token(user["id"], user["email"])
+    audit("login", f"Вход: {user['email']}", user_id=user["id"], actor=user["email"])
     return {
         "token": token,
         "user": {"id": user["id"], "email": user["email"]}
@@ -1673,6 +1686,7 @@ def api_register(data: AuthRequest, request: Request):
 
     user = create_user(email, hash_password(data.password))
     token = create_token(user["id"], user["email"])
+    audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
     try_send_template(
         email, "welcome",
         name=email.split("@")[0],
@@ -2081,6 +2095,8 @@ def api_admin_update_user(user_id: int, data: AdminUserUpdate, admin: dict = Dep
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
         conn.commit()
+    audit("user_updated", f"Променен потребител {target['email']} (id={user_id})",
+          user_id=user_id, actor=admin["email"])
     return {"ok": True, "changed": True}
 
 @app.delete("/api/admin/users/{user_id}")
@@ -2088,7 +2104,8 @@ def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
     """Remove an account together with everything it owns."""
     if user_id == admin["id"]:
         raise HTTPException(400, "Не можеш да изтриеш собствения си акаунт.")
-    if not get_user_by_id(user_id):
+    target = get_user_by_id(user_id)
+    if not target:
         raise HTTPException(404, "Потребителят не е намерен.")
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -2098,6 +2115,8 @@ def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
         conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
+    audit("user_deleted", f"Изтрит потребител {target['email']} (id={user_id})",
+          user_id=user_id, actor=admin["email"])
     return {"ok": True}
 
 @app.get("/api/admin/plans")
@@ -2198,6 +2217,8 @@ def api_admin_record_payment(data: AdminPaymentCreate, admin: dict = Depends(req
             params.append(data.user_id)
             conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
         conn.commit()
+    audit("payment_recorded", f"Ръчно плащане за {target['email']}: {data.amount_cents} {data.currency}",
+          user_id=data.user_id, actor=admin["email"])
     return {"ok": True}
 
 @app.delete("/api/admin/payments/{payment_id}")
@@ -2205,6 +2226,7 @@ def api_admin_delete_payment(payment_id: int, admin: dict = Depends(require_admi
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
         conn.commit()
+    audit("payment_deleted", f"Изтрито плащане id={payment_id}", actor=admin["email"])
     return {"ok": True}
 
 # --- One-off feature purchases ---
@@ -2250,6 +2272,8 @@ def api_admin_set_feature_price(feature_key: str, data: FeaturePriceUpdate,
             " currency = excluded.currency, is_purchasable = excluded.is_purchasable",
             (feature_key, data.price_cents, data.currency, 1 if data.is_purchasable else 0))
         conn.commit()
+    audit("price_changed", f"Цена на {feature_key}: {data.price_cents} {data.currency}",
+          actor=admin["email"])
     return {"ok": True}
 
 @app.get("/api/admin/feature-purchases")
@@ -2295,6 +2319,8 @@ def api_admin_grant_feature(data: FeatureGrant, admin: dict = Depends(require_ad
             " purchased_at = CURRENT_TIMESTAMP",
             (data.user_id, data.feature_key, amount, currency, cur.lastrowid))
         conn.commit()
+    audit("feature_unlocked", f"Админ отключи {data.feature_key} за {target['email']}",
+          user_id=data.user_id, actor=admin["email"])
     return {"ok": True}
 
 @app.delete("/api/admin/feature-purchases/{user_id}/{feature_key}")
@@ -2305,7 +2331,33 @@ def api_admin_revoke_feature(user_id: int, feature_key: str,
         conn.execute("DELETE FROM feature_purchases WHERE user_id = ? AND feature_key = ?",
                      (user_id, feature_key))
         conn.commit()
+    audit("feature_revoked", f"Админ отне {feature_key} от потребител id={user_id}",
+          user_id=user_id, actor=admin["email"])
     return {"ok": True}
+
+@app.get("/api/admin/audit")
+def api_admin_audit(event: Optional[str] = None, user_id: Optional[int] = None,
+                    limit: int = 100, offset: int = 0,
+                    admin: dict = Depends(require_admin)):
+    """Admin audit log, newest first, with optional filters."""
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
+    where, params = [], []
+    if event:
+        where.append("a.event = ?"); params.append(event)
+    if user_id:
+        where.append("a.user_id = ?"); params.append(user_id)
+    cond = (" WHERE " + " AND ".join(where)) if where else ""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT a.*, u.email AS user_email FROM audit_log a"
+            " LEFT JOIN users u ON u.id = a.user_id" + cond +
+            " ORDER BY a.id DESC LIMIT ? OFFSET ?", params + [limit, offset])]
+        total = conn.execute("SELECT COUNT(*) FROM audit_log" + cond, params).fetchone()[0]
+        event_types = [r[0] for r in conn.execute(
+            "SELECT DISTINCT event FROM audit_log ORDER BY event")]
+    return {"events": rows, "total": total, "event_types": event_types}
 
 @app.get("/api/features")
 def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
@@ -2514,6 +2566,9 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
         if key in BRAND_DEFAULTS:
             set_setting(key, str(value or "").strip())
 
+    sections = [k for k in ("ai", "smtp", "templates", "seo", "brand") if payload.get(k)]
+    audit("settings_changed", f"Смени секции: {', '.join(sections) or '—'}",
+          actor=admin["email"])
     return {"ok": True}
 
 def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> None:
@@ -2672,6 +2727,19 @@ def try_send_template(to: str, kind: str, **fields) -> bool:
         log.warning("Неуспешен %s имейл до %s: %s", kind, to, e)
         return False
 
+def audit(event: str, detail: str = "", *, user_id: Optional[int] = None,
+          actor: str = "system") -> None:
+    """Append a row to the admin audit log. Never raises."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO audit_log (user_id, actor_email, event, detail) VALUES (?, ?, ?, ?)",
+                (user_id, actor or "system", event, detail))
+            conn.commit()
+    except Exception:
+        log.exception("audit log write failed")
+
+
 def record_payment(user_id: int, *, plan_key: Optional[str], amount_cents: int,
                    currency: str, method: str, note: str) -> int:
     with sqlite3.connect(DB_PATH) as conn:
@@ -2732,6 +2800,9 @@ def fulfill_checkout_session(session: dict) -> None:
                     (customer_id, user_id))
                 conn.commit()
         log.info("Stripe отключване %s за user=%s", keys, user_id)
+        audit("payment_succeeded", f"Stripe {amount} {currency} за модули {', '.join(keys)} ({session.get('id')})",
+              user_id=user_id, actor="stripe")
+        audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}", user_id=user_id, actor="stripe")
         return
 
     feature_key = meta.get("feature_key")
@@ -2747,6 +2818,9 @@ def fulfill_checkout_session(session: dict) -> None:
                     (customer_id, user_id))
                 conn.commit()
         log.info("Stripe отключване %s за user=%s", feature_key, user_id)
+        audit("payment_succeeded", f"Stripe {amount} {currency} за {feature_key} ({session.get('id')})",
+              user_id=user_id, actor="stripe")
+        audit("feature_unlocked", f"Модул отключен: {feature_key}", user_id=user_id, actor="stripe")
         # A chart bought through onboarding belongs to an account that has no
         # usable password yet; this is the visitor's way in.
         if feature_key == "chart":
@@ -2971,6 +3045,7 @@ async def api_stripe_webhook(request: Request):
         raise HTTPException(400, f"Webhook грешка: {e}") from e
 
     etype = event["type"]
+    audit("webhook_received", f"Stripe event: {etype}", actor="stripe")
     obj = event["data"]["object"]
     # StripeObject-ът няма dict методи (.get) — конвертирай в чист dict,
     # иначе fulfill_checkout_session хвърля KeyError: 'get'.
@@ -2985,6 +3060,7 @@ async def api_stripe_webhook(request: Request):
             fulfill_checkout_session(obj)
     except Exception:
         log.exception("Обработка на Stripe event %s се провали", etype)
+        audit("webhook_error", f"Stripe event {etype} се провали", actor="stripe")
         raise HTTPException(500, "Вътрешна грешка при webhook.")
     return {"ok": True}
 

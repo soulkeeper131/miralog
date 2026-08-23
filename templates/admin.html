@@ -470,6 +470,7 @@
                 <div class="tab" role="tab" tabindex="0" data-tab="plans">Пакети</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="payments">Плащания</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="settings">Настройки</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="audit">Активност</div>
             </div>
 
             <div class="tab-content active" id="tab-overview">
@@ -539,6 +540,18 @@
 
             <div class="tab-content" id="tab-settings">
                 <div id="settingsBody"></div>
+            </div>
+
+            <div class="tab-content" id="tab-audit">
+                <div class="section">
+                    <h2>Активност</h2>
+                    <div class="toolbar">
+                        <select id="auditEvent" style="max-width:220px;"></select>
+                        <button class="btn btn-ghost btn-sm" id="auditPrevBtn">‹ По-нови</button>
+                        <button class="btn btn-ghost btn-sm" id="auditNextBtn">По-стари ›</button>
+                    </div>
+                    <div id="auditBody"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -663,6 +676,7 @@
             plans: loadPlans,
             payments: loadPayments,
             settings: loadSettings,
+            audit: loadAudit,
         };
         const loaded = {};
         function showTab(name, tabEl) {
@@ -681,6 +695,73 @@
             tabEl.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTab(tabEl.dataset.tab, tabEl); }
             });
+        });
+
+        /* ---------- audit log ---------- */
+        let auditPage = 0;
+        const AUDIT_PAGE_SIZE = 50;
+        const auditEventEl = document.getElementById('auditEvent');
+        const auditBody = document.getElementById('auditBody');
+
+        async function loadAudit() {
+            try {
+                const first = await api('/api/admin/audit?limit=1');
+                const types = (first.event_types || []).slice();
+                const cur = auditEventEl.value;
+                auditEventEl.innerHTML = '<option value="">Всички събития</option>' +
+                    types.map(function(t) {
+                        return '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>';
+                    }).join('');
+                if (cur) auditEventEl.value = cur;
+                auditPage = 0;
+                await renderAudit();
+            } catch (e) {
+                auditBody.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        async function renderAudit() {
+            auditBody.innerHTML = '<div class="hint">Зареждане…</div>';
+            try {
+                const q = new URLSearchParams({ limit: String(AUDIT_PAGE_SIZE), offset: String(auditPage * AUDIT_PAGE_SIZE) });
+                const ev = auditEventEl.value;
+                if (ev) q.set('event', ev);
+                const d = await api('/api/admin/audit?' + q.toString());
+                const rows = d.events || [];
+                if (!rows.length) {
+                    auditBody.innerHTML = '<div class="hint">Няма записи.</div>';
+                    return;
+                }
+                const from = auditPage * AUDIT_PAGE_SIZE + 1;
+                const to = auditPage * AUDIT_PAGE_SIZE + rows.length;
+                auditBody.innerHTML =
+                    '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>Време</th><th>Събитие</th><th>Потребител</th><th>Извършил</th><th>Детайли</th>' +
+                    '</tr></thead><tbody>' +
+                    rows.map(function(r) {
+                        const ts = (r.created_at || '').replace('T', ' ').slice(0, 16);
+                        return '<tr>' +
+                            '<td class="num">' + escapeHtml(ts) + '</td>' +
+                            '<td><code>' + escapeHtml(r.event || '') + '</code></td>' +
+                            '<td>' + escapeHtml(r.user_email || (r.user_id ? '#' + r.user_id : '—')) + '</td>' +
+                            '<td>' + escapeHtml(r.actor_email || '—') + '</td>' +
+                            '<td>' + escapeHtml(r.detail || '') + '</td>' +
+                            '</tr>';
+                    }).join('') + '</tbody></table></div>' +
+                    '<div class="hint">' + from + '–' + to + ' от ' + d.total + '</div>';
+                document.getElementById('auditPrevBtn').disabled = auditPage === 0;
+                document.getElementById('auditNextBtn').disabled = to >= d.total;
+            } catch (e) {
+                auditBody.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        auditEventEl.addEventListener('change', function() { auditPage = 0; renderAudit(); });
+        document.getElementById('auditPrevBtn').addEventListener('click', function() {
+            if (auditPage > 0) { auditPage--; renderAudit(); }
+        });
+        document.getElementById('auditNextBtn').addEventListener('click', function() {
+            auditPage++; renderAudit();
         });
 
         /* ---------- modal ---------- */
