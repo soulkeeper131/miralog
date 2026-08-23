@@ -631,6 +631,10 @@ templates.env.globals["admin_host"] = ADMIN_HOST
 templates.env.globals["main_domain"] = BRAND_DOMAIN
 
 app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
+# .webp не е в mimetypes по подразбиране на някои среди → сервира се като
+# octet-stream и някои клиенти отказват да го рендерират. Регистрираме го.
+import mimetypes as _mimetypes
+_mimetypes.add_type("image/webp", ".webp")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Admin-uploaded files (logos) are served from their own mount because they
 # live on the data volume, not in the image.

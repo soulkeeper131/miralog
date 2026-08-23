@@ -1,0 +1,353 @@
+<style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Any display value beats the hidden attribute, so state it explicitly —
+           otherwise a hidden button with display:inline-flex stays on screen. */
+        [hidden] { display: none !important; }
+        /* The rotating chart wheel sweeps past its own box at some angles.
+           body alone is not enough — the root element grows too. */
+        html { overflow-x: hidden; }
+        :root {
+            /* Fraunces has an optical size axis and a 'wonk' that reads like an
+               engraved star atlas; Outfit keeps the running text quiet beside it.
+               Mono is for anything that is literally data: degrees, dates, prices. */
+            --font-body: 'Outfit', -apple-system, system-ui, sans-serif;
+            --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+            /* Spacing scale. Sections breathe more than the blocks inside them,
+               and the rhythm tightens on small screens rather than scaling down
+               everything uniformly. */
+            --space-section: clamp(48px, 5vw, 72px);
+            --space-block: clamp(28px, 4.5vw, 52px);
+            --space-tight: clamp(14px, 2vw, 22px);
+            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
+            --shadow-raised: 0 6px 20px rgba(124,58,237,0.32);
+            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
+            /* Ground: ink indigo, the colour of a clear sky an hour after dusk.
+               Neutrals carry a violet bias so nothing reads as unconsidered grey. */
+            --bg: #08071a;
+            --bg-raised: #0f0e26;
+            --bg-card: #14122e;
+            --bg-input: #100f26;
+            --border: #2b2752;
+            --border-soft: #1d1a3c;
+            --text: #e6e2f4;
+            --text-heading: #d6c6ff;
+            --text-muted: #9a93b8;
+            --text-dim: #9090a4;
+            --text-soft: #b4adcc;
+            /* Gilt: the ink of engraved star atlases. Reserved for real data —
+               degrees, dates, prices — never for decoration. */
+            --gilt: #e8c56b;
+            --gilt-soft: rgba(232,197,107,0.12);
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --accent-light: #a78bfa;
+            --accent-lighter: #c9b1ff;
+            --thistle: #cdb4db;
+            --pastel-petal: #ffc8dd;
+            --baby-pink: #ffafcc;
+            --icy-blue: #bde0fe;
+            --sky-blue: #a2d2ff;
+            --surface-thistle: rgba(205,180,219,0.10);
+            --surface-petal: rgba(255,200,221,0.10);
+            --surface-pink: rgba(255,175,204,0.10);
+            --surface-icy: rgba(189,224,254,0.10);
+            --surface-sky: rgba(162,210,255,0.10);
+            --on-thistle: #c9b1ff;
+            --on-icy: #9ecbff;
+            --on-pink: #ffafcc;
+            --on-sky: #9fb3c8;
+            --hero-glow: radial-gradient(1100px 520px at 50% -10%, rgba(124,58,237,0.30), transparent 70%);
+        }
+        :root[data-theme="light"] {
+            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
+            --shadow-raised: 0 6px 18px rgba(134,89,163,0.28);
+            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
+            /* Ground: warm paper with a violet cast, like an old ephemeris page. */
+            --bg: #f7f4fa;
+            --bg-raised: #ffffff;
+            --bg-card: #ffffff;
+            --bg-input: #f4eff8;
+            --border: #e2d5ec;
+            --border-soft: #ece3f2;
+            --text: #241d33;
+            --text-heading: #513173;
+            --text-muted: #5f5475;
+            --text-dim: #6b5876;
+            --text-soft: #5f5475;
+            --gilt: #7a5709;
+            --gilt-soft: rgba(138,100,16,0.10);
+            --accent: #8659a3;
+            --accent-hover: #744a90;
+            --accent-light: #764a93;
+            --accent-lighter: #6d4a89;
+            --surface-thistle: rgba(205,180,219,0.28);
+            --surface-petal: rgba(255,200,221,0.30);
+            --surface-pink: rgba(255,175,204,0.28);
+            --surface-icy: rgba(189,224,254,0.32);
+            --surface-sky: rgba(162,210,255,0.28);
+            --on-thistle: #5b3a73;
+            --on-icy: #17496f;
+            --on-pink: #a81b4d;
+            --on-sky: #5c5468;
+            --hero-glow: radial-gradient(1100px 520px at 50% -10%, rgba(205,180,219,0.55), transparent 70%);
+        }
+
+        body {
+            font-family: var(--font-body);
+            font-size: 0.98rem;
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            transition: background-color 0.2s, color 0.2s;
+            overflow-x: hidden;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: max(16px, env(safe-area-inset-top));
+            right: max(16px, env(safe-area-inset-right));
+            width: 44px; height: 44px; border-radius: 50%;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+            font-size: 1.1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+            z-index: 200;
+            /* It floats over the content as the page scrolls, so it needs a
+               solid ground and a halo — otherwise headings read through it. */
+            box-shadow: 0 0 0 6px var(--bg), var(--shadow-card);
+        }
+        .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+        .wrap {
+            max-width: 1080px; margin: 0 auto;
+            padding-inline: clamp(20px, 4vw, 40px);
+        }
+        /* The ephemeris is a single line of data and needs room to stay on one. */
+        .ephemeris .wrap { max-width: 1240px; }
+
+        /* --- hero --- */
+        .hero {
+            position: relative;
+            /* the wheel is wider than the text column and must not widen the page */
+            overflow: hidden;
+            padding: clamp(40px, 6vw, 68px) 0 clamp(38px, 5vw, 62px);
+            text-align: center;
+        }
+        .hero::before {
+            content: ""; position: absolute; inset: -180px 0 auto 0; height: 620px;
+            background: var(--hero-glow); pointer-events: none; z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+
+        /* A real zodiac wheel turning slowly behind the logo — it shows what the
+           product actually produces, rather than decorating with a stock glow. */
+        .sky {
+            position: absolute; z-index: 0; pointer-events: none;
+            top: clamp(-40px, -4vw, -10px); left: 50%; transform: translateX(-50%);
+            width: min(760px, 100vw); aspect-ratio: 1;
+            opacity: 0.5;
+            -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 38%, transparent 72%);
+            mask-image: radial-gradient(circle at 50% 42%, #000 38%, transparent 72%);
+        }
+        :root[data-theme="light"] .sky { opacity: 0.42; }
+        .sky svg { width: 100%; height: 100%; display: block; }
+        .sky .ring-outer { animation: sky-spin 190s linear infinite; transform-origin: 50% 50%; }
+        .sky .ring-inner { animation: sky-spin 130s linear infinite reverse; transform-origin: 50% 50%; }
+        .sky .twinkle { animation: sky-twinkle 4s ease-in-out infinite; }
+        .sky .twinkle:nth-of-type(2n) { animation-delay: 1.3s; }
+        .sky .twinkle:nth-of-type(3n) { animation-delay: 2.6s; }
+        @keyframes sky-spin { to { transform: rotate(360deg); } }
+        @keyframes sky-twinkle {
+            0%, 100% { opacity: 0.25; }
+            50% { opacity: 0.9; }
+        }
+        /* Motion is decorative; respect anyone who has asked for less of it. */
+        @media (prefers-reduced-motion: reduce) {
+            .sky .ring-outer, .sky .ring-inner, .sky .twinkle { animation: none; }
+        }
+
+        /* The logo art is portrait with the wordmark at the bottom; the circle is
+           centred on the illustration itself so nothing important gets clipped. */
+        .hero-logo {
+            /* Smaller than before: at 330px it pushed the buttons past the fold
+               on a 900px-tall screen, which is where most desktops sit. */
+            width: auto; height: clamp(180px, 22vw, 250px);
+            max-width: 100%; object-fit: contain;
+            display: block; margin: 0 auto 14px;
+            filter: drop-shadow(0 16px 36px rgba(124,58,237,0.30));
+        }
+        :root[data-theme="light"] .hero-logo {
+            filter: drop-shadow(0 16px 32px rgba(134,89,163,0.24));
+        }
+        .hero h1 {
+            font-family: var(--font-display); font-weight: 700;
+            /* Fraunces at display size: high optical size, a touch of wonk and
+               soft terminals, so the wordmark reads engraved rather than typed. */
+            font-variation-settings: 'opsz' 144, 'SOFT' 30, 'WONK' 1;
+            font-size: clamp(2.7rem, 7.6vw, 4.6rem); line-height: 0.98;
+            letter-spacing: -0.025em; color: var(--text-heading);
+            margin-bottom: 10px; text-wrap: balance;
+        }
+        .hero .kicker {
+            font-family: var(--font-mono);
+            font-size: 0.72rem; letter-spacing: .2em; text-transform: uppercase;
+            color: var(--gilt); font-weight: 500; margin-bottom: 20px;
+            display: inline-flex; align-items: center; gap: 10px;
+        }
+        /* Hairlines either side of the kicker, like a rule on an atlas plate. */
+        .hero .kicker::before, .hero .kicker::after {
+            content: ""; width: clamp(18px, 6vw, 42px); height: 1px;
+            background: linear-gradient(90deg, transparent, var(--gilt), transparent);
+            opacity: .55;
+        }
+        .hero .lede {
+            font-family: var(--font-display); font-weight: 400;
+            font-variation-settings: 'opsz' 40, 'SOFT' 20;
+            font-size: clamp(1.18rem, 2.7vw, 1.6rem); color: var(--text);
+            max-width: 34ch; margin: 0 auto 16px; line-height: 1.42;
+            text-wrap: balance;
+        }
+        .hero .sub {
+            font-size: 0.97rem; color: var(--text-muted); max-width: 52ch;
+            margin: 0 auto 32px; line-height: 1.7;
+        }
+
+        .cta-row {
+            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        @media (max-width: 600px) {
+            /* Stack them and match widths — unequal pills on two lines read as
+               an accident rather than a choice. */
+            .cta-row { flex-direction: column; align-items: stretch; gap: 10px; }
+            .cta-row .btn { width: 100%; }
+        }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 14px 30px; border-radius: 12px; text-decoration: none; border: none;
+            font-family: var(--font-body); font-size: 1rem; font-weight: 600; letter-spacing: .01em;
+            cursor: pointer; min-height: 50px;
+            transition: background-color .15s ease, border-color .15s ease, color .15s ease,
+                        transform .15s ease, box-shadow .15s ease;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            color: #fff; box-shadow: var(--shadow-raised);
+        }
+        .btn-primary:hover { filter: brightness(1.06); }
+        .btn-ghost {
+            background: var(--bg-card); color: var(--text-heading); border: 1px solid var(--border);
+        }
+        .btn-ghost:hover { border-color: var(--accent); }
+        .cta-note { font-size: 0.82rem; color: var(--text-dim); }
+
+        /* --- sections --- */
+        section { padding: var(--space-section) 0; position: relative; }
+        /* Alternate the ground instead of separating with dead space. */
+        section:nth-of-type(even) { background: var(--bg-raised); }
+        section:nth-of-type(even)::before,
+        section:nth-of-type(even)::after {
+            content: ""; position: absolute; left: 0; right: 0; height: 1px;
+            background: var(--border-soft);
+        }
+        section:nth-of-type(even)::before { top: 0; }
+        section:nth-of-type(even)::after { bottom: 0; }
+        /* The closing box is a card of its own and must not touch the section
+           above it; removing its top padding pulled it up into that band. */
+        section:last-of-type { padding-top: var(--space-block); }
+        /* --- ephemeris strip: today's real positions, set like a data table --- */
+        .ephemeris {
+            border-top: 1px solid var(--border-soft);
+            border-bottom: 1px solid var(--border-soft);
+            background: var(--bg-raised);
+            padding: 14px 0;
+        }
+        .eph-inner {
+            display: flex; align-items: center; gap: 10px 22px;
+            flex-wrap: wrap; justify-content: center;
+        }
+        @media (min-width: 1000px) {
+            /* One clean line: label anchored left, figures spread evenly. */
+            .eph-inner { flex-wrap: nowrap; justify-content: flex-start; gap: 24px; }
+            .eph-inner .eph-label { flex: 0 0 auto; }
+            .eph-inner .eph-list {
+                flex: 1 1 auto; min-width: 0; flex-wrap: nowrap;
+                justify-content: space-between; gap: 0 16px;
+                /* A long row of figures scrolls inside its own strip rather
+                   than widening the page. */
+                overflow-x: auto; scrollbar-width: none;
+            }
+            .eph-inner .eph-list::-webkit-scrollbar { display: none; }
+            .eph-inner .eph-list li { white-space: nowrap; flex: 0 0 auto; }
+        }
+        .eph-label {
+            font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: .18em;
+            text-transform: uppercase; color: var(--gilt); white-space: nowrap;
+        }
+        .eph-list {
+            list-style: none; margin: 0; padding: 0;
+            display: flex; flex-wrap: wrap; gap: 6px 22px; justify-content: center;
+        }
+        .eph-list li {
+            display: inline-flex; align-items: baseline; gap: 7px;
+            font-size: 0.82rem; color: var(--text-muted);
+        }
+        .eph-glyph { color: var(--text-heading); font-size: 0.98rem; line-height: 1; }
+        .eph-name { color: var(--text-soft); }
+        .eph-pos {
+            font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+            color: var(--text); font-size: 0.78rem;
+        }
+        @media (max-width: 600px) {
+            /* Too many figures for a phone; keep the first four and the label. */
+            .eph-list li:nth-child(n+5) { display: none; }
+        }
+
+        /* --- feature landing pages (shared with the module pages) --- */
+        .hero--feature { padding-top: clamp(28px, 4vw, 44px); }
+        .hero--feature h1 {
+            font-size: clamp(2.05rem, 5.4vw, 3.2rem);
+        }
+
+        /* Top nav: the logo mark takes you home, a styled back link beside it. */
+        .page-nav {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 30px;
+        }
+        .logo-home {
+            display: inline-flex; flex-shrink: 0; line-height: 0;
+            border-radius: 50%; text-decoration: none;
+            transition: transform .15s ease, opacity .15s ease;
+        }
+        .logo-home:hover { transform: scale(1.05); opacity: .9; }
+        .logo-home:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .page-logo {
+            width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+            flex-shrink: 0; border: 1px solid var(--border);
+            box-shadow: 0 0 0 3px var(--surface-thistle);
+        }
+        .back-link {
+            color: var(--text-muted); text-decoration: none;
+            font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px;
+            min-height: 44px; transition: color .15s ease;
+        }
+        .back-link:hover { color: var(--accent-light); }
+
+        .hero-glyph {
+            width: 104px; height: 104px; border-radius: 50%;
+            margin: 0 auto 24px; display: flex; align-items: center; justify-content: center;
+            font-size: 2.6rem; line-height: 1; color: var(--gilt);
+            background: var(--bg-card); border: 1px solid var(--border);
+            box-shadow: var(--shadow-card), inset 0 0 0 1px var(--gilt-soft);
+        }
+</style>
