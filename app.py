@@ -2031,12 +2031,25 @@ def seo_settings() -> dict:
         values["seo_og_image"] = brand()["logo"]
     return values
 
+_SKY_CACHE_TTL = 600  # секунди — позициите са "в момента", но за лентата е достатъчно точно
+_SKY_CACHE = {"t": 0.0, "data": None}
+
+
 def sky_today() -> list:
     """Where the main bodies actually are right now, for the landing strip.
 
     The point of the strip is that these are live figures, not decoration —
     so a failure returns nothing and the strip is simply left out.
+
+    The ephemeris computation is cached for a few minutes: planetary degrees
+    drift far slower than the strip's rounding, so recomputing on every
+    request only adds latency to the landing page (TTFB) without making the
+    figures any more accurate.
     """
+    now_ts = _time.time()
+    cached = _SKY_CACHE
+    if cached["data"] is not None and now_ts - cached["t"] < _SKY_CACHE_TTL:
+        return cached["data"]
     try:
         now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
         subject = charts.Subject(
@@ -2058,7 +2071,10 @@ def sky_today() -> list:
                     "retrograde": getattr(obj, "movement", None)
                                   and str(obj.movement) == "Retrograde",
                 }
-        return [found[n] for n in wanted if n in found]
+        result = [found[n] for n in wanted if n in found]
+        cached["t"] = _time.time()
+        cached["data"] = result
+        return result
     except Exception:
         log.warning("sky_today failed; the landing strip will be omitted", exc_info=True)
         return []
