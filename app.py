@@ -555,7 +555,7 @@ BRAND_DEFAULTS = {
     "brand_tagline": os.environ.get("BRAND_TAGLINE", "Астрология с точността на астрономията").strip(),
     "brand_domain": BRAND_DOMAIN,
     "brand_logo": "/static/logo-header.png",
-    "brand_logo_full": "/static/logo-full.png",
+    "brand_logo_full": "/static/logo-full.webp",
 }
 
 # Юридически данни за Политиката за поверителност и Общите условия.
@@ -668,6 +668,26 @@ async def admin_host_guard(request: Request, call_next):
             return RedirectResponse("/admin")
 
     return await call_next(request)
+
+
+# --- Кеширане на статични ресурси (performance) ---
+# Bundled static файловете (CSS/JS/лога в static/) не се менят между deploy-и,
+# затова се кешират дълго. При промяна на файл се bump-ва версията в шаблоните
+# (?v=N), което сменя URL-а и браузърът тегли наново.
+_STATIC_CACHE = "public, max-age=31536000, immutable"
+_UPLOADS_CACHE = "public, max-age=86400"
+
+
+@app.middleware("http")
+async def cache_static(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path or "/"
+    if path.startswith("/static/"):
+        response.headers["Cache-Control"] = _STATIC_CACHE
+    elif path.startswith("/uploads/"):
+        response.headers["Cache-Control"] = _UPLOADS_CACHE
+    return response
+
 
 async def _background_jobs_loop():
     """Hourly lifecycle + digest emails. Failures are logged, never crash the app."""

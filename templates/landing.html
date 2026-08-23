@@ -43,6 +43,7 @@
 
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <link rel="preload" as="image" href="{{ brand().logo_full }}" fetchpriority="high">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -53,8 +54,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/landing.css">
-    <link rel="stylesheet" href="/static/consent.css">
+    <link rel="stylesheet" href="/static/landing.css?v=2">
+    <link rel="stylesheet" href="/static/consent.css?v=2">
 {% include "_analytics.html" %}
 </head>
 <body>
@@ -108,7 +109,7 @@
             </svg>
         </div>
         <div class="wrap">
-            <img class="hero-logo" src="{{ brand().logo_full }}" alt="{{ brand().name }}">
+            <img class="hero-logo" src="{{ brand().logo_full }}" width="512" height="512" fetchpriority="high" alt="{{ brand().name }}">
             <p><span class="kicker">Астрология на разбираем език</span></p>
             <h1>{{ brand().name }}</h1>
             <p class="lede">Небето в мига на раждането ти казва повече, отколкото предполагаш. Тук то е преведено на човешки.</p>
@@ -522,6 +523,6 @@
             window.location.replace('/dashboard');
         }
     </script>
-    <script src="/static/consent.js"></script>
+    <script src="/static/consent.js?v=2"></script>
 </body>
 </html>
