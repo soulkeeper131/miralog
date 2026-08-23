@@ -626,6 +626,8 @@ templates.env.globals["legal"] = legal
 templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or "").strip()
 # Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
 templates.env.globals["admin_host"] = ADMIN_HOST
+# Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
+templates.env.globals["main_domain"] = BRAND_DOMAIN
 
 app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")

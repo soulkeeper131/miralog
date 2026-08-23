@@ -592,7 +592,7 @@
             return Object.assign({ 'Content-Type': 'application/json' }, authHeaders());
         }
         if (!getToken()) window.location.replace('/login');
-        document.getElementById('backLink').href = '/dashboard';
+        document.getElementById('backLink').href = 'https://{{ main_domain }}/dashboard';
 
         /* ---------- theme ---------- */
         function updateThemeToggleIcon() {
@@ -665,7 +665,7 @@
             document.getElementById('panel').hidden = true;
             document.getElementById('gate').innerHTML =
                 '<div class="section"><div class="error">Нужни са администраторски права.</div>' +
-                '<div class="btn-row"><a class="btn" href="/dashboard">' +
+                '<div class="btn-row"><a class="btn" href="https://{{ main_domain }}/dashboard">' +
                 'Към таблото</a></div></div>';
         }
 
