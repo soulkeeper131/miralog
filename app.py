@@ -2937,6 +2937,19 @@ def fulfill_checkout_session(session: dict) -> None:
         audit("payment_succeeded", f"Stripe {amount} {currency} за модули {', '.join(keys)} ({session.get('id')})",
               user_id=user_id, actor="stripe")
         audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}", user_id=user_id, actor="stripe")
+        # Електронен документ (Н-18) — изпраща се на купувача по имейл.
+        email = _session_email(session)
+        if email:
+            per = amount / 100.0 / len(keys)
+            items = []
+            for key in keys:
+                o = feature_offer(key)
+                name = (o or {}).get("name") or key
+                net, vat = saft.split_vat(per)
+                items.append({"name": name, "net": net, "vat": vat,
+                              "total": per, "vat_rate": saft.VAT_RATE})
+            send_receipt_email(email, items=items, total2=amount / 100.0,
+                               unp=pay_id, stripe_id=session.get("id") or "")
         return
 
     feature_key = meta.get("feature_key")
@@ -2955,10 +2968,60 @@ def fulfill_checkout_session(session: dict) -> None:
         audit("payment_succeeded", f"Stripe {amount} {currency} за {feature_key} ({session.get('id')})",
               user_id=user_id, actor="stripe")
         audit("feature_unlocked", f"Модул отключен: {feature_key}", user_id=user_id, actor="stripe")
+        # Електронен документ (Н-18) — изпраща се на купувача по имейл.
+        email = _session_email(session)
+        if email:
+            net, vat = saft.split_vat(amount / 100.0)
+            name = (feature_offer(feature_key) or {}).get("name") or feature_key
+            send_receipt_email(email, items=[{"name": name, "net": net, "vat": vat,
+                                             "total": amount / 100.0, "vat_rate": saft.VAT_RATE}],
+                               total2=amount / 100.0, unp=pay_id,
+                               stripe_id=session.get("id") or "")
         # A chart bought through onboarding belongs to an account that has no
         # usable password yet; this is the visitor's way in.
         if feature_key == "chart":
             send_welcome_set_password(user_id)
+
+def _session_email(session: dict) -> str:
+    """Имейлът на купувача от Stripe Checkout session."""
+    cd = session.get("customer_details") or {}
+    if isinstance(cd, dict):
+        return (cd.get("email") or session.get("customer_email") or "").strip()
+    return (session.get("customer_email") or "").strip()
+
+def send_receipt_email(email: str, *, items, total2, unp, stripe_id) -> bool:
+    """Изпраща електронен документ за продажба (Н-18, чл. 52а) по имейл."""
+    if not email or not smtp_setting("smtp_host"):
+        return False
+    lg = legal()
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M:%S")
+    art_lines = []
+    net_total = vat_total = 0.0
+    for it in items:
+        art_lines.append(f"- {it['name']} — {it['total']:.2f} EUR (ДДС {it['vat_rate']}%)")
+        net_total += it["net"]
+        vat_total += it["vat"]
+    body = (
+        f"Електронен документ за продажба\n"
+        f"{'-' * 40}\n"
+        f"{brand_name()}\n{lg.get('company_name')}\nЕИК: {lg.get('company_id')}\n\n"
+        f"Артикули:\n" + "\n".join(art_lines) + "\n\n"
+        f"Сума без ДДС: {net_total:.2f} EUR\n"
+        f"ДДС: {vat_total:.2f} EUR\n"
+        f"ОБЩО: {total2:.2f} EUR\n\n"
+        f"Дата и час: {now}\n"
+        f"УНП (номер на продажбата): {unp}\n"
+        f"Идентификатор на плащането: {stripe_id}\n"
+        f"Начин на плащане: карта (Stripe)\n\n"
+        f"Документът е издаден по реда на Наредба № Н-18 за отчитане "
+        f"на дистанционни продажби с плащане с карта.\n"
+    )
+    try:
+        send_email(email, f"Касов документ от {brand_name()} — №{unp}", body)
+        return True
+    except Exception as e:
+        log.warning("Неуспешен receipt имейл до %s: %s", email, e)
+        return False
 
 def hash_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
