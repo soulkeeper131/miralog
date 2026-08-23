@@ -275,6 +275,7 @@
         }
         .admin-link:hover { background: var(--accent-hover); }
     </style>
+<script>window.GA_ID = "{{ ga_id() }}";</script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -491,7 +492,7 @@
                 }
                 revealSettings();
                 const paid = new URLSearchParams(location.search).get('paid');
-                if (paid === '1') showBanner('Плащането е прието. Ако достъпът още не е обновен, изчакай няколко секунди и презареди.', 'success');
+                if (paid === '1') { showBanner('Плащането е прието. Ако достъпът още не е обновен, изчакай няколко секунди и презареди.', 'success'); window.track('purchase'); }
                 if (paid === '0') showBanner('Плащането беше отказано.', 'error');
                 if (new URLSearchParams(location.search).get('subscribe') === '1' && acc.stripe_enabled && (acc.plan || {}).key !== 'full') {
                     const btn = document.querySelector('#billingActions .btn-primary');

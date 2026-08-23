@@ -272,6 +272,7 @@
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
     <link rel="stylesheet" href="/static/consent.css">
+<script>window.GA_ID = "{{ ga_id() }}";</script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -380,6 +381,7 @@
                 localStorage.setItem('miralog_token', data.token);
                 localStorage.setItem('miralog_email', data.user.email);
                 document.cookie = 'miralog_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=2592000';
+                window.track('sign_up');
 
                 successEl.textContent = 'Регистрацията е успешна! Пренасочване...';
                 successEl.classList.add('visible');

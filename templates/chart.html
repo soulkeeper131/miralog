@@ -1167,6 +1167,7 @@
         }
     </style>
     <link rel="stylesheet" href="/static/consent.css">
+<script>window.GA_ID = "{{ ga_id() }}";</script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -2319,6 +2320,7 @@
 
                 el.innerHTML = `<div class="num-grid">${cards}</div>` +
                     (details ? `<div class="num-details">${details}</div>` : '');
+                window.track('generate_numerology');
             } catch (e) {
                 // Clear the AI panel before returning, or its loader keeps
                 // spinning underneath the locked teaser.
@@ -2432,6 +2434,7 @@
                 });
                 html += '</div>';
                 el.innerHTML = html;
+                window.track('generate_synastry', { partner_id: otherId });
                 loadSynastryAI(otherId);
             } catch (e) {
                 if (e instanceof LockedFeature) {

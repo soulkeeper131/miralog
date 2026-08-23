@@ -446,6 +446,7 @@
             .btn-row .btn { flex: 1 1 auto; }
         }
     </style>
+<script>window.GA_ID = "{{ ga_id() }}";</script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -1493,6 +1494,10 @@
                             '<input type="text" id="seoVerification" autocomplete="off" value="' +
                             escapeHtml(seo.seo_verification || '') + '">' +
                             '<div class="hint">Само стойността от мета тага за потвърждение.</div></div>' +
+                        '<div class="form-group"><label for="seoAnalyticsId">Google Analytics ID (GA4)</label>' +
+                            '<input type="text" id="seoAnalyticsId" placeholder="G-XXXXXXXXXX" value="' +
+                            escapeHtml(seo.analytics_id || '') + '">' +
+                            '<div class="hint">Измервателен ID (G-…). Празно = аналитиката е изключена.</div></div>' +
                     '</div>' +
                     '<div class="btn-row"><button class="btn" id="saveSeoBtn">Запази SEO</button>' +
                         '<a class="btn btn-ghost" href="/" target="_blank" rel="noopener">Виж страницата</a></div></div>';
@@ -1614,6 +1619,7 @@
                         seo_og_image: document.getElementById('seoOgImage').value.trim(),
                         seo_robots: document.getElementById('seoRobots').value,
                         seo_verification: document.getElementById('seoVerification').value.trim(),
+                        analytics_id: document.getElementById('seoAnalyticsId').value.trim(),
                     },
                 }, 'SEO настройките са запазени.');
             });

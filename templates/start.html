@@ -448,6 +448,7 @@
         .banner-error a { color: var(--danger-text); font-weight: 600; }
     </style>
     <link rel="stylesheet" href="/static/consent.css">
+<script>window.GA_ID = "{{ ga_id() }}";</script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -752,6 +753,7 @@
                     return;
                 }
                 renderGuestChart(data);
+                window.track('generate_natal_chart');
             } catch (err) {
                 showBanner('Връзката се разпадна. Опитай пак.');
             } finally {
@@ -943,7 +945,10 @@
                 }
 
                 // Picked modules go straight to Stripe; otherwise to the chart.
-                if (data.checkout_url) { window.location.href = data.checkout_url; return; }
+                if (data.checkout_url) {
+                    window.track('begin_checkout');
+                    window.location.href = data.checkout_url; return;
+                }
 
                 if (data.mock_paid && data.mock_paid.length) {
                     // Test build: the modules were granted without a processor.
@@ -956,7 +961,10 @@
                     await uiAlert('Профилът е готов. Ще се свържем с теб за '
                         + 'плащането на избраните разчитания.', { title: 'Готово' });
                 }
-                if (data.chart_url) { window.location.href = data.chart_url; return; }
+                if (data.chart_url) {
+                    window.track('generate_natal_chart');
+                    window.location.href = data.chart_url; return;
+                }
                 window.location.href = '/';
             } catch (err) {
                 uiAlert('Връзката се разпадна. Опитай пак.',

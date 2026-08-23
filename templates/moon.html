@@ -290,6 +290,8 @@
             .month-label { font-size: 1.25rem; }
         }
     </style>
+<script>window.GA_ID = "{{ ga_id() }}";</script>
+<link rel="stylesheet" href="/static/consent.css">
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -462,5 +464,6 @@
 
         loadCalendar();
     </script>
+<script src="/static/consent.js"></script>
 </body>
 </html>

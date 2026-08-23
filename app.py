@@ -571,6 +571,10 @@ templates.env.cache_size = 0
 # `brand` is a global rather than per-route context: every template needs it,
 # and it is a callable so an admin's rename shows up without a restart.
 templates.env.globals["brand"] = brand
+# GA4 measurement id, resolved lazily so an admin can change it without a
+# restart. Empty string means "no analytics" — the consent layer keeps gtag
+# dormant until the visitor opts in anyway.
+templates.env.globals["ga_id"] = lambda: (get_setting("analytics_id") or "").strip()
 
 app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -1807,6 +1811,7 @@ SEO_DEFAULTS = {
     "seo_og_image": "",
     "seo_robots": "index,follow",
     "seo_verification": "",
+    "analytics_id": "G-CY4NT2QLFX",
 }
 
 def seo_settings() -> dict:
