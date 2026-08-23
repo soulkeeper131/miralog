@@ -88,7 +88,9 @@
                 <article class="card">
                     <div class="card-scene {{ item.scene }}" aria-hidden="true">{% for n in range(item.scene_is) %}<i></i>{% endfor %}</div>
                     <h3>{{ item.t }}</h3>
-                    <p>{{ item.d }}</p>
+                    <ol class="card-list">
+                        {% for b in item.bullets %}<li>{{ b }}</li>{% endfor %}
+                    </ol>
                 </article>
                 {% endfor %}
             </div>
@@ -167,6 +169,10 @@
                 </div>
                 {% endfor %}
             </div>
+            <div class="mid-cta">
+                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                <span class="mid-cta-note">{{ page.cta_note }}</span>
+            </div>
         </div>
     </section>
 
@@ -184,6 +190,10 @@
                     <p>{{ f.a }}</p>
                 </div>
                 {% endfor %}
+            </div>
+            <div class="mid-cta">
+                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                <span class="mid-cta-note">{{ page.cta_note }}</span>
             </div>
         </div>
     </section>
