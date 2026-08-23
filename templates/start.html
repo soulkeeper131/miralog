@@ -585,12 +585,18 @@
                     </p>
                 </div>
 
+                <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.82rem;color:var(--text-muted);cursor:pointer;margin:14px 0;">
+                    <input type="checkbox" id="termsAgree" style="margin-top:3px;min-width:16px;min-height:16px;">
+                    <span>Съгласен съм с <a href="/terms" target="_blank">Общите условия</a> и <a href="/privacy" target="_blank">Политиката за поверителност</a>.</span>
+                </label>
+
                 <button type="button" class="btn" id="saveBtn">Запази картата</button>
             </div>
         </div>
 
         <p class="foot-note">
-            Вече имаш акаунт? <a href="/login">Влез оттук</a>
+            Вече имаш акаунт? <a href="/login">Влез оттук</a><br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
         </p>
     </div>
 
@@ -899,6 +905,11 @@
             if (password && password.length < 6) {
                 passEl.focus();
                 uiAlert('Паролата трябва да е поне 6 символа, или остави полето празно.',
+                        { title: 'Проверка' });
+                return;
+            }
+            if (!document.getElementById('termsAgree').checked) {
+                uiAlert('За да запазиш картата, трябва да приемеш Общите условия и Политиката за поверителност.',
                         { title: 'Проверка' });
                 return;
             }

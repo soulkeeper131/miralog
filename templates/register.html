@@ -301,12 +301,17 @@
                     <input type="password" id="password_confirm" name="password_confirm" required
                            placeholder="••••••••" autocomplete="new-password" minlength="6">
                 </div>
+                <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:16px;font-size:0.85rem;cursor:pointer;color:var(--text-muted);">
+                    <input type="checkbox" id="termsAgree" style="margin-top:3px;min-width:16px;min-height:16px;">
+                    <span>Съгласен съм с <a href="/terms" target="_blank">Общите условия</a> и <a href="/privacy" target="_blank">Политиката за поверителност</a>.</span>
+                </label>
                 <button type="submit" class="btn" id="submitBtn">Регистрация</button>
             </form>
         </div>
 
         <div class="footer">
-            Вече имате профил? <a href="/login">Вход</a>
+            Вече имате профил? <a href="/login">Вход</a><br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
         </div>
     </div>
 
@@ -357,6 +362,12 @@
 
             if (password.length < 6) {
                 errorEl.textContent = 'Паролата трябва да е поне 6 символа';
+                errorEl.classList.add('visible');
+                return;
+            }
+
+            if (!document.getElementById('termsAgree').checked) {
+                errorEl.textContent = 'За да продължиш, трябва да приемеш Общите условия и Политиката за поверителност.';
                 errorEl.classList.add('visible');
                 return;
             }

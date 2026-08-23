@@ -547,6 +547,25 @@ BRAND_DEFAULTS = {
     "brand_logo_full": "/static/logo-full.png",
 }
 
+# Юридически данни за Политиката за поверителност и Общите условия.
+# ⚠️ ВАЖНО: това са ПЛЕЙСХОЛДЪРИ (маркирани с [[...]]). Преди публично пускане
+# попълни реалните данни ТУК (едно място) — сменят се във всички документи.
+# Ключовете се четат и от settings (legal_*), така че могат да се зададат
+# и от админ панела без промяна в кода.
+LEGAL_DEFAULTS = {
+    "company_name": "[[НАИМЕНОВАНИЕ И ПРАВНА ФОРМА НА ТЪРГОВЕЦА]]",
+    "company_id": "[[ЕИК]]",
+    "address": "[[АДРЕС НА СЕДАЛИЩЕ]]",
+    "privacy_email": "[[ИМЕЙЛ ЗА ЗАЩИТА НА ЛИЧНИТЕ ДАННИ]]",
+    # Длъжностно лице по защита на данните (DPO) — празно = „няма назначено“.
+    "dpo": "",
+}
+
+def legal() -> dict:
+    """Юридическите данни за документите, с fallback към плейсхолдърите."""
+    return {k: (get_setting(f"legal_{k}") or default)
+            for k, default in LEGAL_DEFAULTS.items()}
+
 def brand() -> dict:
     """The current brand, with saved values overriding the defaults.
 
@@ -583,6 +602,9 @@ templates.env.cache_size = 0
 # `brand` is a global rather than per-route context: every template needs it,
 # and it is a callable so an admin's rename shows up without a restart.
 templates.env.globals["brand"] = brand
+# Юридически данни за /privacy и /terms — глобал, за да се попълват от
+# едно място (LEGAL_DEFAULTS) и да се виждат във всички документи.
+templates.env.globals["legal"] = legal
 # GA4 measurement id, resolved lazily so an admin can change it without a
 # restart. Empty string means "no analytics" — the consent layer keeps gtag
 # dormant until the visitor opts in anyway.
@@ -3212,6 +3234,76 @@ def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(ge
         conn.commit()
     # The old token stays valid; it carries no password claim.
     return {"ok": True}
+
+@app.get("/api/account/export")
+def api_export_account(user: Tuple[int, str] = Depends(get_current_user)):
+    """GDPR чл. 20 — преносимост: пълно копие на данните в машинночетим формат."""
+    from datetime import datetime, timezone
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        persons = [dict(r) for r in conn.execute(
+            "SELECT id, name, year, month, day, hour, minute, lat, lon, timezone, created_at"
+            " FROM persons WHERE user_id = ? ORDER BY id", (user_id,))]
+        payments = [dict(r) for r in conn.execute(
+            "SELECT id, plan_key, amount_cents, currency, method, note, paid_at"
+            " FROM payments WHERE user_id = ? ORDER BY id", (user_id,))]
+        purchases = [dict(r) for r in conn.execute(
+            "SELECT feature_key, price_cents, currency, purchased_at"
+            " FROM feature_purchases WHERE user_id = ?", (user_id,))]
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "account": {
+            "email": row.get("email"),
+            "display_name": row.get("display_name") or "",
+            "created_at": row.get("created_at"),
+            "plan_key": row.get("plan_key"),
+            "digest_opt_in": bool(row.get("digest_opt_in")),
+        },
+        "persons": persons,
+        "payments": payments,
+        "feature_purchases": purchases,
+    }
+
+@app.delete("/api/account")
+def api_delete_account(user: Tuple[int, str] = Depends(get_current_user)):
+    """GDPR чл. 17 — право на изтриване. Заличава акаунта и всички свързани данни."""
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if row.get("role") == "admin":
+        raise HTTPException(403, "Администраторският акаунт не може да се изтрие от тук.")
+
+    # Най-напред спираме евентуален активен абонамент в Stripe, за да не
+    # продължи таксуването след изтриването (best-effort, никога не блокира).
+    sub_id = row.get("stripe_subscription_id")
+    if sub_id and billing.stripe_enabled():
+        try:
+            billing.cancel_subscription_at_period_end(sub_id)
+        except Exception as e:
+            log.warning("Неуспешно анулиране на Stripe абонамент %s: %s", sub_id, e)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        person_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM persons WHERE user_id = ?", (user_id,))]
+        if person_ids:
+            qs = ",".join("?" * len(person_ids))
+            conn.execute(f"DELETE FROM ai_cache WHERE person_id IN ({qs})", person_ids)
+            conn.execute(f"DELETE FROM share_links WHERE person_id IN ({qs})", person_ids)
+        conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM feature_purchases WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM audit_log WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+
+    audit("account_deleted", "Изтрит акаунт по искане на потребителя (GDPR чл. 17).")
+    return {"ok": True, "deleted": user_id}
 
 # --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
 _geocode_cache: dict = {}

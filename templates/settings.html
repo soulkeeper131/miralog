@@ -354,6 +354,19 @@
                 </label>
             </div>
 
+            <div class="section">
+                <h2>Защита на данните</h2>
+                <div class="desc">
+                    По GDPR можеш да изтеглиш всичките си данни в машинночетим формат (чл. 20)
+                    или да изтриеш акаунта и данните си (чл. 17 — „право да бъдеш забравен").
+                    Изтриването е необратимо. Виж и <a href="/privacy" style="color:var(--accent-light)">политиката за поверителност</a>.
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;">
+                    <button type="button" class="btn btn-primary" id="exportBtn">Изтегли данните ми</button>
+                    <button type="button" class="btn" id="deleteBtn" style="background:var(--danger);color:#fff;">Изтрий акаунта ми</button>
+                </div>
+            </div>
+
             <div class="section" id="adminSection" hidden>
                 <h2>Администрация</h2>
                 <div class="desc">
@@ -577,6 +590,43 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Смени паролата';
+            }
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            try {
+                const resp = await fetch('/api/account/export', { headers: authHeaders() });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка при изтегляне');
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'astrokarta-data-export.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                showBanner('Данните са изтеглени.', 'success');
+            } catch (err) {
+                showBanner(err.message, 'error');
+            }
+        });
+
+        document.getElementById('deleteBtn').addEventListener('click', async () => {
+            const ok = confirm('Сигурен ли си? Това ще изтрие акаунта и всичките ти данни завинаги. Действието е необратимо.');
+            if (!ok) return;
+            try {
+                const resp = await fetch('/api/account', { method: 'DELETE', headers: authHeaders() });
+                if (resp.status === 401) { window.location.replace('/login'); return; }
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data.detail || 'Грешка при изтриване');
+                localStorage.removeItem('miralog_token');
+                document.cookie = 'miralog_token=; path=/; max-age=0';
+                window.location.replace('/');
+            } catch (err) {
+                showBanner(err.message, 'error');
             }
         });
 
