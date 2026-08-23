@@ -25,6 +25,10 @@ from immanuel.const import chart, names
 from pydantic import BaseModel
 from jose import jwt, JWTError
 import bcrypt
+try:
+    import pyotp
+except ImportError:  # dev без pyotp — 2FA просто не е налична
+    pyotp = None
 from translations import (
     tr_sign, tr_object, tr_aspect, tr_moon_phase, tr_movement, tr_shape, tr_house_system, tr_house,
     meaning_sign, meaning_object, meaning_house, meaning_aspect, meaning_movement, meaning_shape, meaning_moon_phase,
@@ -296,6 +300,7 @@ def init_db():
             ("stripe_customer_id", "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"),
             ("stripe_subscription_id", "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT"),
             ("digest_opt_in", "ALTER TABLE users ADD COLUMN digest_opt_in INTEGER NOT NULL DEFAULT 0"),
+            ("totp_secret", "ALTER TABLE users ADD COLUMN totp_secret TEXT"),
             ("lifecycle_expiring_for", "ALTER TABLE users ADD COLUMN lifecycle_expiring_for TEXT"),
             ("lifecycle_expired_for", "ALTER TABLE users ADD COLUMN lifecycle_expired_for TEXT"),
             ("last_digest_on", "ALTER TABLE users ADD COLUMN last_digest_on TEXT"),
@@ -687,6 +692,7 @@ class PeriodRequest(BaseModel):
 class AuthRequest(BaseModel):
     email: str
     password: str
+    totp_code: Optional[str] = None
 
 # --- Auth Helpers ---
 def hash_password(password: str) -> str:
@@ -703,6 +709,45 @@ def create_token(user_id: int, email: str) -> str:
         "exp": expire
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+# --- Rate limiting за login (brute-force защита, in-memory) ---
+import time as _time
+_LOGIN_FAILURES: dict = {}
+_LOGIN_WINDOW = 900      # прозорец 15 мин
+_LOGIN_MAX_FAILS = 5     # max провалени опита
+_LOGIN_LOCKOUT = 900     # блокиране 15 мин
+
+def _login_blocked(key: str) -> bool:
+    now = _time.monotonic()
+    fails = [t for t in _LOGIN_FAILURES.get(key, []) if now - t < _LOGIN_WINDOW]
+    return len(fails) >= _LOGIN_MAX_FAILS
+
+def _login_record_failure(key: str) -> None:
+    now = _time.monotonic()
+    _LOGIN_FAILURES[key] = [t for t in _LOGIN_FAILURES.get(key, []) if now - t < _LOGIN_WINDOW]
+    _LOGIN_FAILURES[key].append(now)
+
+def _login_clear(key: str) -> None:
+    _LOGIN_FAILURES.pop(key, None)
+
+# --- TOTP (2FA) ---
+def generate_totp_secret() -> str:
+    if pyotp is None:
+        raise HTTPException(500, "Двуфакторната автентикация не е налична (липсва pyotp).")
+    return pyotp.random_base32()
+
+def verify_totp(secret: str, code: str) -> bool:
+    if not pyotp or not secret or not code:
+        return False
+    try:
+        return pyotp.TOTP(secret).verify(str(code).strip(), valid_window=1)
+    except Exception:
+        return False
+
+def totp_uri(secret: str, email: str, issuer: str) -> str:
+    if not pyotp:
+        return ""
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=issuer)
 
 def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> Tuple[int, str]:
     """Dependency that returns (user_id, email) from valid JWT token."""
@@ -1382,11 +1427,24 @@ def natal_to_text(person: dict, chart_data: dict) -> str:
 
 # --- Auth API Routes ---
 @app.post("/api/auth/login")
-def api_login(data: AuthRequest):
-    """Login with email/password. Returns JWT token + user info."""
+def api_login(data: AuthRequest, request: Request):
+    """Login with email/password (+TOTP при активирана 2FA). Rate-limited."""
+    email_key = (data.email or "").strip().lower()
+    ip = request.client.host if request.client else ""
+    key = f"{email_key}|{ip}"
+    if _login_blocked(key):
+        raise HTTPException(429, "Твърде много неуспешни опити. Опитай отново след 15 минути.")
+
     user = get_user_by_email(data.email)
     if not user or not verify_password(data.password, user["password_hash"]):
+        _login_record_failure(key)
         raise HTTPException(401, "Грешен имейл или парола.")
+
+    if user.get("totp_secret"):
+        if not data.totp_code or not verify_totp(user["totp_secret"], data.totp_code):
+            raise HTTPException(401, "Невалиден код за двуфакторна автентикация.")
+
+    _login_clear(key)
     token = create_token(user["id"], user["email"])
     audit("login", f"Вход: {user['email']}", user_id=user["id"], actor=user["email"])
     return {
@@ -2492,6 +2550,43 @@ def api_admin_saft(year: int, month: int, admin: dict = Depends(require_admin)):
         media_type="application/xml; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+@app.get("/api/admin/2fa/status")
+def api_admin_2fa_status(admin: dict = Depends(require_admin)):
+    row = get_user_by_id(admin["id"])
+    return {"enabled": bool(row and row.get("totp_secret"))}
+
+@app.post("/api/admin/2fa/setup")
+def api_admin_2fa_setup(admin: dict = Depends(require_admin)):
+    """Генерира TOTP secret + otpauth URI (за сканиране). Активира се след confirm."""
+    secret = generate_totp_secret()
+    set_setting("totp_pending_secret", secret)
+    uri = totp_uri(secret, admin["email"], brand_name())
+    audit("2fa_setup", "Генериран secret за 2FA", user_id=admin["id"], actor=admin["email"])
+    return {"secret": secret, "uri": uri}
+
+@app.post("/api/admin/2fa/confirm")
+def api_admin_2fa_confirm(data: dict, admin: dict = Depends(require_admin)):
+    """Потвърждава с код от аппа и активира 2FA за админа."""
+    pending = get_setting("totp_pending_secret")
+    code = str(data.get("code") or "").strip()
+    if not pending or not verify_totp(pending, code):
+        raise HTTPException(400, "Невалиден код. Опитай отново.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET totp_secret = ? WHERE id = ?", (pending, admin["id"]))
+        conn.commit()
+    set_setting("totp_pending_secret", "")
+    audit("2fa_enabled", "2FA активирана", user_id=admin["id"], actor=admin["email"])
+    return {"ok": True}
+
+@app.post("/api/admin/2fa/disable")
+def api_admin_2fa_disable(admin: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET totp_secret = NULL WHERE id = ?", (admin["id"],))
+        conn.commit()
+    set_setting("totp_pending_secret", "")
+    audit("2fa_disabled", "2FA деактивирана", user_id=admin["id"], actor=admin["email"])
+    return {"ok": True}
 
 @app.get("/api/features")
 def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
