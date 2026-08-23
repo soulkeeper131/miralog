@@ -1,9 +1,9 @@
-/* Consent — реален избор за аналитика (GA4).
+/* Consent — реален избор за аналитика (GA4) с Google Consent Mode.
 
-   Преди беше уведомление „без проследяване“. Сега имаме Google Analytics,
-   затова този файл дава истински избор: приемам / отказвам. Проследяването
-   (gtag.js) се зарежда САМО след изрично „Приемам“ и остава изключено при
-   отказ. Изборът се пази в localStorage.
+   gtag.js се зарежда статично в <head> (чрез _analytics.html) с
+   'consent default denied'. Този файл дава избора и при „Приемам“
+   изпраща 'consent update granted' — дотогава Google не съхранява данни.
+   Изборът се пази в localStorage.
 */
 
 (function () {
@@ -22,33 +22,24 @@
         return v === 'granted' || v === 'denied';
     }
 
-    function loadGtag() {
-        if (typeof window.gtag === 'function') return; // вече зареден
-        var id = window.GA_ID;
-        if (!id) return; // няма настроена аналитика
-        window.dataLayer = window.dataLayer || [];
-        window.gtag = function () { window.dataLayer.push(arguments); };
-        window.gtag('js', new Date());
-        window.gtag('config', id);
-        window.gtag('event', 'page_view');
-        var s = document.createElement('script');
-        s.async = true;
-        s.src = 'https://www.googletagmanager.com/gtag/js?id=' + id;
-        document.head.appendChild(s);
+    function grant() {
+        if (typeof window.gtag === 'function') {
+            window.gtag('consent', 'update', {
+                'analytics_storage': 'granted',
+                'ad_storage': 'granted'
+            });
+        }
     }
 
     // Хелпър за custom събития (регистрация, вход, модул, покупка, CTA).
-    // Страниците викат window.track('sign_up') и т.н.; безопасен е преди
-    // съгласие (gtag още не е функция) — събитието просто се пропуска.
+    // Изпраща само при дадено съгласие.
     window.track = function (name, params) {
-        if (typeof window.gtag === 'function') {
+        if (typeof window.gtag === 'function' && current() === 'granted') {
             window.gtag('event', name, params || {});
         }
     };
 
-    // Делегирано проследяване на кликове по CTA бутони/линкове. Хваща
-    // елементи с data-track атрибут или бутон-линкове; безопасно е преди
-    // съгласие, защото window.track е no-op докато gtag не е зареден.
+    // Делегирано проследяване на кликове по CTA бутони/линкове.
     document.addEventListener('click', function (e) {
         var el = e.target.closest('a.btn, button.btn, a[data-track], button[data-track], .entry-btn');
         if (!el) return;
@@ -85,7 +76,7 @@
 
         function choose(value) {
             remember(value);
-            if (value === 'granted') loadGtag();
+            if (value === 'granted') grant();
             el.classList.remove('consent-in');
             document.body.classList.remove('consent-open');
             setTimeout(function () { el.remove(); }, 220);
@@ -94,14 +85,8 @@
         el.querySelector('.consent-no').addEventListener('click', function () { choose('denied'); });
     }
 
-    // Вече дадено съгласие от предишна визита → зареди gtag веднага.
-    if (current() === 'granted') {
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadGtag);
-        } else {
-            loadGtag();
-        }
-    }
+    // Вече дадено съгласие от предишна визита → активирай аналитиката сега.
+    if (current() === 'granted') grant();
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', show);

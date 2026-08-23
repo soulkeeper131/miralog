@@ -448,7 +448,7 @@
         .banner-error a { color: var(--danger-text); font-weight: 600; }
     </style>
     <link rel="stylesheet" href="/static/consent.css">
-<script>window.GA_ID = "{{ ga_id() }}";</script>
+{% include "_analytics.html" %}
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>

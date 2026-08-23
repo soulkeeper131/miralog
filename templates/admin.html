@@ -446,7 +446,7 @@
             .btn-row .btn { flex: 1 1 auto; }
         }
     </style>
-<script>window.GA_ID = "{{ ga_id() }}";</script>
+{% include "_analytics.html" %}
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>

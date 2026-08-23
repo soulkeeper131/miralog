@@ -574,7 +574,7 @@ templates.env.globals["brand"] = brand
 # GA4 measurement id, resolved lazily so an admin can change it without a
 # restart. Empty string means "no analytics" — the consent layer keeps gtag
 # dormant until the visitor opts in anyway.
-templates.env.globals["ga_id"] = lambda: (get_setting("analytics_id") or "").strip()
+templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or "").strip()
 
 app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
