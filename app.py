@@ -2764,7 +2764,6 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
 def api_admin_settings(admin: dict = Depends(require_admin)):
     """App-wide settings: AI key status, SMTP and email templates."""
     ai_key = get_setting("ai_api_key")
-    smtp_pass = get_setting("smtp_password")
     provider = get_setting("ai_provider") or "deepseek"
     return {
         "ai": {
@@ -2778,12 +2777,15 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             "key_masked": ("•" * 8 + ai_key[-4:]) if ai_key and len(ai_key) > 4 else None,
         },
         "smtp": {
+            # smtp_setting() чете първо env (Coolify), после DB — така панелът
+            # показва СЪЩОТО, което реално ползва send_email(), а не стар запис.
             "host": smtp_setting("smtp_host") or "",
-            "port": get_setting("smtp_port") or "587",
-            "user": get_setting("smtp_user") or "",
-            "from": get_setting("smtp_from") or "",
-            "use_tls": (get_setting("smtp_use_tls") or "1") == "1",
-            "password_set": bool(smtp_pass),
+            "port": smtp_setting("smtp_port") or "587",
+            "user": smtp_setting("smtp_user") or "",
+            "from": smtp_setting("smtp_from") or "",
+            "use_tls": (smtp_setting("smtp_use_tls") or "1") == "1",
+            "password_set": bool(smtp_setting("smtp_password")),
+            "source": "env" if any(os.environ.get(n) for n in _SMTP_ENV.values()) else "db",
         },
         "templates": {
             key: get_setting(f"tpl_{key}") or default
