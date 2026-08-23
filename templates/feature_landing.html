@@ -56,7 +56,12 @@
 
     <header class="hero hero--feature">
         <div class="wrap">
-            <a class="crumb" href="/">← {{ brand().name }}</a>
+            <div class="page-nav">
+                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
+                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                </a>
+                <a class="back-link" href="/">← Начало</a>
+            </div>
             <div class="hero-glyph" aria-hidden="true">{{ page.glyph }}</div>
             <p><span class="kicker">{{ page.kicker }}</span></p>
             <h1>{{ page.title }}</h1>
@@ -80,8 +85,8 @@
             </div>
             <div class="learn">
                 {% for item in page.learn %}
-                <article class="learn-card">
-                    <span class="card-glyph" aria-hidden="true">{{ item.g }}</span>
+                <article class="card">
+                    <div class="card-scene {{ item.scene }}" aria-hidden="true">{% for n in range(item.scene_is) %}<i></i>{% endfor %}</div>
                     <h3>{{ item.t }}</h3>
                     <p>{{ item.d }}</p>
                 </article>

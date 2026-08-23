@@ -611,3 +611,25 @@ FEATURE_PAGES = [
 
 FEATURE_PAGES_BY_SLUG = {p["slug"]: p for p in FEATURE_PAGES}
 FEATURE_PAGES_BY_KEY = {p["key"]: p for p in FEATURE_PAGES}
+
+
+# The "Какво ще узнаеш" cards reuse the home page's animated card scenes, so
+# each learn item needs a scene class + the number of <i> the scene expects.
+# The glyph maps to a scene that matches its meaning (wheel → chart, planets →
+# starfield, aspects → overlapping charts, moon → moon, etc.).
+_GLYPH_SCENE = {
+    "⊕": "s-chart",
+    "☉": "s-self", "☀": "s-day", "☽": "s-day", "◐": "s-day",
+    "☿": "s-karma", "♀": "s-match", "♂": "s-period",
+    "♃": "s-period", "♄": "s-period", "♅": "s-karma",
+    "△": "s-match", "⚹": "s-match", "☌": "s-match", "□": "s-match", "☍": "s-match",
+    "✧": "s-karma", "⬇": "s-period", "✓": "s-period", "✕": "s-period",
+    "♥": "s-match", "☊": "s-karma", "7": "s-self",
+}
+_SCENE_IS = {"s-self": 3, "s-day": 2, "s-chart": 2, "s-period": 4, "s-match": 2, "s-karma": 6}
+
+for _p in FEATURE_PAGES:
+    for _item in _p.get("learn", []):
+        _scene = _GLYPH_SCENE.get(_item.get("g", ""), "s-self")
+        _item["scene"] = _scene
+        _item["scene_is"] = _SCENE_IS[_scene]
