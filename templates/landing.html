@@ -43,7 +43,7 @@
 
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
-    <link rel="preload" as="image" href="{{ brand().logo_full }}" fetchpriority="high">
+    <link rel="preload" as="image" href="/static/logo-full-256.webp" imagesrcset="/static/logo-full-256.webp 256w, /static/logo-full.webp 512w" imagesizes="(max-width: 600px) 256px, 512px" fetchpriority="high">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -114,7 +114,7 @@
             </svg>
         </div>
         <div class="wrap">
-            <img class="hero-logo" src="{{ brand().logo_full }}" width="512" height="512" fetchpriority="high" alt="{{ brand().name }}">
+            <img class="hero-logo" src="{{ brand().logo_full }}" srcset="/static/logo-full-256.webp 256w, {{ brand().logo_full }} 512w" sizes="(max-width: 600px) 256px, 512px" width="512" height="512" fetchpriority="high" alt="{{ brand().name }}">
             <p><span class="kicker">Астрология на разбираем език</span></p>
             <h1>{{ brand().name }}</h1>
             <p class="lede">Небето в мига на раждането ти казва повече, отколкото предполагаш. Тук то е преведено на човешки.</p>

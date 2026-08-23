@@ -1,6 +1,5 @@
 {% set gid = ga_id() %}
 {% if gid %}
-<script async src="https://www.googletagmanager.com/gtag/js?id={{ gid }}"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
@@ -13,5 +12,14 @@
   gtag('js', new Date());
   gtag('config', '{{ gid }}');
   window.GA_ID = '{{ gid }}';
+  // gtag.js се зарежда след `load`, а не синхронно в <head> — така Google
+  // Analytics не блокира main thread (намаля TBT). dataLayer + gtag() са
+  // дефинирани тук, затова consent.js и събитията работят още преди load.
+  window.addEventListener('load', function () {
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id={{ gid }}';
+    document.head.appendChild(s);
+  });
 </script>
 {% endif %}
