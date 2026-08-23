@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    {% if seo_keywords %}<meta name="keywords" content="{{ seo_keywords }}">{% endif %}
+    <meta name="robots" content="{{ seo_robots }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    {% if seo_verification %}<meta name="google-site-verification" content="{{ seo_verification }}">{% endif %}
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ brand().name }}">
+    <meta property="og:locale" content="bg_BG">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ seo_title }}">
+    <meta name="twitter:description" content="{{ seo_description }}">
+    {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Service",
+        "name": "{{ page.name }}",
+        "serviceType": "{{ page.name }}",
+        "provider": { "@type": "Organization", "name": "{{ brand().name }}", "url": "{{ seo_url }}" },
+        "url": "{{ seo_url }}",
+        "inLanguage": "bg",
+        "description": "{{ seo_description }}"
+    }
+    </script>
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/landing.css">
+    <link rel="stylesheet" href="/static/consent.css">
+    {% include "_analytics.html" %}
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <header class="hero hero--feature">
+        <div class="wrap">
+            <a class="crumb" href="/">← {{ brand().name }}</a>
+            <div class="hero-glyph" aria-hidden="true">{{ page.glyph }}</div>
+            <p><span class="kicker">{{ page.kicker }}</span></p>
+            <h1>{{ page.title }}</h1>
+            <p class="lede">{{ page.lede }}</p>
+            <p class="sub">{{ page.sub }}</p>
+
+            <div class="cta-row">
+                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                <a class="btn btn-ghost" href="/">Всички разчитания</a>
+            </div>
+            <p class="cta-note">{{ page.cta_note }}</p>
+        </div>
+    </header>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">{{ page.glyph }}</span>
+                <h2>Какво ще узнаеш</h2>
+                <p>{{ page.learn_intro }}</p>
+            </div>
+            <div class="learn">
+                {% for item in page.learn %}
+                <article class="learn-card">
+                    <span class="card-glyph" aria-hidden="true">{{ item.g }}</span>
+                    <h3>{{ item.t }}</h3>
+                    <p>{{ item.d }}</p>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Как работи</h2>
+                <p>{{ page.steps_intro }}</p>
+            </div>
+            <div class="steps">
+                {% for step in page.steps %}
+                <div class="step">
+                    <div class="step-num">{{ loop.index }}</div>
+                    <h3>{{ step.t }}</h3>
+                    <p>{{ step.d }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="mid-cta">
+                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                <span class="mid-cta-note">{{ page.cta_note }}</span>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Ето как изглежда едно разчитане</h2>
+                <p>Не общи приказки, а изречения, изведени от конкретни позиции.</p>
+            </div>
+            <div class="sample">
+                <div class="sample-side">
+                    {% for f in page.example.facts %}
+                    <div class="sample-fact">
+                        <span class="sample-glyph">{{ f.g }}</span>
+                        <div>
+                            <span class="sample-label">{{ f.label }}</span>
+                            <span class="sample-val">{{ f.value }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="sample-main">
+                    <p class="sample-eyebrow">{{ page.example.eyebrow }}</p>
+                    {% for p in page.example.paras %}
+                    <p><strong>{{ p.lead }}</strong>{{ p.rest }}</p>
+                    {% endfor %}
+                    <p class="sample-foot">{{ page.example.foot }}</p>
+                </div>
+            </div>
+            <div class="mid-cta">
+                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                <span class="mid-cta-note">{{ page.cta_note }}</span>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Защо има значение</h2>
+                <p>Това, което отличава разчитането от едно предположение.</p>
+            </div>
+            <div class="trust">
+                {% for b in page.benefits %}
+                <div class="trust-item">
+                    <span class="trust-ico">{{ b.g }}</span>
+                    <div>
+                        <h4>{{ b.t }}</h4>
+                        <p>{{ b.d }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    {% if page.faq %}
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Често задавани въпроси</h2>
+                <p>Кратко и по същество.</p>
+            </div>
+            <div class="faq">
+                {% for f in page.faq %}
+                <div class="faq-item">
+                    <h3>{{ f.q }}</h3>
+                    <p>{{ f.a }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if related_pages %}
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Свързани разчитания</h2>
+                <p>Продължи оттук — всяко от тях се чете заедно с картата ти.</p>
+            </div>
+            <div class="related">
+                {% for r in related_pages %}
+                <a href="/{{ r.slug }}">
+                    <span class="r-glyph" aria-hidden="true">{{ r.glyph }}</span>
+                    <span class="r-name">{{ r.name }}</span>
+                    {% if r.included %}<span class="r-tag">Безплатно</span>{% endif %}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Виж какво пише в твоята карта</h2>
+                <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="wrap">
+            {{ brand().name }} · {{ brand().tagline }}<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
+        </div>
+    </footer>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
+    <script src="/static/consent.js"></script>
+</body>
+</html>

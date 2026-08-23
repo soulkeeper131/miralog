@@ -43,6 +43,7 @@ from bg_text import clean_bg
 from pdf_report import build_reading_pdf
 import billing
 import saft
+from feature_pages import FEATURE_PAGES, FEATURE_PAGES_BY_SLUG
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
@@ -5382,7 +5383,7 @@ async def index(request: Request):
     """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
     return HTMLResponse(templates.get_template("landing.html").render(
         {"request": request, "sky": sky_today(), "pricing": landing_pricing(),
-         **seo_context(request, path="/")}))
+         "features": FEATURE_PAGES, **seo_context(request, path="/")}))
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt(request: Request):
@@ -5411,14 +5412,18 @@ def sitemap_xml(request: Request):
     seo = seo_settings()
     base = public_base_url(request)
     today = datetime.date.today().isoformat()
+    entries = [
+        ("/", "weekly", "1.0"),
+        ("/register", "monthly", "0.6"),
+        ("/login", "monthly", "0.3"),
+    ]
+    # Every module gets its own landing page — the long-tail content that the
+    # search engines actually find people through.
+    entries += [(f"/{p['slug']}", "monthly", "0.8") for p in FEATURE_PAGES]
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
-        for path, freq, prio in [
-            ("/", "weekly", "1.0"),
-            ("/register", "monthly", "0.6"),
-            ("/login", "monthly", "0.3"),
-        ]
+        for path, freq, prio in entries
     )
     xml = ('<?xml version="1.0" encoding="UTF-8"?>'
            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -5525,6 +5530,38 @@ async def admin_page(request: Request):
 async def moon_page(request: Request):
     """Lunar calendar — client-side JS handles auth check via localStorage token."""
     return HTMLResponse(templates.get_template("moon.html").render({"request": request}))
+
+# --- Landing pages for each module ---
+def _feature_context(request: Request, page: dict) -> dict:
+    """SEO context + related-page cross-links for a feature landing page."""
+    ctx = seo_context(request, path=f"/{page['slug']}")
+    name = brand_name()
+    ctx["seo_title"] = page["seo_title"].replace("{brand}", name)
+    ctx["seo_description"] = page["seo_description"].replace("{brand}", name)
+    ctx["seo_keywords"] = page["seo_keywords"]
+    ctx["page"] = page
+    ctx["related_pages"] = [
+        FEATURE_PAGES_BY_SLUG[s] for s in page.get("related", [])
+        if s in FEATURE_PAGES_BY_SLUG
+    ]
+    return ctx
+
+
+def _feature_route(page: dict):
+    async def handler(request: Request):
+        return HTMLResponse(templates.get_template("feature_landing.html").render(
+            {"request": request, **_feature_context(request, page)}))
+
+    return handler
+
+
+for _fp in FEATURE_PAGES:
+    app.add_api_route(
+        f"/{_fp['slug']}", _feature_route(_fp),
+        methods=["GET"], response_class=HTMLResponse,
+        name=f"feature_{_fp['key']}", include_in_schema=False,
+    )
+
 
 @app.get("/healthz")
 def health():
