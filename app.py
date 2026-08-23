@@ -38,6 +38,7 @@ from numerology import compute_numerology
 from bg_text import clean_bg
 from pdf_report import build_reading_pdf
 import billing
+import saft
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
@@ -559,6 +560,11 @@ LEGAL_DEFAULTS = {
     "privacy_email": "[[ИМЕЙЛ ЗА ЗАЩИТА НА ЛИЧНИТЕ ДАННИ]]",
     # Длъжностно лице по защита на данните (DPO) — празно = „няма назначено“.
     "dpo": "",
+    # Наредба № Н-18 — данни за Стандартизирания одиторски файл (SAF-T).
+    # e_shop_n се получава при регистрация на е-магазина в НАП (Приложение № 33).
+    "e_shop_n": "[[НОМЕР НА Е-МАГАЗИН ОТ НАП (RF...)]]",
+    # e_shop_type: 1 = собствен сайт, 2 = продажби през маркетплейс.
+    "e_shop_type": "1",
 }
 
 def legal() -> dict:
@@ -2380,6 +2386,92 @@ def api_admin_audit(event: Optional[str] = None, user_id: Optional[int] = None,
         event_types = [r[0] for r in conn.execute(
             "SELECT DISTINCT event FROM audit_log ORDER BY event")]
     return {"events": rows, "total": total, "event_types": event_types}
+
+def _parse_payment_note(note: str):
+    """От note ('features:k1,k2 sess_...' или 'feature:k sess_...') връща (keys, session_id)."""
+    note = (note or "").strip()
+    keys, session_id = [], ""
+    if " " in note:
+        head, session_id = note.split(" ", 1)
+    else:
+        head = note
+    if head.startswith("features:"):
+        keys = [k.strip() for k in head[len("features:"):].split(",") if k.strip()]
+    elif head.startswith("feature:"):
+        keys = [head[len("feature:"):].strip()]
+    return keys, session_id.strip()
+
+@app.get("/api/admin/saft")
+def api_admin_saft(year: int, month: int, admin: dict = Depends(require_admin)):
+    """Генерира Стандартизиран одиторски файл (SAF-T) за даден месец.
+
+    Наредба № Н-18, чл. 3, ал. 17. Изход: windows-1251 XML за подаване в НАП.
+    Плейсхолдъри ([[...]]) за ЕИК и e_shop_n се попълват в LEGAL_DEFAULTS.
+    """
+    from fastapi.responses import Response
+    if not (1 <= int(month) <= 12):
+        raise HTTPException(400, "Месецът трябва да е между 1 и 12.")
+    if int(year) < 2020:
+        raise HTTPException(400, "Годината трябва да е поне 2020.")
+
+    lg = legal()
+    start = f"{int(year):04d}-{int(month):02d}-01"
+    end = f"{int(year):04d}-{int(month):02d}-31"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM payments WHERE method = 'stripe'"
+            " AND paid_at >= ? AND paid_at < ? ORDER BY id",
+            (start, end))]
+
+    orders = []
+    for p in rows:
+        keys, session_id = _parse_payment_note(p.get("note") or "")
+        if not keys:
+            keys = ["feature"]
+        total2 = float(p["amount_cents"]) / 100.0
+        per = total2 / len(keys)
+        items = []
+        for k in keys:
+            offer = feature_offer(k)
+            name = (offer or {}).get("name") or k
+            net, vat = saft.split_vat(per)
+            items.append({
+                "name": name, "quant": 1, "price": round(net, 2),
+                "vat_rate": saft.VAT_RATE, "vat": vat, "total": round(per, 2),
+            })
+        net_total, vat_total = saft.split_vat(total2)
+        paid = (p.get("paid_at") or "")[:10]
+        orders.append({
+            "ord_n": str(p["id"]),
+            "ord_d": paid,
+            "doc_n": p["id"],
+            "doc_date": paid,
+            "items": items,
+            "total1": net_total,
+            "disc": 0,
+            "vat": vat_total,
+            "total2": total2,
+            "paym": saft.PAYM_PSP,
+            "pos_n": "",
+            "trans_n": session_id,
+            "proc_id": "stripe",
+        })
+
+    xml_bytes = saft.build_saft_xml(
+        eik=lg.get("company_id", ""),
+        e_shop_n=lg.get("e_shop_n", ""),
+        domain_name=BRAND_DOMAIN,
+        e_shop_type=lg.get("e_shop_type", "1"),
+        month=month, year=year,
+        orders=orders,
+    )
+    filename = f"saft-{int(year)}-{int(month):02d}.xml"
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml; charset=windows-1251",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 @app.get("/api/features")
 def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
