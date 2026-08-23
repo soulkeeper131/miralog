@@ -80,9 +80,8 @@
     body.consent-open { padding-bottom: 120px; }
     /* The landing hero fills the first screen on its own, so bottom padding
        on the body cannot lift it — the notice would sit on the sign-in link.
-       Trimming the hero's own bottom padding while the notice is up keeps
-       both actions tappable. */
-    body.consent-open .hero { padding-bottom: 120px; }
+       We let the hero keep its own padding (no shift) and rely on the body
+       padding for scroll room; the notice is fixed and dismissible. */
 }
 
 @media (prefers-reduced-motion: reduce) {
