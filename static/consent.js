@@ -25,8 +25,10 @@
     function grant() {
         if (typeof window.gtag === 'function') {
             window.gtag('consent', 'update', {
-                'analytics_storage': 'granted',
-                'ad_storage': 'granted'
+                'ad_storage': 'granted',
+                'ad_user_data': 'granted',
+                'ad_personalization': 'granted',
+                'analytics_storage': 'granted'
             });
         }
     }
