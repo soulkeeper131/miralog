@@ -3262,6 +3262,24 @@ def grant_feature_purchase(user_id: int, feature_key: str, price_cents: int,
             (user_id, feature_key, price_cents, currency, payment_id))
         conn.commit()
 
+def _strip_stripe(obj):
+    """Recursively flatten Stripe's StripeObject into plain dicts/lists.
+
+    A StripeObject is neither a dict nor iterable — `dict(obj)` raises
+    TypeError — so it must be flattened through its own `to_dict_recursive()` /
+    `to_dict()` first. The older shallow `to_dict()` leaves nested StripeObjects
+    behind, hence the recursion over dict/list values.
+    """
+    if hasattr(obj, "to_dict_recursive"):
+        obj = obj.to_dict_recursive()
+    elif hasattr(obj, "to_dict"):
+        obj = obj.to_dict()
+    if isinstance(obj, dict):
+        return {k: _strip_stripe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_stripe(v) for v in obj]
+    return obj
+
 def fulfill_checkout_session(session: dict) -> None:
     """Apply a completed Stripe Checkout session to the local DB."""
     meta = session.get("metadata") or {}
@@ -3645,12 +3663,9 @@ async def api_stripe_webhook(request: Request):
     etype = event["type"]
     audit("webhook_received", f"Stripe event: {etype}", actor="stripe")
     obj = event["data"]["object"]
-    # StripeObject-ът няма dict методи (.get) — конвертирай в чист dict,
-    # иначе fulfill_checkout_session хвърля KeyError: 'get'.
-    if hasattr(obj, "to_dict_recursive"):
-        obj = obj.to_dict_recursive()
-    elif not isinstance(obj, dict):
-        obj = dict(obj)
+    # StripeObject-ът няма dict методи (.get) — изравни рекурсивно в чист dict,
+    # иначе fulfill_checkout_session хвърля грешка.
+    obj = _strip_stripe(obj)
     try:
         # Only one-off purchases exist now, so the subscription events that
         # used to arrive here have nothing left to update.
