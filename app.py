@@ -2119,7 +2119,12 @@ def seo_settings() -> dict:
         values[key] = values[key].replace("{brand}", name)
     # An unset share image follows the logo, uploaded or bundled.
     if not values["seo_og_image"]:
-        values["seo_og_image"] = brand()["logo"]
+        logo = brand()["logo"]
+        # The bundled logo is 180x180 — too small for social cards. Ship the
+        # dedicated 1200x630 card instead (an uploaded logo still wins).
+        if logo == "/static/logo-header.png":
+            logo = "/static/og-image.jpg"
+        values["seo_og_image"] = logo
     return values
 
 _SKY_CACHE_TTL = 600  # секунди — позициите са "в момента", но за лентата е достатъчно точно
