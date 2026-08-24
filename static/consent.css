@@ -76,12 +76,10 @@
     .consent-ok { padding: 9px 16px; font-size: .78rem; }
     .consent-no { padding: 9px 12px; font-size: .78rem; }
     /* The script sets this class while the notice is on screen. A :has()
-       selector would be neater but is not safe on every phone browser. */
-    body.consent-open { padding-bottom: 120px; }
-    /* The landing hero fills the first screen on its own, so bottom padding
-       on the body cannot lift it — the notice would sit on the sign-in link.
-       We let the hero keep its own padding (no shift) and rely on the body
-       padding for scroll room; the notice is fixed and dismissible. */
+       selector would be neater but is not safe on every phone browser.
+       The notice is a fixed overlay — it must NOT change layout (padding on
+       body/hero causes CLS), so it simply floats above the footer until
+       dismissed. */
 }
 
 @media (prefers-reduced-motion: reduce) {
