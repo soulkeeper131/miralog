@@ -3214,7 +3214,7 @@ def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 def _template_preview_data() -> list:
-    """Тестови данни за преглед на всички имейл темплейти от админ панела."""
+    """Тестови данни за преглед на обикновените имейл темплейти (без receipt/invoice)."""
     return [
         ("welcome", dict(name="Иван", link="https://astrokarta.bg/dashboard")),
         ("set_password", dict(link="https://astrokarta.bg/reset-password?token=DEMO_TOKEN_123")),
@@ -3223,18 +3223,16 @@ def _template_preview_data() -> list:
             name="Иван", date="24.08.2026",
             reading="Дневното разчитане за Иван Петров:\n\nСлънцето в Дева подсказва ден за подреждане на делата. Внимателен с обещанията в късния следобед.\n\nПълният текст: https://astrokarta.bg/chart/42")),
         ("share", dict(title="Натална карта", person_name="Иван Петров", name="Иван")),
-        ("receipt", dict(unp="42")),
         ("unlock_request", dict(email="ivan@example.com", user_id=42,
                                 name="Нумерология", price="4.20", currency="EUR")),
         ("bundle_request", dict(email="ivan@example.com", user_id=42,
                                 keys="numerology, synastry", bundle_name="Пълен пакет",
                                 price="20.00")),
-        ("invoice", dict(invoice_number="0000000001")),
     ]
 
 @app.post("/api/admin/templates/preview")
 def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_admin)):
-    """Изпраща всички имейл темплейти с тестови данни до даден адрес (преглед)."""
+    """Изпраща всички имейл темплейти (HTML) + касов документ/фактура (PDF)."""
     to = (payload.get("to") or "").strip()
     if "@" not in to:
         raise HTTPException(400, "Въведи валиден имейл адрес.")
@@ -3245,6 +3243,12 @@ def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_adm
         subject, body = render_email_template(kind, **fields)
         send_email(to, subject, body, html=_email_html(body))
         sent += 1
+    # Касов документ (Н-18) и фактура (ЗДДС) — реалният резултат е PDF attachment.
+    items = [{"name": "Натална карта", "net": 8.40, "vat": 1.68,
+              "total": 10.08, "vat_rate": 20}]
+    send_receipt_email(to, items=items, total2=10.08, unp=4201, stripe_id="cs_test_preview")
+    send_invoice_email(to, items=items, total2=10.08, invoice_number="0000000001")
+    sent += 2
     audit("templates_preview", f"Изпратени {sent} темплейта за преглед до {to}",
           actor=admin["email"])
     return {"ok": True, "sent": sent, "to": to}
