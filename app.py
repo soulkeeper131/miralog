@@ -291,6 +291,17 @@ def init_db():
             )
         """)
 
+        # Stripe redelivers a webhook whenever it is unsure the first attempt
+        # landed, and the customer's own return from checkout fulfils the same
+        # session. Without a key to recognise a session already handled, one
+        # payment lands in the ledger several times.
+        pay_cols = [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]
+        if "stripe_session_id" not in pay_cols:
+            conn.execute("ALTER TABLE payments ADD COLUMN stripe_session_id TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_session"
+            " ON payments(stripe_session_id) WHERE stripe_session_id IS NOT NULL")
+
         # Фактури по ЗДДС — поредната номерация (10 цифри, чл. 113 ЗДДС) се
         # генерира от AUTOINCREMENT; фактури никога не се трият/преизползват.
         conn.execute("""
@@ -1927,7 +1938,7 @@ def api_onboard(data: OnboardRequest, request: Request):
                 customer_id=None,
                 user_id=user["id"],
                 items=items,
-                success_url=f"{base}/chart/{person_id}?paid=1",
+                success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
                 brand=brand_name(),
             )
@@ -2338,6 +2349,13 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
         "by_plan": by_plan,
         "revenue_cents": revenue, "revenue_month_cents": revenue_month,
         "top_modules": top_modules, "recent_payments": recent,
+        # Checkout without a webhook secret takes money and unlocks nothing,
+        # which is invisible from outside — so it is reported here.
+        "payments_health": {
+            "checkout_key": billing.checkout_key_present(),
+            "webhook_secret": billing.webhook_secret_present(),
+            "ready": billing.stripe_enabled(),
+        },
     }
 
 @app.get("/api/admin/users")
@@ -2864,7 +2882,8 @@ def api_request_feature(feature_key: str, request: Request,
 
     if billing.stripe_enabled():
         base = site_base_url(request)
-        success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+        success = (os.environ.get("STRIPE_SUCCESS_URL")
+               or f"{base}/settings?paid=1&session_id={{CHECKOUT_SESSION_ID}}")
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
         try:
             url = billing.create_feature_checkout(
@@ -2925,7 +2944,8 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 "currency": offer["currency"],
             })
         base = site_base_url(request)
-        success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+        success = (os.environ.get("STRIPE_SUCCESS_URL")
+               or f"{base}/settings?paid=1&session_id={{CHECKOUT_SESSION_ID}}")
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
         try:
             url = billing.create_features_checkout(
@@ -3319,12 +3339,29 @@ def audit(event: str, detail: str = "", *, user_id: Optional[int] = None,
 
 
 def record_payment(user_id: int, *, plan_key: Optional[str], amount_cents: int,
-                   currency: str, method: str, note: str) -> int:
+                   currency: str, method: str, note: str,
+                   session_id: Optional[str] = None) -> Optional[int]:
+    """Write one payment to the ledger.
+
+    Returns the new row id, or None when this Stripe session was already
+    recorded — the caller should read that as "already fulfilled", not as a
+    failure.
+    """
     with sqlite3.connect(DB_PATH) as conn:
-        cur = conn.execute(
-            "INSERT INTO payments (user_id, plan_key, amount_cents, currency, method, note)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, plan_key, amount_cents, currency, method, note))
+        if session_id:
+            existing = conn.execute(
+                "SELECT id FROM payments WHERE stripe_session_id = ?",
+                (session_id,)).fetchone()
+            if existing:
+                return None
+        try:
+            cur = conn.execute(
+                "INSERT INTO payments (user_id, plan_key, amount_cents, currency,"
+                " method, note, stripe_session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, plan_key, amount_cents, currency, method, note, session_id))
+        except sqlite3.IntegrityError:
+            # Two deliveries raced; the other one won.
+            return None
         conn.commit()
         return cur.lastrowid
 
@@ -3376,12 +3413,21 @@ def fulfill_checkout_session(session: dict) -> None:
     if isinstance(customer_id, dict):
         customer_id = customer_id.get("id")
 
+    session_id = session.get("id")
+
     # A basket of modules bought in one go, from the signup flow.
     if kind == "features" and meta.get("feature_keys"):
         keys = [k.strip() for k in meta["feature_keys"].split(",") if k.strip()]
         pay_id = record_payment(
             user_id, plan_key=None, amount_cents=amount, currency=currency,
-            method="stripe", note=f"features:{','.join(keys)} {session.get('id')}")
+            method="stripe", note=f"features:{','.join(keys)} {session_id}",
+            session_id=session_id)
+        if pay_id is None:
+            # Already handled: a redelivered webhook, or the customer's own
+            # return beat it here. Repeating the unlocks is harmless, but the
+            # ledger and the documents must not double up.
+            log.info("Stripe сесия %s вече е обработена", session_id)
+            return
         for key in keys:
             offer = feature_offer(key)
             grant_feature_purchase(
@@ -3419,7 +3465,11 @@ def fulfill_checkout_session(session: dict) -> None:
     if kind == "feature" and feature_key:
         pay_id = record_payment(
             user_id, plan_key=None, amount_cents=amount, currency=currency,
-            method="stripe", note=f"feature:{feature_key} {session.get('id')}")
+            method="stripe", note=f"feature:{feature_key} {session_id}",
+            session_id=session_id)
+        if pay_id is None:
+            log.info("Stripe сесия %s вече е обработена", session_id)
+            return
         grant_feature_purchase(user_id, feature_key, amount, currency, pay_id)
         if customer_id:
             with sqlite3.connect(DB_PATH) as conn:
@@ -3714,7 +3764,8 @@ def api_checkout_feature(feature_key: str, request: Request,
     if not offer:
         raise HTTPException(404, "Тази функция не се продава отделно.")
     base = site_base_url(request)
-    success = os.environ.get("STRIPE_SUCCESS_URL") or f"{base}/settings?paid=1"
+    success = (os.environ.get("STRIPE_SUCCESS_URL")
+               or f"{base}/settings?paid=1&session_id={{CHECKOUT_SESSION_ID}}")
     cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
     try:
         url = billing.create_feature_checkout(
@@ -3732,6 +3783,50 @@ def api_checkout_feature(feature_key: str, request: Request,
     except Exception as e:
         raise HTTPException(502, f"Stripe грешка: {e}") from e
     return {"url": url}
+
+@app.get("/api/billing/session/{session_id}")
+def api_billing_session(session_id: str,
+                        user: Tuple[int, str] = Depends(get_current_user)):
+    """Settle a checkout session the customer has just come back from.
+
+    The webhook is the durable path, but it arrives on Stripe's schedule and
+    can lag the redirect by seconds — or never arrive if the endpoint is
+    misconfigured. Either way the customer is staring at a module they just
+    paid for, which is what makes people pay a second time. This asks Stripe
+    directly and fulfils the same session through the same code: whichever
+    path lands first wins, the other is a no-op.
+    """
+    user_id, _ = user
+    if not billing.checkout_key_present():
+        raise HTTPException(503, "Онлайн плащанията не са включени.")
+    try:
+        stripe = billing.get_stripe()
+        session = stripe.checkout.Session.retrieve(session_id)
+    except Exception as e:
+        log.warning("Stripe сесия %s не се прочете: %s", session_id, e)
+        raise HTTPException(502, "Плащането не можа да се провери. Опитай пак.")
+
+    # Never let one account settle another's session.
+    raw = _strip_stripe(session) if "_strip_stripe" in globals() else dict(session)
+    meta = dict(raw.get("metadata") or {})
+    try:
+        owner = int(meta.get("user_id") or raw.get("client_reference_id") or 0)
+    except (TypeError, ValueError):
+        owner = 0
+    if owner != user_id:
+        raise HTTPException(403, "Тази поръчка не е твоя.")
+
+    paid = raw.get("payment_status") == "paid"
+    if paid:
+        fulfill_checkout_session(raw)
+
+    row = get_user_by_id(user_id)
+    return {
+        "paid": paid,
+        "status": raw.get("payment_status"),
+        "unlocked": unlocked_features(row) if row else [],
+    }
+
 
 @app.post("/api/stripe/webhook")
 async def api_stripe_webhook(request: Request):

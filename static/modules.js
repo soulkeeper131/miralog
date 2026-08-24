@@ -251,3 +251,47 @@
         openModulePicker({ firstTime: true });
     };
 })();
+
+/* Settling a purchase on return from Stripe.
+
+   The webhook is the durable record, but it lands on Stripe's schedule —
+   sometimes seconds after the customer is already looking at the page, and
+   never at all if the endpoint is misconfigured. Either way they have paid
+   and are staring at a locked module, which is exactly what makes people
+   pay a second time.
+
+   So the page settles the session it was redirected with. Whichever path
+   arrives first wins; the other becomes a no-op. */
+(function () {
+    var params = new URLSearchParams(window.location.search);
+    var sessionId = params.get('session_id');
+    if (!sessionId || params.get('paid') !== '1') return;
+
+    function cleanUrl() {
+        params.delete('session_id');
+        params.delete('paid');
+        var qs = params.toString();
+        window.history.replaceState({}, '',
+            window.location.pathname + (qs ? '?' + qs : ''));
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof authHeaders !== 'function') return;
+        fetch('/api/billing/session/' + encodeURIComponent(sessionId),
+              { headers: authHeaders() })
+            .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
+            .then(function (res) {
+                cleanUrl();
+                if (res.ok && res.d.paid) {
+                    if (typeof invalidateFeatures === 'function') invalidateFeatures();
+                    if (typeof uiToast === 'function') {
+                        uiToast('Плащането е получено. Приятно четене!', 'ok');
+                    }
+                    setTimeout(function () { window.location.reload(); }, 900);
+                } else if (typeof uiToast === 'function') {
+                    uiToast('Плащането още се потвърждава. Опресни след малко.', 'ok');
+                }
+            })
+            .catch(function () { cleanUrl(); });
+    });
+})();
