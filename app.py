@@ -40,7 +40,7 @@ from translations import (
 )
 from numerology import compute_numerology
 from bg_text import clean_bg
-from pdf_report import build_reading_pdf
+from pdf_report import build_reading_pdf, build_receipt_pdf, build_invoice_pdf
 import billing
 import saft
 from feature_pages import FEATURE_PAGES, FEATURE_PAGES_BY_SLUG
@@ -2103,23 +2103,14 @@ EMAIL_TEMPLATES = {
         "Позициите в него са изчислени със Swiss Ephemeris.\n\n"
         "Приятно четене!\n— {brand}"
     ),
-    # Касов документ по Наредба № Н-18, чл. 52а — задължителните полета
-    # (ЕИК, ДДС, УНП и т.н.) трябва да останат в шаблона.
+    # Касов документ (Н-18, чл. 52а) и фактура (ЗДДС) се издават като PDF —
+    # имейлът е кратко придружително писмо, а документът е прикачен файл.
     "receipt_subject": "Касов документ от {brand} — №{unp}",
     "receipt_body": (
-        "Електронен документ за продажба\n"
-        + ("-" * 40) + "\n"
-        "{brand}\n{company_name}\nЕИК: {company_id}\n\n"
-        "Артикули:\n{items}\n\n"
-        "Сума без ДДС: {net_total} EUR\n"
-        "ДДС: {vat_total} EUR\n"
-        "ОБЩО: {total} EUR\n\n"
-        "Дата и час: {datetime}\n"
-        "УНП (номер на продажбата): {unp}\n"
-        "Идентификатор на плащането: {stripe_id}\n"
-        "Начин на плащане: карта (Stripe)\n\n"
-        "Документът е издаден по реда на Наредба № Н-18 за отчитане "
-        "на дистанционни продажби с плащане с карта.\n"
+        "Здравей!\n\n"
+        "Благодарим за покупката! Касовият документ за продажбата ти "
+        "е прикачен към това писмо като PDF.\n\n"
+        "Поздрави,\n{brand}"
     ),
     "unlock_request_subject": "Заявка за отключване: {name}",
     "unlock_request_body": (
@@ -2135,20 +2126,9 @@ EMAIL_TEMPLATES = {
     # е регистриран по ЗДДС. Номерът е 10-цифрен пореден (чл. 113) и НЕ се редактира.
     "invoice_subject": "Фактура №{invoice_number} — {brand}",
     "invoice_body": (
-        "ФАКТУРА № {invoice_number}\n"
-        "Дата на издаване: {issued_at}\n"
-        + ("-" * 40) + "\n"
-        "Доставчик:\n"
-        "{company_name}\n"
-        "ЕИК: {company_id}\n"
-        "ДДС номер: {vat_number}\n"
-        "{address}\n\n"
-        "Получател: Физическо лице\n\n"
-        "Артикули:\n{items}\n\n"
-        "Данъчна основа (без ДДС): {net_total} EUR\n"
-        "ДДС ({vat_rate}%): {vat_total} EUR\n"
-        "ОБЩО ЗА ПЛАЩАНЕ: {total} EUR\n\n"
-        "Дата на данъчното събитие: {issued_at}\n"
+        "Здравей!\n\n"
+        "Фактурата за покупката ти е прикачена към това писмо като PDF.\n\n"
+        "Поздрави,\n{brand}"
     ),
 }
 
@@ -3053,10 +3033,66 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
           actor=admin["email"])
     return {"ok": True}
 
-def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> None:
+def _brand_logo_url() -> str:
+    """Absolute URL на логото за имейли (https + бранд домейн)."""
+    domain = brand().get("domain") or "astrokarta.bg"
+    logo = brand().get("logo") or "/static/logo-header.png"
+    if logo.startswith(("http://", "https://")):
+        return logo
+    return f"https://{domain}{logo}"
+
+
+def _text_to_html(text: str) -> str:
+    """Plain text → HTML: escape, авто-линкове на URL, нови редове → <br>."""
+    import html as _html
+    out = _html.escape(text or "")
+    # Авто-линк на https?://… адреси (вече escaped, така че & е &amp;).
+    out = re.sub(r"(https?://[^\s<>\"']+)",
+                 r'<a href="\1" style="color:#8659a3;text-decoration:underline;">\1</a>', out)
+    return out.replace("\n", "<br>")
+
+
+def _email_html(body_text: str) -> str:
+    """Обвива plain текст в стилизиран HTML имейл с лого и бранд цветове.
+
+    Цветовете следват light theme на приложението (виолетов акцент #8659a3).
+    Inline CSS, защото имейл клиентите не поддържат <style> навсякъде.
+    """
+    b = brand()
+    name = b.get("name") or "АстроКарта"
+    domain = b.get("domain") or "astrokarta.bg"
+    logo = _brand_logo_url()
+    body = _text_to_html(body_text)
+    return (
+        '<!DOCTYPE html><html lang="bg"><body style="margin:0;padding:0;'
+        'background:#f4eff7;font-family:Arial,Helvetica,sans-serif;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="background:#f4eff7;padding:24px 0;"><tr><td align="center">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" '
+        'style="max-width:600px;width:100%;">'
+        '<tr><td align="center" style="padding:8px 0 20px;">'
+        f'<img src="{logo}" alt="{name}" width="44" height="44" '
+        'style="display:block;border:0;border-radius:10px;">'
+        f'<div style="font-size:18px;font-weight:bold;color:#6d4a89;margin-top:10px;">{name}</div>'
+        '</td></tr>'
+        '<tr><td style="background:#ffffff;border:1px solid #e5d4ec;border-radius:12px;'
+        'padding:32px 36px;color:#2d2438;font-size:15px;line-height:1.7;">'
+        f'{body}'
+        '</td></tr>'
+        '<tr><td align="center" style="padding:20px 0;color:#7a6d8a;font-size:12px;line-height:1.6;">'
+        f'{name} &middot; <a href="https://{domain}" '
+        f'style="color:#8659a3;text-decoration:none;">{domain}</a>'
+        '</td></tr>'
+        '</table></td></tr></table></body></html>'
+    )
+
+
+def send_email(to: str, subject: str, body: str, attachment: Optional[tuple] = None,
+               html: Optional[str] = None) -> None:
     """Send a message over the configured SMTP server.
 
     `attachment` is an optional (filename, bytes, mimetype) triple.
+    `html` is an optional HTML body; `body` stays the plain-text fallback.
     Raises HTTPException with a readable message on failure.
     """
     import smtplib
@@ -3072,6 +3108,8 @@ def send_email(to: str, subject: str, body: str, attachment: tuple = None) -> No
                    or f"noreply@{brand()['domain']}")
     msg["To"] = to
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
 
     if attachment:
         filename, data, mimetype = attachment
@@ -3171,8 +3209,8 @@ def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
     to = (payload.get("to") or "").strip()
     if "@" not in to:
         raise HTTPException(400, "Въведи валиден имейл адрес.")
-    send_email(to, f"Тестов имейл от {brand_name()}",
-               "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
+    body = "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят."
+    send_email(to, f"Тестов имейл от {brand_name()}", body, html=_email_html(body))
     return {"ok": True}
 
 def _template_preview_data() -> list:
@@ -3185,22 +3223,13 @@ def _template_preview_data() -> list:
             name="Иван", date="24.08.2026",
             reading="Дневното разчитане за Иван Петров:\n\nСлънцето в Дева подсказва ден за подреждане на делата. Внимателен с обещанията в късния следобед.\n\nПълният текст: https://astrokarta.bg/chart/42")),
         ("share", dict(title="Натална карта", person_name="Иван Петров", name="Иван")),
-        ("receipt", dict(
-            company_name="BLV Systems ООД", company_id="123456789",
-            items="- Натална карта — 8.40 EUR (ДДС 20%)\n- Нумерология — 4.20 EUR (ДДС 20%)",
-            net_total="10.50", vat_total="2.10", total="12.60",
-            datetime="24.08.2026 10:30:00", unp="42", stripe_id="cs_test_demo123")),
+        ("receipt", dict(unp="42")),
         ("unlock_request", dict(email="ivan@example.com", user_id=42,
                                 name="Нумерология", price="4.20", currency="EUR")),
         ("bundle_request", dict(email="ivan@example.com", user_id=42,
                                 keys="numerology, synastry", bundle_name="Пълен пакет",
                                 price="20.00")),
-        ("invoice", dict(
-            invoice_number="0000000001", issued_at="24.08.2026 10:30:00",
-            company_name="BLV Systems ООД", company_id="123456789",
-            vat_number="BG123456789", address="гр. София, ул. Примерна 1",
-            items="1. Натална карта — 1 бр. x 8.40 EUR (без ДДС) — ДДС 1.68 EUR — общо 10.08 EUR",
-            net_total="8.40", vat_total="1.68", vat_rate=20, total="10.08")),
+        ("invoice", dict(invoice_number="0000000001")),
     ]
 
 @app.post("/api/admin/templates/preview")
@@ -3214,7 +3243,7 @@ def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_adm
     sent = 0
     for kind, fields in _template_preview_data():
         subject, body = render_email_template(kind, **fields)
-        send_email(to, subject, body)
+        send_email(to, subject, body, html=_email_html(body))
         sent += 1
     audit("templates_preview", f"Изпратени {sent} темплейта за преглед до {to}",
           actor=admin["email"])
@@ -3266,7 +3295,7 @@ def try_send_template(to: str, kind: str, **fields) -> bool:
         return False
     subject, body = render_email_template(kind, **fields)
     try:
-        send_email(to, subject, body)
+        send_email(to, subject, body, html=_email_html(body))
         return True
     except Exception as e:
         log.warning("Неуспешен %s имейл до %s: %s", kind, to, e)
@@ -3421,31 +3450,34 @@ def _session_email(session: dict) -> str:
     return (session.get("customer_email") or "").strip()
 
 def send_receipt_email(email: str, *, items, total2, unp, stripe_id) -> bool:
-    """Изпраща електронен документ за продажба (Н-18, чл. 52а) по имейл."""
+    """Изпраща електронен документ за продажба (Н-18, чл. 52а) като PDF."""
     if not email or not smtp_setting("smtp_host"):
         return False
     lg = legal()
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M:%S")
-    art_lines = []
-    net_total = vat_total = 0.0
-    for it in items:
-        art_lines.append(f"- {it['name']} — {it['total']:.2f} EUR (ДДС {it['vat_rate']}%)")
-        net_total += it["net"]
-        vat_total += it["vat"]
-    subject, body = render_email_template(
-        "receipt",
-        company_name=lg.get("company_name") or "",
-        company_id=lg.get("company_id") or "",
-        items="\n".join(art_lines),
-        net_total=f"{net_total:.2f}",
-        vat_total=f"{vat_total:.2f}",
-        total=f"{total2:.2f}",
-        datetime=now,
-        unp=unp,
-        stripe_id=stripe_id,
-    )
+    net_total = sum(float(it.get("net", 0)) for it in items)
+    vat_total = sum(float(it.get("vat", 0)) for it in items)
+
+    logo = BASE_DIR / "static" / "logo-header.png"
     try:
-        send_email(email, subject, body)
+        pdf_bytes = build_receipt_pdf(
+            brand=brand_name(),
+            company_name=lg.get("company_name") or "",
+            company_id=lg.get("company_id") or "",
+            items=items, net_total=net_total, vat_total=vat_total,
+            total=total2, vat_rate=saft.VAT_RATE,
+            datetime_str=now, unp=unp, stripe_id=stripe_id,
+            logo_path=str(logo) if logo.exists() else None)
+    except Exception as e:
+        log.warning("PDF за касов документ се провали: %s", e)
+        return False
+
+    subject, body = render_email_template("receipt", unp=unp)
+    filename = f"{brand_slug()}-kasov-dokument-{unp}.pdf"
+    try:
+        send_email(email, subject, body,
+                   attachment=(filename, pdf_bytes, "application/pdf"),
+                   html=_email_html(body))
         return True
     except Exception as e:
         log.warning("Неуспешен receipt имейл до %s: %s", email, e)
@@ -3468,35 +3500,36 @@ def issue_invoice(user_id: int, payment_id: Optional[int]) -> str:
         return number
 
 def send_invoice_email(email: str, *, items, total2, invoice_number) -> bool:
-    """Изпраща фактура по ЗДДС (чл. 114) за продажба."""
+    """Изпраща фактура по ЗДДС (чл. 114) като PDF."""
     if not email or not smtp_setting("smtp_host"):
         return False
     lg = legal()
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M:%S")
-    art_lines = []
-    net_total = vat_total = 0.0
-    for i, it in enumerate(items, 1):
-        art_lines.append(
-            f"{i}. {it['name']} — 1 бр. x {it['net']:.2f} EUR (без ДДС) — "
-            f"ДДС {it['vat']:.2f} EUR — общо {it['total']:.2f} EUR")
-        net_total += it["net"]
-        vat_total += it["vat"]
-    subject, body = render_email_template(
-        "invoice",
-        invoice_number=invoice_number,
-        issued_at=now,
-        company_name=lg.get("company_name") or "",
-        company_id=lg.get("company_id") or "",
-        vat_number=lg.get("vat_number") or "",
-        address=lg.get("address") or "",
-        items="\n".join(art_lines),
-        net_total=f"{net_total:.2f}",
-        vat_total=f"{vat_total:.2f}",
-        vat_rate=saft.VAT_RATE,
-        total=f"{total2:.2f}",
-    )
+    net_total = sum(float(it.get("net", 0)) for it in items)
+    vat_total = sum(float(it.get("vat", 0)) for it in items)
+
+    logo = BASE_DIR / "static" / "logo-header.png"
     try:
-        send_email(email, subject, body)
+        pdf_bytes = build_invoice_pdf(
+            brand=brand_name(),
+            company_name=lg.get("company_name") or "",
+            company_id=lg.get("company_id") or "",
+            vat_number=lg.get("vat_number") or "",
+            address=lg.get("address") or "",
+            invoice_number=invoice_number, issued_at=now,
+            items=items, net_total=net_total, vat_total=vat_total,
+            vat_rate=saft.VAT_RATE, total=total2,
+            logo_path=str(logo) if logo.exists() else None)
+    except Exception as e:
+        log.warning("PDF за фактура се провали: %s", e)
+        return False
+
+    subject, body = render_email_template("invoice", invoice_number=invoice_number)
+    filename = f"{brand_slug()}-faktura-{invoice_number}.pdf"
+    try:
+        send_email(email, subject, body,
+                   attachment=(filename, pdf_bytes, "application/pdf"),
+                   html=_email_html(body))
         return True
     except Exception as e:
         log.warning("Неуспешен invoice имейл до %s: %s", email, e)
@@ -5678,7 +5711,8 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
 
     subject, body = render_email_template(
         "share", title=title, person_name=person["name"], name=name)
-    send_email(to, subject, body, attachment=(filename, pdf, "application/pdf"))
+    send_email(to, subject, body, attachment=(filename, pdf, "application/pdf"),
+               html=_email_html(body))
     return {"ok": True, "to": to}
 
 # --- Web UI Routes ---

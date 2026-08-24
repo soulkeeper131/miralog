@@ -267,3 +267,180 @@ def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
 
     doc.build(story)
     return buf.getvalue()
+
+
+# --- Фискални документи: касов документ (Н-18) и фактура (ЗДДС) ---
+
+
+def _items_table(items, regular, bold):
+    """Таблица с артикули: име, ед. цена (без ДДС), ДДС, общо (с ДДС)."""
+    header = ["Артикул", "Ед. цена (без ДДС)", "ДДС", "Общо (с ДДС)"]
+    rows = [header]
+    for it in items:
+        rows.append([
+            str(it.get("name", "")),
+            f"{float(it.get('net', 0)):.2f} EUR",
+            f"{float(it.get('vat', 0)):.2f} EUR",
+            f"{float(it.get('total', 0)):.2f} EUR",
+        ])
+    t = Table(rows, colWidths=[70 * mm, 36 * mm, 30 * mm, 32 * mm], repeatRows=1)
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, 0), bold),
+        ("FONTNAME", (0, 1), (-1, -1), regular),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("LEADING", (0, 0), (-1, -1), 12),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 0), (-1, 0), HEADING),
+        ("TEXTCOLOR", (0, 1), (-1, -1), BODY),
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+        ("ALIGN", (0, 0), (0, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.4, RULE),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SURFACE]),
+    ]))
+    return t
+
+
+def _totals_table(net_total, vat_total, total, vat_rate, regular, bold):
+    rows = [
+        ["Данъчна основа (без ДДС):", f"{float(net_total):.2f} EUR"],
+        [f"ДДС ({int(vat_rate)}%):", f"{float(vat_total):.2f} EUR"],
+        ["ОБЩО ЗА ПЛАЩАНЕ:", f"{float(total):.2f} EUR"],
+    ]
+    t = Table(rows, colWidths=[112 * mm, 56 * mm])
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), regular),
+        ("FONTNAME", (1, 0), (1, -1), bold),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("TEXTCOLOR", (0, 0), (0, -2), BODY),
+        ("TEXTCOLOR", (1, 0), (1, -2), BODY),
+        ("TEXTCOLOR", (0, -1), (1, -1), HEADING),
+        ("BACKGROUND", (0, -1), (-1, -1), SURFACE),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("LINEABOVE", (0, -1), (-1, -1), 0.8, HEADING),
+    ]))
+    return t
+
+
+def _document_layout(*, title, subtitle, meta, items, net_total, vat_total,
+                     total, vat_rate, footer_lines, brand, logo_path) -> bytes:
+    """Общ layout за фискални документи: header, мета, таблица, тотали, footer."""
+    regular, bold, _ = _register_fonts()
+    st = _styles()
+    buf = io.BytesIO()
+
+    def decorate(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(ACCENT_LIGHT)
+        canvas.rect(0, A4[1] - 6 * mm, A4[0], 6 * mm, stroke=0, fill=1)
+        canvas.setFont(bold, 10)
+        canvas.setFillColor(HEADING)
+        canvas.drawString(20 * mm, A4[1] - 15 * mm, brand)
+        canvas.setFont(regular, 8)
+        canvas.setFillColor(MUTED)
+        canvas.drawRightString(A4[0] - 20 * mm, A4[1] - 15 * mm, title)
+        canvas.setFont(regular, 8)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(20 * mm, 12 * mm,
+                          f"{brand} · {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}")
+        canvas.setStrokeColor(RULE)
+        canvas.setLineWidth(0.5)
+        canvas.line(20 * mm, 16 * mm, A4[0] - 20 * mm, 16 * mm)
+        canvas.restoreState()
+
+    doc = BaseDocTemplate(buf, pagesize=A4,
+                          leftMargin=20 * mm, rightMargin=20 * mm,
+                          topMargin=24 * mm, bottomMargin=22 * mm,
+                          title=title, author=brand)
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main")
+    doc.addPageTemplates([PageTemplate(id="all", frames=[frame], onPage=decorate)])
+
+    story = []
+
+    if logo_path and os.path.exists(logo_path):
+        from reportlab.platypus import Image as RLImage
+        try:
+            img = RLImage(logo_path, width=18 * mm, height=18 * mm, kind="proportional")
+            img.hAlign = "CENTER"
+            story.extend([Spacer(1, 2 * mm), img])
+        except Exception:
+            pass
+
+    story.append(Paragraph(title, ParagraphStyle(
+        "DocTitle", parent=st["title"], fontSize=20, leading=24, spaceAfter=2)))
+    if subtitle:
+        story.append(Paragraph(subtitle, st["subtitle"]))
+
+    for label, value in meta:
+        story.append(Paragraph(
+            f"<b>{_inline(label)}</b> {_inline(str(value))}",
+            ParagraphStyle("Meta", parent=st["body"], fontSize=9.5, leading=14,
+                           alignment=0, spaceAfter=1)))
+    story.append(Spacer(1, 6 * mm))
+
+    story.append(_items_table(items, regular, bold))
+    story.append(Spacer(1, 4 * mm))
+    story.append(_totals_table(net_total, vat_total, total, vat_rate, regular, bold))
+
+    if footer_lines:
+        story.append(Spacer(1, 6 * mm))
+        for line in footer_lines:
+            story.append(Paragraph(_inline(line), ParagraphStyle(
+                "Foot", parent=st["body"], fontSize=8.5, leading=12,
+                textColor=MUTED, alignment=0, spaceAfter=1)))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def build_receipt_pdf(*, brand, company_name, company_id, items, net_total,
+                      vat_total, total, vat_rate, datetime_str, unp, stripe_id,
+                      logo_path=None) -> bytes:
+    """Касов документ (електронен документ за продажба) по Н-18, чл. 52а."""
+    meta = [
+        ("Търговец:", company_name or "—"),
+        ("ЕИК:", company_id or "—"),
+    ]
+    footer_lines = [
+        f"Дата и час: {datetime_str}",
+        f"УНП (номер на продажбата): {unp}",
+        f"Идентификатор на плащането: {stripe_id}",
+        "Начин на плащане: карта (Stripe)",
+        "Документът е издаден по реда на Наредба № Н-18 за отчитане на "
+        "дистанционни продажби с плащане с карта.",
+    ]
+    return _document_layout(
+        title="КАСОВ ДОКУМЕНТ", subtitle="Електронен документ за продажба",
+        meta=meta, items=items, net_total=net_total, vat_total=vat_total,
+        total=total, vat_rate=vat_rate, footer_lines=footer_lines,
+        brand=brand, logo_path=logo_path)
+
+
+def build_invoice_pdf(*, brand, company_name, company_id, vat_number, address,
+                      invoice_number, issued_at, items, net_total, vat_total,
+                      vat_rate, total, logo_path=None) -> bytes:
+    """Фактура по ЗДДС (чл. 114)."""
+    meta = [
+        ("Доставчик:", company_name or "—"),
+        ("ЕИК:", company_id or "—"),
+        ("ДДС номер:", vat_number or "—"),
+        ("Адрес:", address or "—"),
+        ("Получател:", "Физическо лице"),
+    ]
+    footer_lines = [
+        f"Дата на данъчното събитие: {issued_at}",
+    ]
+    return _document_layout(
+        title=f"ФАКТУРА № {invoice_number}",
+        subtitle=f"Дата на издаване: {issued_at}",
+        meta=meta, items=items, net_total=net_total, vat_total=vat_total,
+        total=total, vat_rate=vat_rate, footer_lines=footer_lines,
+        brand=brand, logo_path=logo_path)
