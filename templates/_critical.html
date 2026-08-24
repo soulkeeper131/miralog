@@ -107,6 +107,9 @@
             transition: background-color 0.2s, color 0.2s;
             overflow-x: hidden;
         }
+        /* Bare links (privacy link in the privacy strip, etc.) must not fall
+           back to the browser's unreadable default blue on the dark ground. */
+        a { color: var(--accent-light); }
 
         .theme-toggle {
             position: fixed;
@@ -313,6 +316,7 @@
             .eph-list li:nth-child(n+5) { display: none; }
         }
 
+
         @media (max-width: 1000px) {
             /* Below the widest layout there is no free margin at the top right,
                so the button docks bottom-right where it floats over gutter
@@ -321,7 +325,6 @@
                 top: auto;
                 bottom: max(16px, env(safe-area-inset-bottom));
             }
-        }
 
         /* --- feature landing pages (shared with the module pages) --- */
         .hero--feature { padding-top: clamp(28px, 4vw, 44px); }

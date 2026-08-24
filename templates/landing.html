@@ -56,10 +56,10 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.css?v=2" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.css?v=3" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.css?v=2">
+        <link rel="stylesheet" href="/static/landing.css?v=3">
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
 {% include "_analytics.html" %}
@@ -67,6 +67,7 @@
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
+    <main>
     <header class="hero">
         <!-- Decorative: the wheel says "this is astrology" faster than a sentence can. -->
         <div class="sky" aria-hidden="true">
@@ -322,21 +323,21 @@
                 <div class="trust-item">
                     <span class="trust-ico">⚹</span>
                     <div>
-                        <h4>Точни изчисления, не догадки</h4>
+                        <h3>Точни изчисления, не догадки</h3>
                         <p>Позициите идват от Swiss Ephemeris — астрономическият стандарт. Разчитането обяснява данните, не ги измисля.</p>
                     </div>
                 </div>
                 <div class="trust-item">
                     <span class="trust-ico">☌</span>
                     <div>
-                        <h4>Изцяло на български</h4>
+                        <h3>Изцяло на български</h3>
                         <p>Знаци, планети, домове, аспекти — всичко преведено, с кратко обяснение до всеки термин.</p>
                     </div>
                 </div>
                 <div class="trust-item">
                     <span class="trust-ico">♄</span>
                     <div>
-                        <h4>Данните ти остават твои</h4>
+                        <h3>Данните ти остават твои</h3>
                         <p>Всеки вижда само своите хора. Нищо не се споделя и не се продава на трети страни.</p>
                     </div>
                 </div>
@@ -346,7 +347,7 @@
                 <div class="privacy-item">
                     <span class="privacy-glyph" aria-hidden="true">✦</span>
                     <div>
-                        <h4>Картата без регистрация не се пази</h4>
+                        <h3>Картата без регистрация не се пази</h3>
                         <p>Ако само разгледаш картата си, данните остават в браузъра ти.
                            При нас не се записва нищо, докато сам не решиш да я запазиш.</p>
                     </div>
@@ -354,7 +355,7 @@
                 <div class="privacy-item">
                     <span class="privacy-glyph" aria-hidden="true">☌</span>
                     <div>
-                        <h4>Плащането не минава през нас</h4>
+                        <h3>Плащането не минава през нас</h3>
                         <p>Картовите данни се обработват от Stripe. Ние не ги виждаме
                            и не ги съхраняваме.</p>
                     </div>
@@ -362,7 +363,7 @@
                 <div class="privacy-item">
                     <span class="privacy-glyph" aria-hidden="true">⚹</span>
                     <div>
-                        <h4>Съобразено с GDPR</h4>
+                        <h3>Съобразено с GDPR</h3>
                         <p>Имаш право на достъп, корекция и изтриване по всяко време.
                            Виж <a href="/privacy">политиката за поверителност</a>.</p>
                     </div>
@@ -499,6 +500,7 @@
         </div>
     </section>
 
+    </main>
     <footer>
         <div class="wrap">
             {{ brand().name }} · {{ brand().tagline }}<br>
