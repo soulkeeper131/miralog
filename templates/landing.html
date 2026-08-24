@@ -479,9 +479,16 @@
                 <h2>Всички разчитания</h2>
                 <p>Една карта, много погледи. Разгледай всеки модул поотделно.</p>
             </div>
-            <div class="chip-row">
+            <div class="mod-grid">
                 {% for f in features %}
-                <a class="chip" href="/{{ f.slug }}">{{ f.glyph }}&nbsp;{{ f.name }}</a>
+                <a class="mod-card" href="/{{ f.slug }}">
+                    <span class="mod-glyph">{{ f.glyph }}</span>
+                    <span class="mod-body">
+                        <span class="mod-name">{{ f.name }}</span>
+                        <span class="mod-lede">{{ f.lede }}</span>
+                    </span>
+                    <span class="mod-tag{{ ' free' if f.included else '' }}">{{ 'Безплатно' if f.included else 'Платено' }}</span>
+                </a>
                 {% endfor %}
             </div>
         </div>

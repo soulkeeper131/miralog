@@ -984,6 +984,35 @@
             font-size: 0.86rem; white-space: nowrap; font-variant-numeric: tabular-nums;
         }
 
+        /* --- module grid („Всички разчитания“) --- */
+        .mod-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+            margin-top: 24px;
+        }
+        @media (max-width: 600px) { .mod-grid { grid-template-columns: 1fr; } }
+        .mod-card {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 14px 16px; border-radius: 14px;
+            background: var(--bg-card); border: 1px solid var(--border-soft);
+            text-decoration: none; color: var(--text);
+            transition: border-color .15s ease, transform .15s ease;
+        }
+        .mod-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+        .mod-glyph {
+            font-size: 1.35rem; line-height: 1.2; color: var(--accent-light);
+            flex-shrink: 0;
+        }
+        .mod-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .mod-name { font-weight: 600; color: var(--text-heading); font-size: 0.95rem; }
+        .mod-lede { font-size: 0.84rem; color: var(--text-muted); line-height: 1.45; }
+        .mod-tag {
+            margin-left: auto; flex-shrink: 0; font-size: 0.74rem; line-height: 1;
+            padding: 5px 10px; border-radius: 999px;
+            background: var(--bg-input); color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .mod-tag.free { color: var(--gilt); }
+
         /* --- closing cta --- */
         .final {
             text-align: center;
