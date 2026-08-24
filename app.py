@@ -917,6 +917,46 @@ def bundle_offer(user: dict) -> Optional[dict]:
         "currency": "EUR",
     }
 
+def public_bundle() -> Optional[dict]:
+    """The bundle over every sellable module, for visitors with no account yet.
+
+    A brand-new visitor has nothing unlocked, so the bundle is simply "all the
+    paid modules together". It only exists when that actually saves money —
+    the same rule the account-aware `bundle_offer` applies.
+    """
+    keys = [f["key"] for f in FEATURE_CATALOGUE
+            if not f.get("included") and feature_offer(f["key"])]
+    if len(keys) < 2:
+        return None
+    full_price = sum(feature_offer(k)["price_cents"] for k in keys)
+    if full_price <= BUNDLE_PRICE_CENTS:
+        return None
+    return {
+        "key": BUNDLE_KEY,
+        "name": BUNDLE_NAME,
+        "keys": keys,
+        "price_cents": BUNDLE_PRICE_CENTS,
+        "full_price_cents": full_price,
+        "saving_cents": full_price - BUNDLE_PRICE_CENTS,
+        "currency": "EUR",
+    }
+
+def bundle_line_items(keys: list) -> list:
+    """Split the bundle price across the keys so Stripe charges exactly the
+    bundle price while the webhook still sees every key it can grant."""
+    share = BUNDLE_PRICE_CENTS // len(keys)
+    remainder = BUNDLE_PRICE_CENTS - share * len(keys)
+    items = []
+    for i, key in enumerate(keys):
+        offer = feature_offer(key)
+        items.append({
+            "key": key,
+            "name": offer["name"],
+            "amount_cents": share + (remainder if i == 0 else 0),
+            "currency": offer["currency"],
+        })
+    return items
+
 def person_limit(user: dict) -> Optional[int]:
     """How many charts this account may keep. None means unlimited.
 
@@ -1725,7 +1765,7 @@ def api_public_catalogue():
             "price_cents": offer["price_cents"],
             "currency": offer["currency"],
         })
-    return {"catalogue": out}
+    return {"catalogue": out, "bundle": public_bundle()}
 
 @app.post("/api/guest/chart")
 def api_guest_chart(data: GuestChartRequest):
@@ -1843,30 +1883,50 @@ def api_onboard(data: OnboardRequest, request: Request):
     }
 
     # Modules picked before signing up go straight to checkout, so the visitor
-    # does not have to find and click them a second time.
+    # does not have to find and click them a second time. "bundle" means every
+    # paid module at once, at the bundle price rather than the sum of parts.
+    is_bundle = BUNDLE_KEY in (data.wanted or [])
     wanted = [k for k in (data.wanted or []) if feature_offer(k)]
+    if is_bundle:
+        bundle = public_bundle()
+        if bundle:
+            wanted = bundle["keys"]
+        else:
+            is_bundle = False
+
     if wanted and MOCK_PAYMENTS:
         # Test builds complete the purchase immediately, so the whole flow can
         # be walked end to end without a payment processor.
-        total = sum(feature_offer(k)["price_cents"] for k in wanted)
+        total = (BUNDLE_PRICE_CENTS if is_bundle
+                 else sum(feature_offer(k)["price_cents"] for k in wanted))
         pay_id = record_payment(
             user["id"], plan_key=None, amount_cents=total, currency="EUR",
-            method="тест", note=f"mock-onboard:{','.join(wanted)}")
-        for k in wanted:
-            o = feature_offer(k)
-            grant_feature_purchase(user["id"], k, o["price_cents"], o["currency"], pay_id)
+            method="тест",
+            note=("mock-onboard-bundle" if is_bundle
+                  else f"mock-onboard:{','.join(wanted)}"))
+        if is_bundle:
+            for item in bundle_line_items(wanted):
+                grant_feature_purchase(user["id"], item["key"],
+                                       item["amount_cents"], item["currency"], pay_id)
+        else:
+            for k in wanted:
+                o = feature_offer(k)
+                grant_feature_purchase(user["id"], k, o["price_cents"], o["currency"], pay_id)
         result["mock_paid"] = wanted
     elif wanted and billing.stripe_enabled():
         base = site_base_url(request)
         try:
-            offers = [feature_offer(k) for k in wanted]
+            if is_bundle:
+                items = bundle_line_items(wanted)
+            else:
+                items = [{"key": k, "name": feature_offer(k)["name"],
+                          "amount_cents": feature_offer(k)["price_cents"],
+                          "currency": feature_offer(k)["currency"]} for k in wanted]
             result["checkout_url"] = billing.create_features_checkout(
                 customer_email=email,
                 customer_id=None,
                 user_id=user["id"],
-                items=[{"key": o["key"], "name": o["name"],
-                        "amount_cents": o["price_cents"], "currency": o["currency"]}
-                       for o in offers],
+                items=items,
                 success_url=f"{base}/chart/{person_id}?paid=1",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
                 brand=brand_name(),
@@ -1874,6 +1934,7 @@ def api_onboard(data: OnboardRequest, request: Request):
         except Exception as e:
             log.warning("Onboarding checkout за %s се провали: %s", email, e)
     result["wanted"] = wanted
+    result["bundle"] = is_bundle
     return result
 
 
@@ -3594,7 +3655,16 @@ async def api_stripe_webhook(request: Request):
         # Only one-off purchases exist now, so the subscription events that
         # used to arrive here have nothing left to update.
         if etype == "checkout.session.completed":
-            fulfill_checkout_session(obj)
+            # A session can "complete" while the money is still moving with
+            # delayed payment methods; only grant once Stripe says it is paid.
+            if obj.get("payment_status") == "paid":
+                fulfill_checkout_session(obj)
+            else:
+                log.warning("Stripe session %s приключи без paid статус: %s",
+                            obj.get("id"), obj.get("payment_status"))
+                audit("webhook_skipped",
+                      f"Stripe session {obj.get('id')} не е paid ({obj.get('payment_status')})",
+                      actor="stripe")
     except Exception:
         log.exception("Обработка на Stripe event %s се провали", etype)
         audit("webhook_error", f"Stripe event {etype} се провали", actor="stripe")

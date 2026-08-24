@@ -358,6 +358,28 @@
             .offer-bullets { padding-left: 0; }
         }
 
+        /* The promo bundle sits first in the grid and reads as a deal. */
+        .offer-card-item.offer-bundle {
+            border-color: var(--gilt);
+            background: var(--gilt-soft);
+        }
+        .offer-card-item.offer-bundle:hover { border-color: var(--gilt); }
+        .offer-card-item.offer-bundle.picked {
+            border-color: var(--gilt);
+            background: var(--surface-thistle);
+        }
+        .offer-badge {
+            display: inline-block; margin-left: 6px; padding: 2px 8px;
+            border-radius: 999px; font-size: .66rem; font-weight: 700;
+            letter-spacing: .04em; text-transform: uppercase;
+            background: var(--gilt); color: #fff; vertical-align: 2px;
+        }
+        .offer-strike {
+            display: block; text-decoration: line-through;
+            color: var(--text-muted); font-size: .82rem; font-weight: 500;
+        }
+        .offer-card-item.offer-bundle .offer-price { color: var(--gilt); }
+
         /* --- basket above the email field --- */
         .basket {
             text-align: left; max-width: 420px; margin: 0 auto 18px;
@@ -810,6 +832,8 @@
         // Keys the visitor ticked, in the order they ticked them.
         const wanted = new Set();
         let catalogue = [];
+        let bundleData = null;   // the promo bundle from the API
+        let bundleOn = false;    // whether the promo bundle is selected
 
         function moneyBg(cents, currency) {
             const v = (Number(cents) || 0) / 100;
@@ -822,12 +846,39 @@
             try {
                 const resp = await fetch('/api/public/catalogue');
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                catalogue = (await resp.json()).catalogue || [];
+                const data = await resp.json();
+                catalogue = data.catalogue || [];
+                bundleData = data.bundle || null;
             } catch (e) {
                 grid.innerHTML = '<div class="offer-loading">Модулите не се заредиха.</div>';
                 return;
             }
-            grid.innerHTML = catalogue.map(item => `
+
+            const cards = [];
+            if (bundleData) {
+                // The promo bundle is the hero: strikethrough full price,
+                // promo price, marked "Промо". Ticking it takes everything.
+                cards.push(`<label class="offer-card-item offer-bundle" data-key="bundle">
+                    <input type="checkbox" class="offer-check" value="bundle">
+                    <span class="offer-body">
+                        <span class="offer-top">
+                            <span class="offer-glyph">✦</span>
+                            <span class="offer-titles">
+                                <span class="offer-name">${escapeHtml(bundleData.name)}<span class="offer-badge">Промо</span></span>
+                                <span class="offer-note">Всички ${bundleData.keys.length} модула с едно плащане — завинаги</span>
+                            </span>
+                            <span class="offer-price">
+                                <span class="offer-strike">${moneyBg(bundleData.full_price_cents, bundleData.currency)}</span>
+                                ${moneyBg(bundleData.price_cents, bundleData.currency)}
+                            </span>
+                        </span>
+                        <span class="offer-bullets">
+                            <span>Поотделно излизат ${moneyBg(bundleData.full_price_cents, bundleData.currency)} — спестяваш ${moneyBg(bundleData.saving_cents, bundleData.currency)}. Еднократно плащане, не всеки месец.</span>
+                        </span>
+                    </span>
+                </label>`);
+            }
+            cards.push(...catalogue.map(item => `
                 <label class="offer-card-item" data-key="${escapeHtml(item.key)}">
                     <input type="checkbox" class="offer-check" value="${escapeHtml(item.key)}">
                     <span class="offer-body">
@@ -843,11 +894,44 @@
                             ${(item.bullets || []).map(b => `<span>${escapeHtml(b)}</span>`).join('')}
                         </span>
                     </span>
-                </label>`).join('');
+                </label>`));
+            grid.innerHTML = cards.join('');
 
             grid.querySelectorAll('.offer-check').forEach(cb => {
                 cb.addEventListener('change', () => {
-                    if (cb.checked) wanted.add(cb.value); else wanted.delete(cb.value);
+                    if (cb.value === 'bundle') {
+                        if (cb.checked) {
+                            // The whole pack at once: tick every module too, so
+                            // the visitor sees what they are getting.
+                            bundleOn = true;
+                            wanted.clear();
+                            catalogue.forEach(item => wanted.add(item.key));
+                            grid.querySelectorAll('.offer-check:not([value="bundle"])').forEach(c => {
+                                c.checked = true;
+                                c.closest('.offer-card-item').classList.add('picked');
+                            });
+                        } else {
+                            bundleOn = false;
+                            wanted.clear();
+                            grid.querySelectorAll('.offer-check:not([value="bundle"])').forEach(c => {
+                                c.checked = false;
+                                c.closest('.offer-card-item').classList.remove('picked');
+                            });
+                        }
+                    } else {
+                        if (cb.checked) {
+                            wanted.add(cb.value);
+                        } else {
+                            wanted.delete(cb.value);
+                            // Unticking any module while the bundle is on drops
+                            // the bundle — the visitor is building a custom pick.
+                            if (bundleOn) {
+                                bundleOn = false;
+                                const b = grid.querySelector('.offer-check[value="bundle"]');
+                                if (b) b.checked = false;
+                            }
+                        }
+                    }
                     cb.closest('.offer-card-item').classList.toggle('picked', cb.checked);
                     renderBasket();
                 });
@@ -862,12 +946,30 @@
             const copy = document.getElementById('saveCopy');
             const btn = document.getElementById('saveBtn');
 
-            if (!wanted.size) {
+            if (!wanted.size && !bundleOn) {
                 box.hidden = true;
                 title.textContent = 'Запази картата си';
                 copy.textContent = 'Картата живее само в този браузър. Остави имейл и я '
                     + 'запазваме в профил, за да се върнеш към нея по всяко време.';
                 btn.textContent = 'Запази картата';
+                return;
+            }
+
+            if (bundleOn && bundleData) {
+                box.hidden = false;
+                box.innerHTML = `
+                    <div class="basket-row">
+                        <span>✦ ${escapeHtml(bundleData.name)} <span class="offer-badge">Промо</span></span>
+                        <span class="basket-price"><s>${moneyBg(bundleData.full_price_cents, bundleData.currency)}</s> ${moneyBg(bundleData.price_cents, bundleData.currency)}</span>
+                    </div>
+                    <div class="basket-row basket-total">
+                        <span>Общо · еднократно, не всеки месец</span>
+                        <span class="basket-price">${moneyBg(bundleData.price_cents, bundleData.currency)}</span>
+                    </div>`;
+                title.textContent = 'Създай профил и плати';
+                copy.textContent = 'Профилът пази картата и всичките модули. Плащаш веднъж '
+                    + 'и всичко ти остава завинаги.';
+                btn.textContent = 'Към плащането';
                 return;
             }
 
@@ -926,7 +1028,7 @@
                     body: JSON.stringify(Object.assign({
                         email,
                         password: password || null,
-                        wanted: [...wanted],
+                        wanted: bundleOn ? ['bundle'] : [...wanted],
                     }, lastBirth)),
                 });
                 const data = await resp.json().catch(() => ({}));

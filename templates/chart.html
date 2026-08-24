@@ -2547,6 +2547,17 @@
                 setTimeout(maybeShowModulePicker, 900);
             }
             markLockedTabs();
+
+            // Returning from Stripe after an onboarding purchase. The webhook
+            // that grants the modules can land a beat after the redirect, so
+            // the success note leaves room for a reload.
+            const paid = new URLSearchParams(location.search).get('paid');
+            if (paid === '1') {
+                uiToast('Плащането е прието. Ако модулите още са заключени, презареди след няколко секунди.', 'ok');
+                if (typeof window.track === 'function') window.track('purchase');
+            } else if (paid === '0') {
+                uiToast('Плащането беше отказано.', 'err');
+            }
         });
 
         // What this account can open. Filled by markLockedTabs, read by the
