@@ -291,6 +291,18 @@ def init_db():
             )
         """)
 
+        # Фактури по ЗДДС — поредната номерация (10 цифри, чл. 113 ЗДДС) се
+        # генерира от AUTOINCREMENT; фактури никога не се трият/преизползват.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                number TEXT UNIQUE,
+                payment_id INTEGER REFERENCES payments(id),
+                user_id INTEGER REFERENCES users(id),
+                issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Columns added to users after the first release.
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         for col, ddl in [
@@ -566,6 +578,8 @@ BRAND_DEFAULTS = {
 LEGAL_DEFAULTS = {
     "company_name": "[[НАИМЕНОВАНИЕ И ПРАВНА ФОРМА НА ТЪРГОВЕЦА]]",
     "company_id": "[[ЕИК]]",
+    # ДДС номер по чл. 94, ал. 2 ЗДДС — „BG" + ЕИК (регистриран по ЗДДС).
+    "vat_number": "[[ДДС НОМЕР (BG...)]]",
     "address": "[[АДРЕС НА СЕДАЛИЩЕ]]",
     "privacy_email": "[[ИМЕЙЛ ЗА ЗАЩИТА НА ЛИЧНИТЕ ДАННИ]]",
     # Длъжностно лице по защита на данните (DPO) — празно = „няма назначено“.
@@ -1998,6 +2012,83 @@ EMAIL_TEMPLATES = {
         "Акаунтът ти в {brand} е готов. Влез и създай първата си натална карта.\n\n"
         "{link}\n\nПоздрави,\nЕкипът на {brand}"
     ),
+    "set_password_subject": "Картата ти е готова — задай парола",
+    "set_password_body": (
+        "Здравей!\n\n"
+        "Плащането мина и наталната ти карта е изчислена.\n"
+        "Задай парола, за да влизаш в профила си:\n\n"
+        "{link}\n\n"
+        "Връзката е валидна 2 часа. Ако изтече, използвай „Забравена парола“ "
+        "на страницата за вход.\n\n— {brand}"
+    ),
+    "reset_password_subject": "Нулиране на парола — {brand}",
+    "reset_password_body": (
+        "Здравей, {name}!\n\n"
+        "Заяви нулиране на паролата си. Линкът е валиден 2 часа:\n\n"
+        "{link}\n\n"
+        "Ако не си го заявил/а, игнорирай това писмо.\n\n{brand}"
+    ),
+    "digest_subject": "Денят ти в {brand} — {date}",
+    "digest_body": (
+        "Здравей, {name}!\n\n"
+        "{reading}\n\n"
+        "Можеш да спреш тези писма от Настройки.\n\n"
+        "Поздрави,\n{brand}"
+    ),
+    "share_subject": "{title} — {person_name}",
+    "share_body": (
+        "Здравей!\n\n"
+        "Прикачено е разчитането „{title}“ за {name}, изготвено от {brand}.\n"
+        "Позициите в него са изчислени със Swiss Ephemeris.\n\n"
+        "Приятно четене!\n— {brand}"
+    ),
+    # Касов документ по Наредба № Н-18, чл. 52а — задължителните полета
+    # (ЕИК, ДДС, УНП и т.н.) трябва да останат в шаблона.
+    "receipt_subject": "Касов документ от {brand} — №{unp}",
+    "receipt_body": (
+        "Електронен документ за продажба\n"
+        + ("-" * 40) + "\n"
+        "{brand}\n{company_name}\nЕИК: {company_id}\n\n"
+        "Артикули:\n{items}\n\n"
+        "Сума без ДДС: {net_total} EUR\n"
+        "ДДС: {vat_total} EUR\n"
+        "ОБЩО: {total} EUR\n\n"
+        "Дата и час: {datetime}\n"
+        "УНП (номер на продажбата): {unp}\n"
+        "Идентификатор на плащането: {stripe_id}\n"
+        "Начин на плащане: карта (Stripe)\n\n"
+        "Документът е издаден по реда на Наредба № Н-18 за отчитане "
+        "на дистанционни продажби с плащане с карта.\n"
+    ),
+    "unlock_request_subject": "Заявка за отключване: {name}",
+    "unlock_request_body": (
+        "Потребител {email} (ID {user_id}) иска да отключи "
+        "„{name}“ за {price} {currency}."
+    ),
+    "bundle_request_subject": "Заявка за пакет: {bundle_name}",
+    "bundle_request_body": (
+        "Потребител {email} (ID {user_id}) иска пакета "
+        "({keys}) за {price} EUR."
+    ),
+    # Фактура по ЗДДС (чл. 114) — издава се за ВСЯКА продажба, защото търговецът
+    # е регистриран по ЗДДС. Номерът е 10-цифрен пореден (чл. 113) и НЕ се редактира.
+    "invoice_subject": "Фактура №{invoice_number} — {brand}",
+    "invoice_body": (
+        "ФАКТУРА № {invoice_number}\n"
+        "Дата на издаване: {issued_at}\n"
+        + ("-" * 40) + "\n"
+        "Доставчик:\n"
+        "{company_name}\n"
+        "ЕИК: {company_id}\n"
+        "ДДС номер: {vat_number}\n"
+        "{address}\n\n"
+        "Получател: Физическо лице\n\n"
+        "Артикули:\n{items}\n\n"
+        "Данъчна основа (без ДДС): {net_total} EUR\n"
+        "ДДС ({vat_rate}%): {vat_total} EUR\n"
+        "ОБЩО ЗА ПЛАЩАНЕ: {total} EUR\n\n"
+        "Дата на данъчното събитие: {issued_at}\n"
+    ),
 }
 
 # Search-engine settings the admin can edit; these are the defaults the public
@@ -2748,16 +2839,11 @@ def api_request_feature(feature_key: str, request: Request,
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
-        try:
-            send_email(
-                to,
-                f"Заявка за отключване: {offer['name']}",
-                f"Потребител {email} (ID {user_id}) иска да отключи "
-                f"„{offer['name']}“ за {offer['price_cents'] / 100:.2f} {offer['currency']}.",
-            )
-        except HTTPException:
-            # A missing SMTP config must not make the button look broken.
-            pass
+        try_send_template(
+            to, "unlock_request",
+            email=email, user_id=user_id, name=offer["name"],
+            price=f"{offer['price_cents'] / 100:.2f}", currency=offer["currency"],
+        )
     return {"ok": True, "offer": offer, "manual": True}
 
 @app.post("/api/features/bundle/request")
@@ -2811,15 +2897,11 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
-        try:
-            send_email(
-                to,
-                f"Заявка за пакет: {BUNDLE_NAME}",
-                f"Потребител {email} (ID {user_id}) иска пакета "
-                f"({', '.join(keys)}) за {BUNDLE_PRICE_CENTS / 100:.2f} EUR.",
-            )
-        except HTTPException:
-            pass
+        try_send_template(
+            to, "bundle_request",
+            email=email, user_id=user_id, keys=", ".join(keys),
+            bundle_name=BUNDLE_NAME, price=f"{BUNDLE_PRICE_CENTS / 100:.2f}",
+        )
     return {"ok": True, "bundle": bundle, "manual": True}
 
 @app.get("/api/admin/settings")
@@ -3037,17 +3119,35 @@ def site_base_url(request: Optional[Request] = None) -> str:
         return str(request.base_url).rstrip("/")
     return "http://127.0.0.1:8000"
 
+_TPL_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def _fill_template(template: str, fields: dict) -> str:
+    """Substitute {key} placeholders brace-safely.
+
+    Unlike str.format this never treats { or } inside a field value as a
+    placeholder (AI text can contain braces), and unknown placeholders are
+    left untouched rather than raising.
+    """
+    def repl(m: "re.Match") -> str:
+        value = fields.get(m.group(1))
+        return "" if value is None else str(value)
+    return _TPL_PLACEHOLDER_RE.sub(repl, template)
+
+
 def render_email_template(kind: str, **fields) -> Tuple[str, str]:
-    """kind is welcome|expiring|expired. Returns (subject, body)."""
+    """Return (subject, body) for a template kind, overridable from DB settings.
+
+    Kinds: welcome | set_password | reset_password | digest | share | receipt |
+    unlock_request | bundle_request. Admins edit them in Настройки → Шаблони,
+    stored as tpl_<kind>_subject / tpl_<kind>_body settings.
+    """
     subject = get_setting(f"tpl_{kind}_subject") or EMAIL_TEMPLATES[f"{kind}_subject"]
     body = get_setting(f"tpl_{kind}_body") or EMAIL_TEMPLATES[f"{kind}_body"]
     safe = {k: ("" if v is None else str(v)) for k, v in fields.items()}
     # Every template may reference {brand}; a caller-supplied value wins.
     safe.setdefault("brand", brand_name())
-    try:
-        return subject.format(**safe), body.format(**safe)
-    except Exception:
-        return subject, body
+    return _fill_template(subject, safe), _fill_template(body, safe)
 
 def try_send_template(to: str, kind: str, **fields) -> bool:
     """Send a templated email; returns False when SMTP is missing or send fails."""
@@ -3148,8 +3248,9 @@ def fulfill_checkout_session(session: dict) -> None:
                 net, vat = saft.split_vat(per)
                 items.append({"name": name, "net": net, "vat": vat,
                               "total": per, "vat_rate": saft.VAT_RATE})
-            send_receipt_email(email, items=items, total2=amount / 100.0,
-                               unp=pay_id, stripe_id=session.get("id") or "")
+            send_sale_documents(email, items=items, total2=amount / 100.0,
+                                unp=pay_id, stripe_id=session.get("id") or "",
+                                user_id=user_id)
         return
 
     feature_key = meta.get("feature_key")
@@ -3173,10 +3274,11 @@ def fulfill_checkout_session(session: dict) -> None:
         if email:
             net, vat = saft.split_vat(amount / 100.0)
             name = (feature_offer(feature_key) or {}).get("name") or feature_key
-            send_receipt_email(email, items=[{"name": name, "net": net, "vat": vat,
+            send_sale_documents(email, items=[{"name": name, "net": net, "vat": vat,
                                              "total": amount / 100.0, "vat_rate": saft.VAT_RATE}],
-                               total2=amount / 100.0, unp=pay_id,
-                               stripe_id=session.get("id") or "")
+                                total2=amount / 100.0, unp=pay_id,
+                                stripe_id=session.get("id") or "",
+                                user_id=user_id)
         # A chart bought through onboarding belongs to an account that has no
         # usable password yet; this is the visitor's way in.
         if feature_key == "chart":
@@ -3201,27 +3303,85 @@ def send_receipt_email(email: str, *, items, total2, unp, stripe_id) -> bool:
         art_lines.append(f"- {it['name']} — {it['total']:.2f} EUR (ДДС {it['vat_rate']}%)")
         net_total += it["net"]
         vat_total += it["vat"]
-    body = (
-        f"Електронен документ за продажба\n"
-        f"{'-' * 40}\n"
-        f"{brand_name()}\n{lg.get('company_name')}\nЕИК: {lg.get('company_id')}\n\n"
-        f"Артикули:\n" + "\n".join(art_lines) + "\n\n"
-        f"Сума без ДДС: {net_total:.2f} EUR\n"
-        f"ДДС: {vat_total:.2f} EUR\n"
-        f"ОБЩО: {total2:.2f} EUR\n\n"
-        f"Дата и час: {now}\n"
-        f"УНП (номер на продажбата): {unp}\n"
-        f"Идентификатор на плащането: {stripe_id}\n"
-        f"Начин на плащане: карта (Stripe)\n\n"
-        f"Документът е издаден по реда на Наредба № Н-18 за отчитане "
-        f"на дистанционни продажби с плащане с карта.\n"
+    subject, body = render_email_template(
+        "receipt",
+        company_name=lg.get("company_name") or "",
+        company_id=lg.get("company_id") or "",
+        items="\n".join(art_lines),
+        net_total=f"{net_total:.2f}",
+        vat_total=f"{vat_total:.2f}",
+        total=f"{total2:.2f}",
+        datetime=now,
+        unp=unp,
+        stripe_id=stripe_id,
     )
     try:
-        send_email(email, f"Касов документ от {brand_name()} — №{unp}", body)
+        send_email(email, subject, body)
         return True
     except Exception as e:
         log.warning("Неуспешен receipt имейл до %s: %s", email, e)
         return False
+
+def issue_invoice(user_id: int, payment_id: Optional[int]) -> str:
+    """Издава фактура (ЗДДС) и връща 10-цифрен пореден номер (чл. 113 ЗДДС).
+
+    Номерът идва от AUTOINCREMENT — монотонно нараства и никога не се
+    преизползва, дори след изтриване на редове.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "INSERT INTO invoices (payment_id, user_id) VALUES (?, ?)",
+            (payment_id, user_id))
+        inv_id = cur.lastrowid
+        number = f"{inv_id:010d}"
+        conn.execute("UPDATE invoices SET number = ? WHERE id = ?", (number, inv_id))
+        conn.commit()
+        return number
+
+def send_invoice_email(email: str, *, items, total2, invoice_number) -> bool:
+    """Изпраща фактура по ЗДДС (чл. 114) за продажба."""
+    if not email or not smtp_setting("smtp_host"):
+        return False
+    lg = legal()
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M:%S")
+    art_lines = []
+    net_total = vat_total = 0.0
+    for i, it in enumerate(items, 1):
+        art_lines.append(
+            f"{i}. {it['name']} — 1 бр. x {it['net']:.2f} EUR (без ДДС) — "
+            f"ДДС {it['vat']:.2f} EUR — общо {it['total']:.2f} EUR")
+        net_total += it["net"]
+        vat_total += it["vat"]
+    subject, body = render_email_template(
+        "invoice",
+        invoice_number=invoice_number,
+        issued_at=now,
+        company_name=lg.get("company_name") or "",
+        company_id=lg.get("company_id") or "",
+        vat_number=lg.get("vat_number") or "",
+        address=lg.get("address") or "",
+        items="\n".join(art_lines),
+        net_total=f"{net_total:.2f}",
+        vat_total=f"{vat_total:.2f}",
+        vat_rate=saft.VAT_RATE,
+        total=f"{total2:.2f}",
+    )
+    try:
+        send_email(email, subject, body)
+        return True
+    except Exception as e:
+        log.warning("Неуспешен invoice имейл до %s: %s", email, e)
+        return False
+
+def send_sale_documents(email: str, *, items, total2, unp, stripe_id, user_id) -> None:
+    """Издава касов документ (Н-18) + фактура (ЗДДС) за една продажба.
+
+    Касовият документ покрива фискализацията (чл. 52а Н-18); фактурата е
+    задължителна, защото търговецът е регистриран по ЗДДС.
+    """
+    send_receipt_email(email, items=items, total2=total2, unp=unp, stripe_id=stripe_id)
+    invoice_number = issue_invoice(user_id, unp)
+    send_invoice_email(email, items=items, total2=total2, invoice_number=invoice_number)
 
 def hash_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -3251,16 +3411,7 @@ def send_welcome_set_password(user_id: int) -> None:
         token = create_password_reset(user_id)
         base = (get_setting("seo_site_url") or "").rstrip("/")
         link = base + "/reset-password?token=" + token
-        body = (
-            "Здравей!\n\n"
-            "Плащането мина и наталната ти карта е изчислена.\n"
-            "Задай парола, за да влизаш в профила си:\n\n"
-            + link + "\n\n"
-            "Връзката е валидна 2 часа. Ако изтече, използвай "
-            "„Забравена парола“ на страницата за вход.\n\n"
-            "— " + brand_name()
-        )
-        send_email(row["email"], "Картата ти е готова — задай парола", body)
+        try_send_template(row["email"], "set_password", link=link)
     except Exception as e:
         log.warning("Welcome mail за user=%s се провали: %s", user_id, e)
 
@@ -3311,23 +3462,16 @@ def run_digest_emails() -> None:
             excerpt = (prose or cached["content"]).strip()
             if len(excerpt) > 900:
                 excerpt = excerpt[:900].rsplit(" ", 1)[0] + "…"
-            body = (
-                f"Здравей, {name}!\n\n"
-                f"Дневното разчитане за {person['name']}:\n\n{excerpt}\n\n"
-                f"Пълният текст: {chart_link}\n\n"
-                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\n{brand_name()}"
-            )
+            reading = (f"Дневното разчитане за {person['name']}:\n\n{excerpt}\n\n"
+                       f"Пълният текст: {chart_link}")
         else:
-            body = (
-                f"Здравей, {name}!\n\n"
-                f"Дневният хороскоп за {person['name']} те чака в {brand_name()}:\n"
-                f"{chart_link}\n\n"
-                f"Можеш да спреш тези писма от Настройки.\n\nПоздрави,\n{brand_name()}"
-            )
+            reading = (f"Дневният хороскоп за {person['name']} те чака в "
+                       f"{brand_name()}:\n{chart_link}")
         if not smtp_setting("smtp_host"):
             return
         try:
-            send_email(u["email"], f"Денят ти в {brand_name()} — {today}", body)
+            try_send_template(u["email"], "digest", name=name, reading=reading,
+                              date=today)
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?",
                              (today, u["id"]))
@@ -3361,16 +3505,7 @@ def api_forgot_password(data: ForgotPasswordRequest, request: Request):
         link = f"{site_base_url(request)}/reset-password?token={urllib.parse.quote(token)}"
         name = user.get("display_name") or email.split("@")[0]
         if smtp_setting("smtp_host"):
-            try:
-                send_email(
-                    email,
-                    f"Нулиране на парола — {brand_name()}",
-                    f"Здравей, {name}!\n\n"
-                    f"Заяви нулиране на паролата си. Линкът е валиден 2 часа:\n\n"
-                    f"{link}\n\nАко не си го заявили, игнорирай това писмо.\n\n{brand_name()}",
-                )
-            except Exception as e:
-                log.warning("Forgot-password имейл се провали: %s", e)
+            try_send_template(email, "reset_password", name=name, link=link)
     return {"ok": True}
 
 @app.post("/api/auth/reset-password")
@@ -5406,15 +5541,9 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
     title = reading_title(data.key)
     name = first_name(person["name"]) or person["name"]
 
-    send_email(
-        to,
-        f"{title} — {person['name']}",
-        f"Здравей!\n\n"
-        f"Прикачено е разчитането „{title}“ за {name}, изготвено от {brand_name()}.\n"
-        f"Позициите в него са изчислени със Swiss Ephemeris.\n\n"
-        f"Приятно четене!\n— {brand_name()}",
-        attachment=(filename, pdf, "application/pdf"),
-    )
+    subject, body = render_email_template(
+        "share", title=title, person_name=person["name"], name=name)
+    send_email(to, subject, body, attachment=(filename, pdf, "application/pdf"))
     return {"ok": True, "to": to}
 
 # --- Web UI Routes ---
