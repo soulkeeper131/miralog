@@ -3175,6 +3175,51 @@ def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
                "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят.")
     return {"ok": True}
 
+def _template_preview_data() -> list:
+    """Тестови данни за преглед на всички имейл темплейти от админ панела."""
+    return [
+        ("welcome", dict(name="Иван", link="https://astrokarta.bg/dashboard")),
+        ("set_password", dict(link="https://astrokarta.bg/reset-password?token=DEMO_TOKEN_123")),
+        ("reset_password", dict(name="Иван", link="https://astrokarta.bg/reset-password?token=DEMO_TOKEN_123")),
+        ("digest", dict(
+            name="Иван", date="24.08.2026",
+            reading="Дневното разчитане за Иван Петров:\n\nСлънцето в Дева подсказва ден за подреждане на делата. Внимателен с обещанията в късния следобед.\n\nПълният текст: https://astrokarta.bg/chart/42")),
+        ("share", dict(title="Натална карта", person_name="Иван Петров", name="Иван")),
+        ("receipt", dict(
+            company_name="BLV Systems ООД", company_id="123456789",
+            items="- Натална карта — 8.40 EUR (ДДС 20%)\n- Нумерология — 4.20 EUR (ДДС 20%)",
+            net_total="10.50", vat_total="2.10", total="12.60",
+            datetime="24.08.2026 10:30:00", unp="42", stripe_id="cs_test_demo123")),
+        ("unlock_request", dict(email="ivan@example.com", user_id=42,
+                                name="Нумерология", price="4.20", currency="EUR")),
+        ("bundle_request", dict(email="ivan@example.com", user_id=42,
+                                keys="numerology, synastry", bundle_name="Пълен пакет",
+                                price="20.00")),
+        ("invoice", dict(
+            invoice_number="0000000001", issued_at="24.08.2026 10:30:00",
+            company_name="BLV Systems ООД", company_id="123456789",
+            vat_number="BG123456789", address="гр. София, ул. Примерна 1",
+            items="1. Натална карта — 1 бр. x 8.40 EUR (без ДДС) — ДДС 1.68 EUR — общо 10.08 EUR",
+            net_total="8.40", vat_total="1.68", vat_rate=20, total="10.08")),
+    ]
+
+@app.post("/api/admin/templates/preview")
+def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_admin)):
+    """Изпраща всички имейл темплейти с тестови данни до даден адрес (преглед)."""
+    to = (payload.get("to") or "").strip()
+    if "@" not in to:
+        raise HTTPException(400, "Въведи валиден имейл адрес.")
+    if not smtp_setting("smtp_host"):
+        raise HTTPException(400, "SMTP сървърът не е конфигуриран.")
+    sent = 0
+    for kind, fields in _template_preview_data():
+        subject, body = render_email_template(kind, **fields)
+        send_email(to, subject, body)
+        sent += 1
+    audit("templates_preview", f"Изпратени {sent} темплейта за преглед до {to}",
+          actor=admin["email"])
+    return {"ok": True, "sent": sent, "to": to}
+
 # --- Site URL, lifecycle emails, billing fulfillment, password reset, share ---
 
 def site_base_url(request: Optional[Request] = None) -> str:
