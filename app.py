@@ -2882,8 +2882,7 @@ def api_request_feature(feature_key: str, request: Request,
 
     if billing.stripe_enabled():
         base = site_base_url(request)
-        success = (os.environ.get("STRIPE_SUCCESS_URL")
-               or f"{base}/settings?paid=1&session_id={{CHECKOUT_SESSION_ID}}")
+        success = stripe_success_url(f"{base}/settings?paid=1")
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
         try:
             url = billing.create_feature_checkout(
@@ -2944,8 +2943,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 "currency": offer["currency"],
             })
         base = site_base_url(request)
-        success = (os.environ.get("STRIPE_SUCCESS_URL")
-               or f"{base}/settings?paid=1&session_id={{CHECKOUT_SESSION_ID}}")
+        success = stripe_success_url(f"{base}/settings?paid=1")
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
         try:
             url = billing.create_features_checkout(
@@ -3395,6 +3393,20 @@ def _strip_stripe(obj):
         return [_strip_stripe(v) for v in obj]
     return obj
 
+def stripe_success_url(default_path: str) -> str:
+    """Success URL for Checkout, always carrying the session id.
+
+    Stripe substitutes {CHECKOUT_SESSION_ID} on redirect. The page uses it to
+    settle the purchase immediately instead of waiting for the webhook, so an
+    override that forgets the placeholder would quietly reintroduce the bug
+    where a paid module still looks locked.
+    """
+    url = (os.environ.get("STRIPE_SUCCESS_URL") or "").strip() or default_path
+    if "CHECKOUT_SESSION_ID" not in url:
+        url += ("&" if "?" in url else "?") + "session_id={CHECKOUT_SESSION_ID}"
+    return url
+
+
 def fulfill_checkout_session(session: dict) -> None:
     """Apply a completed Stripe Checkout session to the local DB."""
     meta = session.get("metadata") or {}
@@ -3764,8 +3776,7 @@ def api_checkout_feature(feature_key: str, request: Request,
     if not offer:
         raise HTTPException(404, "Тази функция не се продава отделно.")
     base = site_base_url(request)
-    success = (os.environ.get("STRIPE_SUCCESS_URL")
-               or f"{base}/settings?paid=1&session_id={{CHECKOUT_SESSION_ID}}")
+    success = stripe_success_url(f"{base}/settings?paid=1")
     cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
     try:
         url = billing.create_feature_checkout(
