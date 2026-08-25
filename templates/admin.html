@@ -1556,6 +1556,51 @@
                     '</div>' +
                     '<div class="btn-row"><button class="btn" id="saveBrandBtn">Запази марката</button></div></div>';
 
+                const lg = d.legal || {};
+                const lgIncomplete = ['company_name', 'company_id', 'address', 'privacy_email']
+                    .some(function (k) { return !lg[k] || String(lg[k]).indexOf('[[') === 0; });
+                html += '<div class="section"><h2>Юридически данни</h2>' +
+                    (lgIncomplete
+                        ? '<div class="error" style="margin-bottom:14px;">' +
+                          'Незапълнени полета се показват на клиентите като ' +
+                          '<code>[[ЕИК]]</code> в Общи условия и Политика за ' +
+                          'поверителност. Законът изисква тези данни да са публични ' +
+                          '(ЗЗП чл. 47, ЗЕТ чл. 4).</div>'
+                        : '<div class="hint" style="margin-bottom:14px;">' +
+                          'Показват се в Общи условия, Политика за поверителност ' +
+                          'и документите за плащане.</div>') +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="lgName">Фирма (наименование и правна форма)</label>' +
+                            '<input type="text" id="lgName" value="' + escapeHtml(lg.company_name || '') + '"></div>' +
+                        '<div class="form-group"><label for="lgEik">ЕИК / БУЛСТАТ</label>' +
+                            '<input type="text" id="lgEik" value="' + escapeHtml(lg.company_id || '') + '"></div>' +
+                    '</div>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="lgVat">ДДС номер</label>' +
+                            '<input type="text" id="lgVat" value="' + escapeHtml(lg.vat_number || '') + '">' +
+                            '<div class="hint">Празно = не сте регистрирани по ЗДДС.</div></div>' +
+                        '<div class="form-group"><label for="lgDpo">Длъжностно лице по защита на данните</label>' +
+                            '<input type="text" id="lgDpo" value="' + escapeHtml(lg.dpo || '') + '">' +
+                            '<div class="hint">Празно = няма назначено.</div></div>' +
+                    '</div>' +
+                    '<div class="form-group"><label for="lgAddr">Адрес на седалище</label>' +
+                        '<input type="text" id="lgAddr" value="' + escapeHtml(lg.address || '') + '"></div>' +
+                    '<div class="form-group"><label for="lgEmail">Имейл за лични данни</label>' +
+                        '<input type="email" id="lgEmail" value="' + escapeHtml(lg.privacy_email || '') + '"></div>' +
+                    '<h3 style="margin-top:20px;">Наредба Н-18</h3>' +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="lgShopN">Номер на е-магазин (НАП)</label>' +
+                            '<input type="text" id="lgShopN" value="' + escapeHtml(lg.e_shop_n || '') + '">' +
+                            '<div class="hint">Получава се при регистрация по Приложение № 33.</div></div>' +
+                        '<div class="form-group"><label for="lgShopType">Вид търговия</label>' +
+                            '<select id="lgShopType">' +
+                                '<option value="1"' + (String(lg.e_shop_type) === '2' ? '' : ' selected') + '>Собствен сайт</option>' +
+                                '<option value="2"' + (String(lg.e_shop_type) === '2' ? ' selected' : '') + '>През маркетплейс</option>' +
+                            '</select></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveLegalBtn">Запази юридическите данни</button>' +
+                        '<a class="btn btn-ghost" href="/terms" target="_blank" rel="noopener">Виж условията</a></div></div>';
+
                 const seo = d.seo || {};
                 html += '<div class="section"><h2>SEO</h2>' +
                     '<div class="hint" style="margin-bottom:14px;">' +
@@ -1763,6 +1808,21 @@
                         notify('Върнато е оригиналното лого.');
                     } catch (e) { notifyError(e); }
                 });
+            });
+
+            document.getElementById('saveLegalBtn').addEventListener('click', async function() {
+                await saveSettings({
+                    legal: {
+                        company_name: document.getElementById('lgName').value.trim(),
+                        company_id: document.getElementById('lgEik').value.trim(),
+                        vat_number: document.getElementById('lgVat').value.trim(),
+                        address: document.getElementById('lgAddr').value.trim(),
+                        privacy_email: document.getElementById('lgEmail').value.trim(),
+                        dpo: document.getElementById('lgDpo').value.trim(),
+                        e_shop_n: document.getElementById('lgShopN').value.trim(),
+                        e_shop_type: document.getElementById('lgShopType').value,
+                    },
+                }, 'Юридическите данни са запазени.');
             });
 
             document.getElementById('saveSeoBtn').addEventListener('click', async function() {

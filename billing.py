@@ -17,7 +17,22 @@ STRIPE_WEBHOOK_SECRET = (os.environ.get("STRIPE_WEBHOOK_SECRET") or "").strip()
 
 
 def stripe_enabled() -> bool:
+    """Whether checkout may be offered at all.
+
+    Both halves are required. With a secret key but no webhook secret the
+    customer can pay and nothing unlocks — the money leaves their account and
+    the module stays locked. Refusing to open the till is the lesser failure.
+    """
+    return bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)
+
+
+def checkout_key_present() -> bool:
+    """Only the secret key, for diagnostics that must tell the two apart."""
     return bool(STRIPE_SECRET_KEY)
+
+
+def webhook_secret_present() -> bool:
+    return bool(STRIPE_WEBHOOK_SECRET)
 
 
 def get_stripe():
