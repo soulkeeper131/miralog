@@ -3002,6 +3002,9 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
         "seo": seo_settings(),
         "brand": {key: (get_setting(key) or default)
                   for key, default in BRAND_DEFAULTS.items()},
+        # Values behind the terms, the privacy policy and the N-18 documents.
+        "legal": {key: (get_setting(f"legal_{key}") or default)
+                  for key, default in LEGAL_DEFAULTS.items()},
     }
 
 @app.post("/api/admin/settings")
@@ -3045,6 +3048,10 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     for key, value in (payload.get("brand") or {}).items():
         if key in BRAND_DEFAULTS:
             set_setting(key, str(value or "").strip())
+
+    for key, value in (payload.get("legal") or {}).items():
+        if key in LEGAL_DEFAULTS:
+            set_setting(f"legal_{key}", str(value or "").strip())
 
     sections = [k for k in ("ai", "smtp", "templates", "seo", "brand") if payload.get(k)]
     audit("settings_changed", f"Смени секции: {', '.join(sections) or '—'}",
