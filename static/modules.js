@@ -15,6 +15,8 @@
        and the first-visit picker. They share this promise instead; a purchase
        calls invalidate() so the next read sees the new state. */
     let featuresPromise = null;
+    // Kept so the checkout event can quote a price without a second request.
+    let lastFeatures = null;
     window.loadFeatures = function (force) {
         if (force) featuresPromise = null;
         if (!featuresPromise) {
@@ -23,6 +25,7 @@
                     if (!resp.ok) throw new Error('Грешка ' + resp.status);
                     return resp.json();
                 })
+                .then(data => { lastFeatures = data; return data; })
                 .catch(err => { featuresPromise = null; throw err; });
         }
         return featuresPromise;
@@ -112,11 +115,43 @@
                 }
             }
 
+            // ЗЗП чл. 57 т. 13: the 14-day right of withdrawal falls away for
+            // digital content only if the customer explicitly agreed that
+            // delivery starts at once and knowingly gave that right up.
+            // Without asking, the waiver written into the terms is worthless.
+            const agreed = await uiConfirm(
+                'Разчитането се генерира веднага след плащането. Съгласен ли си ' +
+                'изпълнението да започне сега и потвърждаваш ли, че с това губиш ' +
+                'правото си на 14-дневен отказ по чл. 57, т. 13 от ЗЗП?',
+                { title: 'Съгласие за незабавно изпълнение',
+                  ok: 'Съгласен съм, продължи', cancel: 'Отказ' });
+            if (!agreed) { btn.disabled = false; btn.textContent = original; return; }
+
             // The bundle has its own endpoint: it works out what is still
             // missing rather than taking a single key.
             const url = key === 'bundle'
                 ? '/api/features/bundle/request'
                 : '/api/features/' + encodeURIComponent(key) + '/request';
+
+            // Fired before the redirect, while we still know what is being
+            // bought — after the jump to Stripe this page is gone.
+            if (typeof trackPurchase === 'function') {
+                const meta = lastFeatures && (lastFeatures.catalogue || [])
+                    .find(function (c) { return c.key === key; });
+                const bundleInfo = key === 'bundle' && lastFeatures && lastFeatures.bundle;
+                trackPurchase('begin_checkout', bundleInfo ? {
+                    price_cents: bundleInfo.price_cents,
+                    currency: bundleInfo.currency,
+                    name: bundleInfo.name,
+                    keys: bundleInfo.keys,
+                } : {
+                    price_cents: meta && meta.offer && meta.offer.price_cents,
+                    currency: meta && meta.offer && meta.offer.currency,
+                    name: meta && meta.name,
+                    keys: [key],
+                });
+            }
+
             const resp = await fetch(url, { method: 'POST', headers: authHeaders() });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
@@ -284,6 +319,11 @@
                 cleanUrl();
                 if (res.ok && res.d.paid) {
                     if (typeof invalidateFeatures === 'function') invalidateFeatures();
+                    // The server tells us what was actually charged, so the
+                    // reports can total revenue rather than only count sales.
+                    if (typeof trackPurchase === 'function' && res.d.purchase) {
+                        trackPurchase('purchase', res.d.purchase);
+                    }
                     if (typeof uiToast === 'function') {
                         uiToast('Плащането е получено. Приятно четене!', 'ok');
                     }

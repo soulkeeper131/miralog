@@ -1,6 +1,11 @@
 {% set gid = ga_id() %}
-{% if gid %}
+{% set fbid = fb_pixel_id() %}
+{% if gid or fbid %}
 <script>
+  window.GA_ID = '{{ gid }}';
+  window.FB_PIXEL_ID = '{{ fbid }}';
+
+  {% if gid %}
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('consent', 'default', {
@@ -11,15 +16,37 @@
   });
   gtag('js', new Date());
   gtag('config', '{{ gid }}');
-  window.GA_ID = '{{ gid }}';
-  // gtag.js се зарежда след `load`, а не синхронно в <head> — така Google
-  // Analytics не блокира main thread (намаля TBT). dataLayer + gtag() са
-  // дефинирани тук, затова consent.js и събитията работят още преди load.
+  {% endif %}
+
+  {% if fbid %}
+  // Meta pixel, stubbed here and loaded after consent. The stub queues calls
+  // so anything fired before the script arrives is not lost.
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+  n.push=n;n.loaded=!0;n.version='2.0';n.queue=[]}(window,document);
+  // Meta's own consent gate: nothing is sent until revoked is lifted.
+  fbq('consent', 'revoke');
+  {% endif %}
+
+  // Both tags load after `load` so they never block the main thread. The
+  // queues above mean events fired earlier still arrive once the script does.
   window.addEventListener('load', function () {
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://www.googletagmanager.com/gtag/js?id={{ gid }}';
-    document.head.appendChild(s);
+    {% if gid %}
+    var g = document.createElement('script');
+    g.async = true;
+    g.src = 'https://www.googletagmanager.com/gtag/js?id={{ gid }}';
+    document.head.appendChild(g);
+    {% endif %}
+    {% if fbid %}
+    var f = document.createElement('script');
+    f.async = true;
+    f.src = 'https://connect.facebook.net/en_US/fbevents.js';
+    document.head.appendChild(f);
+    {% endif %}
   });
 </script>
+{% if fbid %}
+<noscript><img height="1" width="1" style="display:none" alt=""
+  src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"></noscript>
+{% endif %}
 {% endif %}

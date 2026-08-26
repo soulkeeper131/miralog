@@ -31,14 +31,71 @@
                 'analytics_storage': 'granted'
             });
         }
+        // Meta has its own gate; without lifting it the pixel stays silent
+        // even after the script loads.
+        if (typeof window.fbq === 'function') {
+            window.fbq('consent', 'grant');
+            window.fbq('init', window.FB_PIXEL_ID);
+            window.fbq('track', 'PageView');
+        }
     }
 
-    // Хелпър за custom събития (регистрация, вход, модул, покупка, CTA).
-    // Изпраща само при дадено съгласие.
+    /* One call, both tags.
+
+       GA4 and Meta name the same moments differently, so the mapping lives
+       here rather than at every call site — otherwise each new button has to
+       remember two vocabularies and one of them eventually gets forgotten.
+       Nothing is sent without consent. */
+    var FB_EVENTS = {
+        begin_checkout: 'InitiateCheckout',
+        purchase: 'Purchase',
+        sign_up: 'CompleteRegistration',
+        login: null,               // no standard Meta equivalent
+        view_item: 'ViewContent',
+        click_cta: null,
+    };
+
     window.track = function (name, params) {
-        if (typeof window.gtag === 'function' && current() === 'granted') {
-            window.gtag('event', name, params || {});
+        if (current() !== 'granted') return;
+        params = params || {};
+
+        if (typeof window.gtag === 'function') {
+            window.gtag('event', name, params);
         }
+
+        if (typeof window.fbq === 'function') {
+            var fbName = Object.prototype.hasOwnProperty.call(FB_EVENTS, name)
+                ? FB_EVENTS[name] : name;
+            if (fbName) {
+                var payload = {};
+                // Meta expects value/currency spelled its own way.
+                if (params.value != null) payload.value = params.value;
+                if (params.currency) payload.currency = params.currency;
+                if (params.transaction_id) payload.order_id = params.transaction_id;
+                if (params.item_name) payload.content_name = params.item_name;
+                var standard = ['InitiateCheckout', 'Purchase',
+                                'CompleteRegistration', 'ViewContent'];
+                if (standard.indexOf(fbName) !== -1) {
+                    window.fbq('track', fbName, payload);
+                } else {
+                    window.fbq('trackCustom', fbName, payload);
+                }
+            }
+        }
+    };
+
+    /* Purchases and checkouts carry money, so they get their own helper —
+       a bare track('purchase') with no value produces a report that counts
+       sales but cannot total them. */
+    window.trackPurchase = function (kind, info) {
+        info = info || {};
+        var params = {};
+        if (info.price_cents != null) params.value = +(info.price_cents / 100).toFixed(2);
+        params.currency = info.currency || 'EUR';
+        if (info.transaction_id) params.transaction_id = info.transaction_id;
+        if (info.name) params.item_name = info.name;
+        if (info.keys) params.items = info.keys;
+        window.track(kind, params);
     };
 
     // Делегирано проследяване на кликове по CTA бутони/линкове.
@@ -58,8 +115,8 @@
         wrap.setAttribute('aria-label', 'Съгласие за аналитика');
         wrap.innerHTML =
             '<div class="consent-text">' +
-                '<strong>Използваме аналитика (Google Analytics)</strong>, за да разберем ' +
-                'как се ползва сайтът и да го подобряваме. Данните са анонимни и обобщени. ' +
+                '<strong>Използваме аналитика</strong>, за да разберем как се ползва ' +
+                'сайтът и да го подобряваме. Ако откажеш, нищо не се събира. ' +
                 '<a href="/privacy">Подробности</a>' +
             '</div>' +
             '<div class="consent-actions">' +

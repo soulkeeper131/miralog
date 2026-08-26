@@ -650,6 +650,7 @@ templates.env.globals["legal"] = legal
 # restart. Empty string means "no analytics" — the consent layer keeps gtag
 # dormant until the visitor opts in anyway.
 templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or "").strip()
+templates.env.globals["fb_pixel_id"] = lambda: (seo_settings().get("fb_pixel_id") or "").strip()
 # Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
 templates.env.globals["admin_host"] = ADMIN_HOST
 # Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
@@ -2159,6 +2160,8 @@ SEO_DEFAULTS = {
     "seo_robots": "index,follow",
     "seo_verification": "",
     "analytics_id": "G-CY4NT2QLFX",
+    # Meta/Facebook pixel. Empty means no pixel is loaded at all.
+    "fb_pixel_id": "",
 }
 
 def seo_settings() -> dict:
@@ -3839,10 +3842,26 @@ def api_billing_session(session_id: str,
         fulfill_checkout_session(raw)
 
     row = get_user_by_id(user_id)
+    # The page fires the purchase event, and an event without a value produces
+    # a report that counts sales but cannot total them — so the amount, the
+    # currency and the order id travel back with the answer.
+    keys = []
+    if meta.get("feature_keys"):
+        keys = [k.strip() for k in meta["feature_keys"].split(",") if k.strip()]
+    elif meta.get("feature_key"):
+        keys = [meta["feature_key"]]
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
     return {
         "paid": paid,
         "status": raw.get("payment_status"),
         "unlocked": unlocked_features(row) if row else [],
+        "purchase": {
+            "transaction_id": session_id,
+            "price_cents": int(raw.get("amount_total") or 0),
+            "currency": (raw.get("currency") or "eur").upper(),
+            "keys": keys,
+            "name": ", ".join(names.get(k, k) for k in keys),
+        } if paid else None,
     }
 
 
