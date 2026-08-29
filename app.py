@@ -46,6 +46,7 @@ import saft
 from feature_pages import FEATURE_PAGES, FEATURE_PAGES_BY_SLUG
 from horoscope_signs import ZODIAC_SIGNS, ZODIAC_BY_SLUG
 from planet_pages import PLANETS, PLANETS_BY_KEY, PLANETS_BY_SLUG
+from house_pages import HOUSES, HOUSES_BY_NUM
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
@@ -278,6 +279,16 @@ def init_db():
                 content TEXT NOT NULL,
                 generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (sign_a, sign_b)
+            )
+        """)
+        # Evergreen "planet in house" SEO pages (e.g. /luna-v-7-dom).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS planet_house_cache (
+                planet TEXT NOT NULL,
+                house TEXT NOT NULL,
+                content TEXT NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (planet, house)
             )
         """)
 
@@ -2668,6 +2679,60 @@ def _generate_compatibility(sign_a: dict, sign_b: dict) -> Optional[str]:
         return None
     raw = call_ai(ai_key, provider, prompt, max_tokens=1500)
     set_compatibility(sign_a["sign"], sign_b["sign"], raw)
+    return raw
+
+
+# --- Вечнозелени SEO страници „планета в дом" (/luna-v-7-dom и т.н.) ---
+BODY_PLANETS = [p for p in PLANETS if p["key"] != "Asc"]  # 10 планети × 12 дома = 120
+
+
+def get_planet_house(planet: str, house: str) -> Optional[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT content FROM planet_house_cache WHERE planet = ? AND house = ?",
+            (planet, house)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def set_planet_house(planet: str, house: str, content: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO planet_house_cache (planet, house, content, generated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(planet, house) DO UPDATE SET content = excluded.content, generated_at = CURRENT_TIMESTAMP",
+            (planet, house, content)
+        )
+        conn.commit()
+
+
+def _generate_planet_house(planet_data: dict, house_data: dict) -> Optional[str]:
+    """Напиши и кеширай краткия тизър за „{планета} в {дом}". Вечнозелено — веднъж."""
+    planet_name = planet_data["name"]
+    house_name = house_data["name"]
+    house_short = house_data["short"]
+
+    prompt = f"""Ти си астролог. Напиши КРАТКО обяснение какво означава {planet_name} в {house_name} (по рождената карта).
+
+КОНТЕКСТ:
+- {planet_name}: {meaning_object(planet_data['key'])}
+- {house_name} ({house_short}): {meaning_house(house_data['key'])}
+
+ВАЖНО: Това е ТИЗЪР за SEO страница — НЕ пълно персонално разчитане. Пиши само ОБЩИЯ случай (какво значи за повечето хора с тази позиция). НЕ навлизай в аспекти, конкретни градуси или знака на върха на дома — това е част от персоналното разчитане, което читателят получава отделно. Целта е да дадеш ясна обща представа, която да накара читателя да поиска по-задълбочения анализ.
+
+Структура (всяко заглавие на собствен ред, обградено с **звезди**):
+**Общо значение** — 2-3 изречения.
+**Любов и отношения** — 2-3 изречения.
+**Работа и финанси** — 2-3 изречения.
+**Как да използваш тази енергия** — 1-2 изречения.
+
+Пиши на български, ясно и практично, без жаргон. Общо ~250-350 думи. НЕ използвай маркери SUMMARY и НЕ изброявай с тирета."""
+
+    ai_key, provider = get_ai_config()
+    if not ai_key:
+        return None
+    raw = call_ai(ai_key, provider, prompt, max_tokens=1200)
+    set_planet_house(planet_data["key"], house_data["key"], raw)
     return raw
 
 
@@ -6358,6 +6423,9 @@ def sitemap_xml(request: Request):
     # Sign compatibility — 78 pairs, long-tail "съвместимост овен телец" searches.
     entries.append(("/savmestimost", "monthly", "0.8"))
     entries += [(f"/savmestimost/{slug}", "monthly", "0.7") for _, _, slug in COMPAT_PAIRS]
+    # Planet in house — 120 pages, long-tail "луна в 7 дом" searches.
+    for pl in BODY_PLANETS:
+        entries += [(f"/{pl['slug']}-v-{h['num']}-dom", "monthly", "0.7") for h in HOUSES]
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
@@ -6615,6 +6683,90 @@ def api_horoskop(sign_slug: str, refresh: bool = False):
             return {"summary": summary, "body": body, "date": date_bg, "cached": False}
         return {"body": AI_UNAVAILABLE, "date": date_bg}
     return {"pending": True, "date": date_bg}
+
+
+# --- Вечнозелени SEO страници „планета в дом" (/luna-v-7-dom) ---
+# Регистрирани ПРЕДИ „планета в знак": и двата шаблона са /{planet}-v-{...},
+# но „-dom" накрая + int конвертор правят дома недвусмислен.
+_HOUSE_FAQ = [
+    {"q": "Това точно ли е значението за мен?",
+     "a": "Това е общото значение за всички, родени с тази позиция. Конкретно за теб то зависи от знака на върха на дома, аспектите и останалите планети в картата ти — затова е нужен персонален анализ."},
+    {"q": "Каква е разликата с наталната карта?",
+     "a": "Тук виждаш една-единствена позиция извън контекст. Наталната карта показва как всички планети и домове си взаимодействат заедно и какво значи това лично за теб."},
+    {"q": "Как да разбера в кой дом е моята планета?",
+     "a": "Създай безплатната си натална карта — тя изчислява позицията на всяка планета по дом до градус и я обяснява конкретно за теб."},
+    {"q": "Къде да получа пълното разчитане на картата си?",
+     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+]
+
+
+@app.get("/{planet_slug}-v-{house_num:int}-dom", response_class=HTMLResponse)
+async def planet_house_page(request: Request, planet_slug: str, house_num: int):
+    planet = PLANETS_BY_SLUG.get(planet_slug)
+    house = HOUSES_BY_NUM.get(house_num)
+    if not planet or not house:
+        raise HTTPException(404, "Няма такава страница.")
+
+    cached = get_planet_house(planet["key"], house["key"])
+    ctx = seo_context(request, path=f"/{planet_slug}-v-{house_num}-dom")
+    ctx["seo_title"] = f"{planet['name']} в {house['short']} — какво означава | {brand_name()}"
+    ctx["seo_description"] = (f"{planet['name']} в {house['short']}: общото значение за характера, любовта и работата. "
+                              f"Виж какво значи конкретно в твоята натална карта.")
+    ctx["seo_keywords"] = f"{planet['name'].lower()} в {house['short']}, {planet['name'].lower()} в {house['name'].lower()}"
+    ctx["planet"] = planet
+    ctx["house"] = house
+    ctx["planets"] = BODY_PLANETS
+    ctx["houses"] = HOUSES
+    ctx["faq"] = _HOUSE_FAQ
+    if cached:
+        ctx["body_html"] = _md_to_html(cached)
+    return HTMLResponse(templates.get_template("planet_house.html").render(ctx))
+
+
+@app.get("/api/dom/warm")
+def api_planet_house_warm():
+    """Генерира всички планета×дом комбинации без кеш (120 страници, еднократно)."""
+    started = 0
+    for p in BODY_PLANETS:
+        for h in HOUSES:
+            if get_planet_house(p["key"], h["key"]):
+                continue
+            cache_key = f"planet_house:{p['key']}:{h['key']}"
+            with _AI_JOBS_LOCK:
+                running = _AI_JOBS.get(cache_key)
+            if running and not running["done"].is_set():
+                continue
+            ai_job(cache_key, lambda pp=p, hh=h: _generate_planet_house(pp, hh))
+            started += 1
+    return {"started": started}
+
+
+@app.get("/api/dom/{planet_slug}-v-{house_num:int}")
+def api_planet_house(planet_slug: str, house_num: int, refresh: bool = False):
+    """Генерира (или връща кеширан) тизъра за „{планета} в {дом}"."""
+    planet = PLANETS_BY_SLUG.get(planet_slug)
+    house = HOUSES_BY_NUM.get(house_num)
+    if not planet or not house:
+        raise HTTPException(404, "Няма такава страница.")
+    cache_key = f"planet_house:{planet['key']}:{house['key']}"
+
+    if not refresh:
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            return {"pending": True}
+        cached = get_planet_house(planet["key"], house["key"])
+        if cached:
+            return {"body": cached, "cached": True}
+
+    job = ai_job(cache_key, lambda: _generate_planet_house(planet, house))
+    if job["done"].is_set():
+        cached = get_planet_house(planet["key"], house["key"])
+        if cached:
+            return {"body": cached, "cached": False}
+        return {"body": AI_UNAVAILABLE}
+    return {"pending": True}
 
 
 # --- Вечнозелени SEO страници „планета в знак" ---

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    {% if seo_keywords %}<meta name="keywords" content="{{ seo_keywords }}">{% endif %}
+    <meta name="robots" content="{{ seo_robots }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    {% if seo_verification %}<meta name="google-site-verification" content="{{ seo_verification }}">{% endif %}
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ brand().name }}">
+    <meta property="og:locale" content="bg_BG">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ seo_title }}">
+    <meta name="twitter:description" content="{{ seo_description }}">
+    {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {% for f in faq %}
+            {"@type": "Question", "name": "{{ f.q }}", "acceptedAnswer": {"@type": "Answer", "text": "{{ f.a }}"}}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }
+    </script>
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    {% include "_critical.html" %}
+    <link rel="preload" href="/static/landing.min.css?v=1" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="/static/landing.min.css?v=1">
+        <link rel="stylesheet" href="/static/consent.css?v=4">
+    </noscript>
+    {% include "_analytics.html" %}
+    <style>
+        .horo-reading { max-width: 760px; margin: 0 auto; }
+        .horo-reading h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin: 1.6em 0 0.5em; }
+        .horo-reading h3:first-child { margin-top: 0; }
+        .horo-reading p { color: var(--text-soft); line-height: 1.75; margin-bottom: 0.9em; }
+        .wall { max-width: 720px; margin: 40px auto; padding: 26px 28px; border: 1px solid var(--accent); border-radius: 16px; background: var(--surface, transparent); }
+        .wall h3 { color: var(--text-heading); margin-bottom: 10px; font-size: 1.05rem; }
+        .wall p { color: var(--text-soft); line-height: 1.7; margin-bottom: 16px; }
+        .horo-loading { text-align: center; color: var(--text-soft); padding: 40px 0; }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <main>
+    <header class="hero hero--feature">
+        <div class="wrap">
+            <div class="page-nav">
+                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
+                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                </a>
+                <a class="back-link" href="/">← Начало</a>
+            </div>
+            <div class="hero-glyph" aria-hidden="true">{{ planet.glyph }}</div>
+            <p><span class="kicker">Позиция в наталната карта · {{ house.name }}</span></p>
+            <h1>{{ planet.name }} в {{ house.short }}</h1>
+            <p class="lede">Какво означава тази позиция — общото значение за характера, любовта и работата.</p>
+            <div class="cta-row">
+                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
+            </div>
+            <p class="cta-note">Безплатната карта изчислява позицията ти до градус и дом.</p>
+        </div>
+    </header>
+
+    <section>
+        <div class="wrap">
+            {% if body_html %}
+            <div class="horo-reading">{{ body_html|safe }}</div>
+
+            <div class="wall">
+                <h3>Това е общият случай — не точното ти разчитане</h3>
+                <p>Горното описва {{ planet.name|lower }} в {{ house.short }} общо за всички, родени с тази позиция. В <strong>твоята</strong> карта значението зависи от знака на върха на дома и от аспектите с другите планети — една и съща позиция може да значи нещо съвсем различно при двама души.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
+                </div>
+            </div>
+            {% else %}
+            <div class="horo-loading" id="horoLoading">
+                <p>Страницата се подготвя…</p>
+                <p style="font-size: 0.85rem;">Ще се обнови автоматично след няколко секунди.</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">{{ planet.glyph }}</span>
+                <h2>Другите планети в {{ house.short }}</h2>
+                <p>Виж какво значат останалите планети в същия дом.</p>
+            </div>
+            <div class="related">
+                {% for p in planets %}{% if p.slug != planet.slug %}
+                <a href="/{{ p.slug }}-v-{{ house.num }}-dom">
+                    <span class="r-glyph" aria-hidden="true">{{ p.glyph }}</span>
+                    <span class="r-name">{{ p.name }}</span>
+                </a>
+                {% endif %}{% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">{{ house.num }}</span>
+                <h2>{{ planet.name }} в другите домове</h2>
+                <p>Сравни как същата планета се изразява в другите домове.</p>
+            </div>
+            <div class="related">
+                {% for h in houses %}{% if h.num != house.num %}
+                <a href="/{{ planet.slug }}-v-{{ h.num }}-dom">
+                    <span class="r-glyph" aria-hidden="true">{{ h.num }}</span>
+                    <span class="r-name">{{ h.short }}</span>
+                </a>
+                {% endif %}{% endfor %}
+            </div>
+        </div>
+    </section>
+
+    {% if faq %}
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Често задавани въпроси</h2>
+                <p>Кратко и по същество.</p>
+            </div>
+            <div class="faq">
+                {% for f in faq %}
+                <div class="faq-item">
+                    <h3>{{ f.q }}</h3>
+                    <p>{% if f.a_html %}{{ f.a_html|safe }}{% else %}{{ f.a }}{% endif %}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Виж какво пише в твоята карта</h2>
+                <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    </main>
+    <footer>
+        <div class="wrap">
+            {{ brand().name }} · {{ brand().tagline }}<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
+        </div>
+    </footer>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
+    <script src="/static/consent.js?v=2"></script>
+    {% if not body_html %}
+    <script>
+        (async function() {
+            const slug = {{ planet.slug|tojson }} + '-v-' + {{ house.num|tojson }};
+            for (let i = 0; i < 80; i++) {
+                try {
+                    const r = await fetch('/api/dom/' + slug);
+                    const d = await r.json();
+                    if (!d.pending) { location.reload(); return; }
+                } catch (e) { /* retry */ }
+                await new Promise(res => setTimeout(res, 3000));
+            }
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>
