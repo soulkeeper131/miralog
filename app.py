@@ -262,6 +262,14 @@ def init_db():
                 PRIMARY KEY (planet, sign)
             )
         """)
+        # Evergreen "zodiac sign profile" SEO pages (e.g. /zodia/oven).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sign_profile_cache (
+                sign TEXT NOT NULL PRIMARY KEY,
+                content TEXT NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
         # --- Accounts, plans and billing ---
         # A plan is a named bundle of features; a user points at one and has an
@@ -2531,6 +2539,57 @@ def _generate_planet_sign(planet_data: dict, sign_data: dict) -> Optional[str]:
         return None
     raw = call_ai(ai_key, provider, prompt, max_tokens=1200)
     set_planet_sign(planet_key, sign_data["sign"], raw)
+    return raw
+
+
+# --- Вечнозелени SEO страници „характеристика на знак" (/zodia/{slug}) ---
+def get_sign_profile(sign: str) -> Optional[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT content FROM sign_profile_cache WHERE sign = ?", (sign,)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def set_sign_profile(sign: str, content: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO sign_profile_cache (sign, content, generated_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(sign) DO UPDATE SET content = excluded.content, generated_at = CURRENT_TIMESTAMP",
+            (sign, content)
+        )
+        conn.commit()
+
+
+def _generate_sign_profile(sign_data: dict) -> Optional[str]:
+    """Напиши и кеширай характеристиката на един знак. Вечнозелено — веднъж."""
+    sign_name = sign_data["name"]
+
+    prompt = f"""Ти си астролог. Напиши ХАРАКТЕРИСТИКА на зодия {sign_name}.
+
+КОНТЕКСТ:
+- Знак {sign_name}: {meaning_sign(sign_data['sign'])}
+- Стихия: {sign_data['element']}, модалност: {sign_data['modality']}, управител: {sign_data['ruler']}, период: {sign_data['dates']}.
+
+ВАЖНО: Това е ТИЗЪР за SEO страница — НЕ пълно персонално разчитане. Пиши само ОБЩИЯ случай (какво е типично за повечето хора с този слънчев знак). НЕ навлизай в домове, аспекти или конкретни градуси. Целта е ясна обща представа, която да накара читателя да поиска персоналния анализ.
+
+Структура (всяко заглавие на собствен ред, обградено с **звезди**):
+**Характер** — 3-4 изречения.
+**Силни страни** — 3-4 кратки, с тирета.
+**Слаби страни** — 3-4 кратки, с тирета.
+**Любов и отношения** — 2-3 изречения.
+**Работа и кариера** — 2-3 изречения.
+**Пари и финанси** — 1-2 изречения.
+**Здраве** — 1-2 изречения.
+
+Пиши на български, ясно и практично, без жаргон. Общо ~400-500 думи. НЕ използвай маркери SUMMARY."""
+
+    ai_key, provider = get_ai_config()
+    if not ai_key:
+        return None
+    raw = call_ai(ai_key, provider, prompt, max_tokens=1500)
+    set_sign_profile(sign_data["sign"], raw)
     return raw
 
 
@@ -6208,6 +6267,8 @@ def sitemap_xml(request: Request):
     for pl in PLANETS:
         entries += [(f"/{pl['slug']}-v-{s['slug']}", "monthly", "0.7")
                     for s in ZODIAC_SIGNS]
+    # Zodiac sign profiles — the highest-volume searches ("характеристика на ...").
+    entries += [(f"/zodia/{s['slug']}", "monthly", "0.8") for s in ZODIAC_SIGNS]
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
@@ -6546,6 +6607,82 @@ def api_planet_warm():
                 continue
             ai_job(cache_key, lambda pp=p, ss=s: _generate_planet_sign(pp, ss))
             started += 1
+    return {"started": started}
+
+
+# --- Вечнозелени SEO страници „характеристика на знак" (/zodia/{slug}) ---
+_SIGN_PROFILE_FAQ = [
+    {"q": "Тази характеристика важи ли за всички, родени под този знак?",
+     "a": "Да, тя описва общия случай — типичното за повечето хора с този слънчев знак. Точният ти портрет зависи от Луната, Асцендента, домовете и аспектите в твоята карта."},
+    {"q": "Каква е разликата с наталната карта?",
+     "a": "Слънчевият знак е само едно парче от пъзела. Наталната карта показва всички планети заедно и какво значи това лично за теб — много по-точно от една обща характеристика."},
+    {"q": "Къде да получа пълното си разчитане?",
+     "a": "Пълният астрологически профил събира всички позиции в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички позиции в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+]
+
+
+@app.get("/zodia/{sign_slug}", response_class=HTMLResponse)
+async def sign_profile_page(request: Request, sign_slug: str):
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такава страница.")
+
+    cached = get_sign_profile(sign["sign"])
+    ctx = seo_context(request, path=f"/zodia/{sign_slug}")
+    ctx["seo_title"] = f"Характеристика на {sign['name']} — зодия {sign['name']} | {brand_name()}"
+    ctx["seo_description"] = (f"Характеристика на зодия {sign['name']}: характер, силни и слаби страни, любов, работа и пари. "
+                              f"Виж какво значи конкретно в твоята натална карта.")
+    ctx["seo_keywords"] = f"характеристика на {sign['name'].lower()}, зодия {sign['name'].lower()}"
+    ctx["sign"] = sign
+    ctx["signs"] = ZODIAC_SIGNS
+    ctx["planets"] = PLANETS
+    ctx["faq"] = _SIGN_PROFILE_FAQ
+    if cached:
+        ctx["body_html"] = _md_to_html(cached)
+    return HTMLResponse(templates.get_template("sign_profile.html").render(ctx))
+
+
+@app.get("/api/zodia/{sign_slug}")
+def api_sign_profile(sign_slug: str, refresh: bool = False):
+    """Generate (or return cached) the evergreen sign profile."""
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такава страница.")
+    cache_key = f"profile:{sign['sign']}"
+
+    if not refresh:
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            return {"pending": True}
+        cached = get_sign_profile(sign["sign"])
+        if cached:
+            return {"body": cached, "cached": True}
+
+    job = ai_job(cache_key, lambda: _generate_sign_profile(sign))
+    if job["done"].is_set():
+        cached = get_sign_profile(sign["sign"])
+        if cached:
+            return {"body": cached, "cached": False}
+        return {"body": AI_UNAVAILABLE}
+    return {"pending": True}
+
+
+@app.get("/api/zodia/warm")
+def api_sign_profile_warm():
+    """Generate every sign profile that has no cache yet (12 pages, one-off)."""
+    started = 0
+    for s in ZODIAC_SIGNS:
+        if get_sign_profile(s["sign"]):
+            continue
+        cache_key = f"profile:{s['sign']}"
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            continue
+        ai_job(cache_key, lambda ss=s: _generate_sign_profile(ss))
+        started += 1
     return {"started": started}
 
 
