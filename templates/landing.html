@@ -496,6 +496,28 @@
 
     <section>
         <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">☽</span>
+                <h2>Дневен хороскоп по зодия</h2>
+                <p>Избери своя знак и виж какво ти носи днешният ден.</p>
+            </div>
+            <div class="mod-grid">
+                {% for s in zodiac_signs %}
+                <a class="mod-card" href="/horoskop/{{ s.slug }}">
+                    <span class="mod-glyph">{{ s.glyph }}</span>
+                    <span class="mod-body">
+                        <span class="mod-name">{{ s.name }}</span>
+                        <span class="mod-lede">{{ s.dates }}</span>
+                    </span>
+                    <span class="mod-tag free">Днес</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
             <div class="final">
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>

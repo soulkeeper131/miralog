@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    {% if seo_keywords %}<meta name="keywords" content="{{ seo_keywords }}">{% endif %}
+    <meta name="robots" content="{{ seo_robots }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    {% if seo_verification %}<meta name="google-site-verification" content="{{ seo_verification }}">{% endif %}
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ brand().name }}">
+    <meta property="og:locale" content="bg_BG">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ seo_title }}">
+    <meta name="twitter:description" content="{{ seo_description }}">
+    {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {% for f in faq %}
+            {"@type": "Question", "name": "{{ f.q }}", "acceptedAnswer": {"@type": "Answer", "text": "{{ f.a }}"}}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }
+    </script>
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    {% include "_critical.html" %}
+    <link rel="preload" href="/static/landing.min.css?v=1" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="/static/landing.min.css?v=1">
+        <link rel="stylesheet" href="/static/consent.css?v=4">
+    </noscript>
+    {% include "_analytics.html" %}
+    <style>
+        .horo-reading { max-width: 760px; margin: 0 auto; }
+        .horo-reading h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin: 1.6em 0 0.5em; }
+        .horo-reading h3:first-child { margin-top: 0; }
+        .horo-reading h3 span { color: var(--accent); margin-right: 0.4em; }
+        .horo-reading p { color: var(--text-soft); line-height: 1.75; margin-bottom: 0.9em; }
+        .horo-reading ul { list-style: none; padding: 0; margin: 0 0 1em; }
+        .horo-reading ul li { position: relative; padding-left: 1.2em; color: var(--text-soft); line-height: 1.65; margin-bottom: 0.4em; }
+        .horo-reading ul li::before { content: "✦"; position: absolute; left: 0; color: var(--accent); font-size: 0.8em; top: 0.2em; }
+        .horo-reading hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
+        .horo-loading { text-align: center; color: var(--text-soft); padding: 40px 0; }
+        .horo-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
+        .horo-meta .trust-item { display: block; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <main>
+    <header class="hero hero--feature">
+        <div class="wrap">
+            <div class="page-nav">
+                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
+                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                </a>
+                <a class="back-link" href="/horoskop">← Всички зодии</a>
+            </div>
+            <div class="hero-glyph" aria-hidden="true">{{ sign.glyph }}</div>
+            <p><span class="kicker">Дневен хороскоп · {{ date_bg }}</span></p>
+            <h1>Дневен хороскоп за {{ sign.name }}</h1>
+            <p class="lede">Какво носи днешният ден за родените под знака {{ sign.name }}.</p>
+            <p class="sub">{{ sign.name }} е {{ sign.element|lower }} и {{ sign.modality|lower }} знак, управляван от {{ sign.ruler }}. Период: {{ sign.dates }}.</p>
+            <div class="cta-row">
+                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                <a class="btn btn-ghost" href="/dneven-horoskop">Персонален хороскоп</a>
+            </div>
+            <p class="cta-note">Персоналният хороскоп стъпва на точно твоята карта, а не само на зодията.</p>
+        </div>
+    </header>
+
+    {% if sky.positions %}
+    <div class="ephemeris" aria-label="Позиции на планетите днес">
+        <div class="wrap">
+            <div class="eph-inner">
+                <span class="eph-label">Небето днес</span>
+                <ul class="eph-list">
+                    {% for p in sky.positions %}
+                    <li>
+                        <span class="eph-glyph">{{ p.symbol }}</span>
+                        <span class="eph-name">{{ p.name_bg }}</span>
+                        <span class="eph-pos">{{ p.degree }}° {{ p.sign_bg }}{% if p.retrograde %} ℞{% endif %}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <section>
+        <div class="wrap">
+            {% if summary %}
+            <div class="sec-head">
+                <span class="mark">{{ sign.glyph }}</span>
+                <h2>Денят накратко</h2>
+                <p>Резюме на днешната енергия за {{ sign.name }}.</p>
+            </div>
+            <div class="trust">
+                <div class="trust-item"><span class="trust-ico">🎭</span><div><h3>Настроение</h3><p>{{ summary.mood }}</p></div></div>
+                <div class="trust-item"><span class="trust-ico">⚡</span><div><h3>Енергия</h3><p>{{ summary.energy }}</p></div></div>
+                <div class="trust-item"><span class="trust-ico">🎯</span><div><h3>Фокус</h3><p>{{ summary.focus }}</p></div></div>
+                <div class="trust-item"><span class="trust-ico">⚠️</span><div><h3>Внимавай</h3><p>{{ summary.caution }}</p></div></div>
+            </div>
+            <div class="horo-meta" style="margin-top: 12px;">
+                {% if summary.do %}
+                <div class="trust-item"><span class="trust-ico">✅</span><div><h3>Благоприятно е за</h3>{% for d in summary.do %}<p style="margin:0 0 4px;">· {{ d }}</p>{% endfor %}</div></div>
+                {% endif %}
+                {% if summary.avoid %}
+                <div class="trust-item"><span class="trust-ico">🚫</span><div><h3>Избягвай</h3>{% for a in summary.avoid %}<p style="margin:0 0 4px;">· {{ a }}</p>{% endfor %}</div></div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if body_html %}
+            <div class="sec-head" style="margin-top: 40px;">
+                <span class="mark">{{ sign.glyph }}</span>
+                <h2>Пълният хороскоп за {{ sign.name }}</h2>
+                <p>Разгърнатото разчитане на днешния ден.</p>
+            </div>
+            <div class="horo-reading">{{ body_html|safe }}</div>
+            {% else %}
+            <div class="horo-loading" id="horoLoading">
+                <p>Хороскопът за днес се пише в момента…</p>
+                <p style="font-size: 0.85rem;">Страницата ще се обнови автоматично след няколко секунди.</p>
+            </div>
+            {% endif %}
+
+            <div class="mid-cta" style="margin-top: 40px;">
+                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                <span class="mid-cta-note">Персоналният хороскоп е по-точен от зодийния.</span>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">{{ sign.glyph }}</span>
+                <h2>Другите зодии</h2>
+                <p>Виж дневния хороскоп и за останалите знаци.</p>
+            </div>
+            <div class="related">
+                {% for s in signs %}
+                <a href="/horoskop/{{ s.slug }}" {% if s.slug == sign.slug %}style="border-color: var(--accent);"{% endif %}>
+                    <span class="r-glyph" aria-hidden="true">{{ s.glyph }}</span>
+                    <span class="r-name">{{ s.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    {% if faq %}
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Често задавани въпроси</h2>
+                <p>Кратко и по същество.</p>
+            </div>
+            <div class="faq">
+                {% for f in faq %}
+                <div class="faq-item">
+                    <h3>{{ f.q }}</h3>
+                    <p>{{ f.a }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Виж какво пише в твоята карта</h2>
+                <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    </main>
+    <footer>
+        <div class="wrap">
+            {{ brand().name }} · {{ brand().tagline }}<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
+        </div>
+    </footer>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
+    <script src="/static/consent.js?v=2"></script>
+    {% if not body_html %}
+    <script>
+        (async function() {
+            const slug = {{ sign.slug|tojson }};
+            for (let i = 0; i < 80; i++) {
+                try {
+                    const r = await fetch('/api/horoskop/' + slug);
+                    const d = await r.json();
+                    if (!d.pending) { location.reload(); return; }
+                } catch (e) { /* retry */ }
+                await new Promise(res => setTimeout(res, 3000));
+            }
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>

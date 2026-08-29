@@ -44,6 +44,7 @@ from pdf_report import build_reading_pdf, build_receipt_pdf, build_invoice_pdf
 import billing
 import saft
 from feature_pages import FEATURE_PAGES, FEATURE_PAGES_BY_SLUG
+from horoscope_signs import ZODIAC_SIGNS, ZODIAC_BY_SLUG
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
@@ -236,6 +237,17 @@ def init_db():
                 content TEXT NOT NULL,
                 generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (person_id, cache_key)
+            )
+        """)
+        # Daily horoscope per zodiac sign (SEO pages, /horoskop/{slug}).
+        # One row per sign per calendar day — regenerated each morning.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sign_horoscope (
+                sign TEXT NOT NULL,
+                date TEXT NOT NULL,
+                content TEXT NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (sign, date)
             )
         """)
 
@@ -2226,6 +2238,230 @@ def sky_today() -> list:
     except Exception:
         log.warning("sky_today failed; the landing strip will be omitted", exc_info=True)
         return []
+
+
+# --- Дневен хороскоп по зодия (SEO страници /horoskop/{slug}) ---
+# Транзитните позиции и основните аспекти за днешния ден, на базата на които
+# се пише хороскопът за всеки знак. Кешира се за кратко, за да не се смята
+# Swiss Ephemeris на всяка заявка.
+_DAILY_SKY_CACHE = {"t": 0.0, "data": None}
+_DAILY_SKY_BODIES = ["Sun", "Moon", "Mercury", "Venus", "Mars",
+                     "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
+
+
+def daily_sky() -> dict:
+    """Today's transit positions + major aspects, for the sign horoscopes."""
+    now_ts = _time.time()
+    cached = _DAILY_SKY_CACHE
+    if cached["data"] is not None and now_ts - cached["t"] < _SKY_CACHE_TTL:
+        return cached["data"]
+    try:
+        now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+        subject = charts.Subject(
+            date_time=now.replace(tzinfo=None),
+            latitude=42.6977, longitude=23.3219, timezone="Europe/Sofia",
+        )
+        chart_now = charts.Natal(subject)
+        positions = []
+        for obj in chart_now.objects.values():
+            name = getattr(obj, "name", None)
+            if name in _DAILY_SKY_BODIES:
+                sign = str(obj.sign.name)
+                positions.append({
+                    "name": name,
+                    "name_bg": tr_object(name),
+                    "symbol": sign_symbol(sign),
+                    "sign_bg": tr_sign(sign),
+                    "degree": int(obj.sign_longitude.degrees),
+                    "retrograde": getattr(obj, "movement", None)
+                                  and str(obj.movement) == "Retrograde",
+                })
+        aspects = []
+        for a in serialize_aspects(chart_now.aspects):
+            if a.get("type") not in MAJOR_ASPECTS:
+                continue
+            dev = aspect_deviation(a)
+            if dev is None or dev > 3.0:
+                continue
+            a["deviation"] = dev
+            aspects.append(a)
+        aspects.sort(key=lambda a: a["deviation"])
+        result = {
+            "positions": positions,
+            "aspects": aspects,
+            "moon_phase_bg": tr_moon_phase(chart_now.moon_phase.formatted if hasattr(chart_now, "moon_phase") and chart_now.moon_phase else None),
+            "shape_bg": tr_shape(chart_now.shape if hasattr(chart_now, "shape") else None),
+        }
+        cached["t"] = _time.time()
+        cached["data"] = result
+        return result
+    except Exception:
+        log.warning("daily_sky failed; the sign horoscope will be text-only", exc_info=True)
+        return {"positions": [], "aspects": [], "moon_phase_bg": "", "shape_bg": ""}
+
+
+def get_sign_horoscope(sign: str, date_iso: str) -> Optional[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT content FROM sign_horoscope WHERE sign = ? AND date = ?",
+            (sign, date_iso)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def set_sign_horoscope(sign: str, date_iso: str, content: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO sign_horoscope (sign, date, content, generated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(sign, date) DO UPDATE SET content = excluded.content, generated_at = CURRENT_TIMESTAMP",
+            (sign, date_iso, content)
+        )
+        conn.commit()
+
+
+def _sky_context_text(sky: dict) -> str:
+    """The day's sky as a compact block the prompt can reason over."""
+    if not sky.get("positions"):
+        return "(Позициите на планетите не са налични.)"
+    lines = []
+    for p in sky["positions"]:
+        retro = " (ретрограден)" if p["retrograde"] else ""
+        lines.append(f"- {p['name_bg']} в {p['sign_bg']} на {p['degree']}°{retro}")
+    if sky.get("aspects"):
+        lines.append("")
+        lines.append("Основни аспекти на деня (подредени по сила):")
+        for a in sky["aspects"]:
+            lines.append(f"- {tr_object(a['active'])} {tr_aspect(a['type'])} {tr_object(a['passive'])} — отклонение {a['deviation']:.1f}°")
+    if sky.get("moon_phase_bg"):
+        lines.append(f"Лунна фаза: {sky['moon_phase_bg']}")
+    return "\n".join(lines)
+
+
+def _md_to_html(raw: str) -> str:
+    """Server-side markdown-ish -> HTML for the horoscope body.
+
+    The model replies in a loose markdown (numbered headings like
+    ``1. **Заглавие**``, ``- bullet`` lists, ``**bold**``). Search engines need
+    that rendered into the page's HTML, not built client-side after load, so we
+    do the same conversion here that the chart page does in JS.
+    """
+    import html as _html
+    if not raw:
+        return ""
+    out = []
+    list_items = []
+    para = []
+
+    def flush_list():
+        if list_items:
+            out.append("<ul>" + "".join(f"<li>{li}</li>" for li in list_items) + "</ul>")
+            list_items.clear()
+
+    def flush_para():
+        if para:
+            out.append("<p>" + "<br>".join(para) + "</p>")
+            para.clear()
+
+    def inline(text):
+        t = _html.escape(text)
+        t = re.sub(r"\*\*([^*]+?)\*\*", r"<strong>\1</strong>", t)
+        t = re.sub(r"(^|[^*])\*([^*\n]+?)\*(?!\*)", r"\1<em>\2</em>", t)
+        return t
+
+    for raw_line in raw.replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            flush_list()
+            flush_para()
+            continue
+        if re.match(r"^(-{3,}|_{3,}|\*{3,})$", line):
+            flush_list()
+            flush_para()
+            out.append("<hr>")
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if m:
+            flush_list()
+            flush_para()
+            out.append(f"<h3>{inline(m.group(2).rstrip(':'))}</h3>")
+            continue
+        num = re.match(r"^(\d+)[.)]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$", line)
+        if num:
+            flush_list()
+            flush_para()
+            out.append(f"<h3><span>{num.group(1)}</span>{inline(num.group(2))}</h3>")
+            if num.group(3):
+                para.append(inline(num.group(3)))
+            continue
+        if re.match(r"^\*\*[^*]+\*\*[:：]?$", line):
+            flush_list()
+            flush_para()
+            title = re.sub(r"^\*\*|\*\*[:：]?$", "", line)
+            out.append(f"<h3>{inline(title)}</h3>")
+            continue
+        b = re.match(r"^[-•]\s+(.*)$", line) or re.match(r"^\*(?!\*)\s+(.*)$", line)
+        if b:
+            flush_para()
+            list_items.append(inline(b.group(1)))
+            continue
+        ni = re.match(r"^(\d+)[.)]\s+(.+)$", line)
+        if ni:
+            flush_para()
+            list_items.append(f"<strong>{ni.group(1)}.</strong> {inline(ni.group(2))}")
+            continue
+        flush_list()
+        para.append(inline(line))
+
+    flush_list()
+    flush_para()
+    return "".join(out)
+
+
+def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Optional[str]:
+    """Write and cache today's horoscope for one zodiac sign. Returns the raw reply."""
+    sky = daily_sky()
+    sign_name = sign_data["name"]
+    prompt = f"""Ти си професионален астролог. Напиши ДНЕВЕН ХОРОСКОП ЗА ЗОДИЯ {sign_name} за {date_bg}, стриктно базиран на реалните астрономически данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ за хората, родени под знака {sign_name} (слънчев знак).
+
+За знака {sign_name}: стихия {sign_data['element']}, модалност {sign_data['modality']}, управител {sign_data['ruler']}, период {sign_data['dates']}.
+
+=== НЕБЕТО ДНЕС ===
+{_sky_context_text(sky)}
+
+=== ЗАДАЧА ===
+Отговорът ти се състои от ДВЕ части, в този ред.
+
+ЧАСТ 1 — резюме за карти. Започни отговора си с JSON блок между маркерите ---SUMMARY--- и ---END--- точно в този формат:
+---SUMMARY---
+{{"mood": "една дума за настроението на деня", "energy": "Висока|Средна|Ниска", "do": ["3 кратки неща за правене, по 2-4 думи всяко"], "avoid": ["2-3 кратки неща за избягване, по 2-4 думи всяко"], "focus": "фокусът на деня", "caution": "едно кратко изречение в какво да внимава"}}
+---END---
+
+ЧАСТ 2 — разгърнатият текст, веднага след ---END---, със следните заглавия, номерирани:
+1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня за {sign_name}.
+2. **Любов и отношения** — какво носи денят за личния живот, базирано на позицията на Венера и Луната днес.
+3. **Работа и финанси** — базирано на Слънцето, Меркурий и Марс днес.
+4. **Здраве и енергия** — къде е енергията днес и какво да поддържаш.
+5. **Късмет и възможности** — къде денят отваря врата, базирано на Юпитер и активните аспекти.
+6. **Какво да направиш днес** — 3-4 конкретни, изпълними действия.
+7. **Какво да избягваш** — 2-3 конкретни поведения или решения, които днешните аспекти правят рискови.
+8. **В какво да внимаваш** — 2-3 предупреждения според напрегнатите аспекти.
+9. **Есенцията на деня** — 1-2 изречения обобщение.
+
+=== КАК ДА ПИШЕШ ===
+- Пиши на български, топло и практично, все едно говориш директно на читателя.
+- ФОРМАТ: всяко от деветте заглавия започва на нов ред във вида `1. **Заглавие**`. Под него — текст на отделни редове. Изброяванията с тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
+- ЛОГИКА: съветите в секции 6-8 трябва да следват пряко от позициите и аспектите по-горе.
+- ДЪЛЖИНА: бъди подробен. Всяка секция с по няколко изречения реално съдържание.
+- Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
+- Основавай се единствено на изброените данни, без да добавяш измислени детайли."""
+
+    ai_key, provider = get_ai_config()
+    if not ai_key:
+        return None
+    raw = call_ai(ai_key, provider, prompt, max_tokens=4000)
+    set_sign_horoscope(sign_data["sign"], date_iso, raw)
+    return raw
 
 def public_base_url(request: Optional[Request] = None) -> str:
     """The address visitors actually use, as https wherever possible.
@@ -5838,7 +6074,8 @@ async def index(request: Request):
     """Landing page. Client-side JS sends already-signed-in visitors to the dashboard."""
     return HTMLResponse(templates.get_template("landing.html").render(
         {"request": request, "sky": sky_today(), "pricing": landing_pricing(),
-         "features": FEATURE_PAGES, **seo_context(request, path="/")}))
+         "features": FEATURE_PAGES, "zodiac_signs": ZODIAC_SIGNS,
+         **seo_context(request, path="/")}))
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt(request: Request):
@@ -5875,6 +6112,11 @@ def sitemap_xml(request: Request):
     # Every module gets its own landing page — the long-tail content that the
     # search engines actually find people through.
     entries += [(f"/{p['slug']}", "monthly", "0.8") for p in FEATURE_PAGES]
+    # Daily horoscopes per zodiac sign (12) + the hub. These refresh daily, so
+    # they get a high change frequency and priority — they are the freshest,
+    # most-searched content on the site.
+    entries.append(("/horoskop", "daily", "0.9"))
+    entries += [(f"/horoskop/{s['slug']}", "daily", "0.9") for s in ZODIAC_SIGNS]
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
@@ -6016,6 +6258,119 @@ for _fp in FEATURE_PAGES:
         methods=["GET"], response_class=HTMLResponse,
         name=f"feature_{_fp['key']}", include_in_schema=False,
     )
+
+
+# --- Дневен хороскоп по зодия (SEO страници) ---
+_SIGN_FAQ = [
+    {"q": "Колко често се актуализира дневният хороскоп?",
+     "a": "Всеки ден. Хороскопът се пише наново всяка сутрин на база на реалните позиции на планетите за деня — не е предварително написан текст."},
+    {"q": "Точен ли е хороскопът само по слънчевия знак?",
+     "a": "Той е общ за всички, родени под този знак. За максимално точна прогноза, която стъпва на твоята лична натална карта, използвай персоналния дневен хороскоп."},
+    {"q": "Каква е разликата с персоналния дневен хороскоп?",
+     "a": "Тук прогнозата е по слънчевия знак — обща за милиони. Персоналният хороскоп се изчислява от транзитите спрямо точно твоята натална карта и е уникален за теб."},
+]
+
+
+def _sign_seo_context(request: Request, sign: dict, date_bg: str) -> dict:
+    """SEO context for one sign's horoscope page."""
+    ctx = seo_context(request, path=f"/horoskop/{sign['slug']}")
+    ctx["seo_title"] = f"Дневен хороскоп за {sign['name']} днес — {date_bg} | {brand_name()}"
+    ctx["seo_description"] = (f"Дневният хороскоп за {sign['name']} за днес ({date_bg}): "
+                              f"любов, работа, здраве и пари според днешните транзити. Актуализира се всеки ден.")
+    ctx["seo_keywords"] = sign["keywords"]
+    return ctx
+
+
+@app.get("/horoskop", response_class=HTMLResponse)
+async def horoskop_hub(request: Request):
+    """Hub listing all 12 signs."""
+    ctx = seo_context(request, path="/horoskop")
+    ctx["seo_title"] = f"Дневен хороскоп за всички зодии — днес | {brand_name()}"
+    ctx["seo_description"] = ("Дневен хороскоп за всичките 12 зодии: Овен, Телец, Близнаци, Рак, Лъв, Дева, "
+                              "Везни, Скорпион, Стрелец, Козирог, Водолей и Риби. Актуализира се всеки ден.")
+    ctx["signs"] = ZODIAC_SIGNS
+    return HTMLResponse(templates.get_template("horoscope_index.html").render(ctx))
+
+
+@app.get("/horoskop/{sign_slug}", response_class=HTMLResponse)
+async def horoskop_sign(request: Request, sign_slug: str):
+    """Daily horoscope for one zodiac sign."""
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такъв знак.")
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    date_iso = now.date().isoformat()
+    date_bg = now.strftime("%d.%m.%Y")
+
+    cached = get_sign_horoscope(sign["sign"], date_iso)
+    ctx = _sign_seo_context(request, sign, date_bg)
+    ctx.update({
+        "sign": sign,
+        "signs": ZODIAC_SIGNS,
+        "date_bg": date_bg,
+        "date_iso": date_iso,
+        "sky": daily_sky(),
+        "faq": _SIGN_FAQ,
+    })
+    if cached:
+        summary, body = split_summary(cached)
+        ctx["summary"] = summary
+        ctx["body_html"] = _md_to_html(body)
+    return HTMLResponse(templates.get_template("horoscope_sign.html").render(ctx))
+
+
+@app.get("/api/horoskop/warm")
+def api_horoskop_warm():
+    """Start generation for every sign that has no cache for today. Called by the
+    morning cron so the pages are ready before search engines crawl them."""
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    date_iso = now.date().isoformat()
+    date_bg = now.strftime("%d.%m.%Y")
+    started = 0
+    for sign in ZODIAC_SIGNS:
+        if get_sign_horoscope(sign["sign"], date_iso):
+            continue
+        cache_key = f"sign:{sign['sign']}:{date_iso}"
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            continue
+        ai_job(cache_key, lambda s=sign: _generate_sign_horoscope(s, date_bg, date_iso))
+        started += 1
+    return {"started": started, "date": date_bg}
+
+
+@app.get("/api/horoskop/{sign_slug}")
+def api_horoskop(sign_slug: str, refresh: bool = False):
+    """Generate (or return cached) today's horoscope for a sign. Polled by the page."""
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такъв знак.")
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    date_iso = now.date().isoformat()
+    date_bg = now.strftime("%d.%m.%Y")
+    cache_key = f"sign:{sign['sign']}:{date_iso}"
+
+    if not refresh:
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            return {"pending": True, "date": date_bg}
+        cached = get_sign_horoscope(sign["sign"], date_iso)
+        if cached:
+            summary, body = split_summary(cached)
+            return {"summary": summary, "body": body, "date": date_bg, "cached": True}
+        if running and running["done"].is_set() and running["error"]:
+            return {"body": AI_UNAVAILABLE, "date": date_bg}
+
+    job = ai_job(cache_key, lambda: _generate_sign_horoscope(sign, date_bg, date_iso))
+    if job["done"].is_set():
+        cached = get_sign_horoscope(sign["sign"], date_iso)
+        if cached:
+            summary, body = split_summary(cached)
+            return {"summary": summary, "body": body, "date": date_bg, "cached": False}
+        return {"body": AI_UNAVAILABLE, "date": date_bg}
+    return {"pending": True, "date": date_bg}
 
 
 @app.get("/healthz")
