@@ -45,6 +45,7 @@ import billing
 import saft
 from feature_pages import FEATURE_PAGES, FEATURE_PAGES_BY_SLUG
 from horoscope_signs import ZODIAC_SIGNS, ZODIAC_BY_SLUG
+from planet_pages import PLANETS, PLANETS_BY_KEY, PLANETS_BY_SLUG
 
 # --- App Setup ---
 BASE_DIR = Path(__file__).parent
@@ -248,6 +249,17 @@ def init_db():
                 content TEXT NOT NULL,
                 generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (sign, date)
+            )
+        """)
+        # Evergreen "planet in sign" SEO pages (e.g. /luna-v-skorpion).
+        # Generated once by AI, cached forever (the meaning never changes).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS planet_sign_cache (
+                planet TEXT NOT NULL,
+                sign TEXT NOT NULL,
+                content TEXT NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (planet, sign)
             )
         """)
 
@@ -2465,6 +2477,62 @@ def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Op
     raw = call_ai(ai_key, provider, prompt, max_tokens=4000)
     set_sign_horoscope(sign_data["sign"], date_iso, raw)
     return raw
+
+
+# --- Вечнозелени SEO страници „планета в знак" (/luna-v-skorpion и т.н.) ---
+def get_planet_sign(planet: str, sign: str) -> Optional[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT content FROM planet_sign_cache WHERE planet = ? AND sign = ?",
+            (planet, sign)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def set_planet_sign(planet: str, sign: str, content: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO planet_sign_cache (planet, sign, content, generated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(planet, sign) DO UPDATE SET content = excluded.content, generated_at = CURRENT_TIMESTAMP",
+            (planet, sign, content)
+        )
+        conn.commit()
+
+
+def _generate_planet_sign(planet_data: dict, sign_data: dict) -> Optional[str]:
+    """Напиши и кеширай краткия тизър за „{планета} в {знак}". Вечнозелено — веднъж.
+
+    Това е ТИЗЪР, не пълно разчитане: общият случай е безплатен за SEO,
+    а персоналното (дом, аспекти, градуси) си остава в пакета.
+    """
+    planet_key = planet_data["key"]
+    planet_name = planet_data["name"]
+    sign_name = sign_data["name"]
+
+    prompt = f"""Ти си астролог. Напиши КРАТКО обяснение какво означава {planet_name} в знака {sign_name} (по рождената карта).
+
+КОНТЕКСТ:
+- {planet_name}: {meaning_object(planet_key)}
+- Знак {sign_name}: {meaning_sign(sign_data['sign'])}
+
+ВАЖНО: Това е ТИЗЪР за SEO страница — НЕ пълно персонално разчитане. Пиши само ОБЩИЯ случай (какво значи за повечето хора с тази позиция). НЕ навлизай в домове, аспекти или конкретни градуси — това е част от персоналното разчитане, което читателят получава отделно. Целта е да дадеш ясна обща представа, която да накара читателя да поиска по-задълбочения анализ.
+
+Структура (всяко заглавие на собствен ред, обградено с **звезди**):
+**Общо значение** — 2-3 изречения.
+**Любов и отношения** — 2-3 изречения.
+**Работа и финанси** — 2-3 изречения.
+**Как да използваш тази енергия** — 1-2 изречения.
+
+Пиши на български, ясно и практично, без жаргон. Общо ~250-350 думи. НЕ използвай маркери SUMMARY и НЕ изброявай с тирета."""
+
+    ai_key, provider = get_ai_config()
+    if not ai_key:
+        return None
+    raw = call_ai(ai_key, provider, prompt, max_tokens=1200)
+    set_planet_sign(planet_key, sign_data["sign"], raw)
+    return raw
+
 
 def public_base_url(request: Optional[Request] = None) -> str:
     """The address visitors actually use, as https wherever possible.
@@ -6136,6 +6204,10 @@ def sitemap_xml(request: Request):
     # most-searched content on the site.
     entries.append(("/horoskop", "daily", "0.9"))
     entries += [(f"/horoskop/{s['slug']}", "daily", "0.9") for s in ZODIAC_SIGNS]
+    # Evergreen "planet in sign" pages — the long-tail backbone.
+    for pl in PLANETS:
+        entries += [(f"/{pl['slug']}-v-{s['slug']}", "monthly", "0.7")
+                    for s in ZODIAC_SIGNS]
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
@@ -6390,6 +6462,85 @@ def api_horoskop(sign_slug: str, refresh: bool = False):
             return {"summary": summary, "body": body, "date": date_bg, "cached": False}
         return {"body": AI_UNAVAILABLE, "date": date_bg}
     return {"pending": True, "date": date_bg}
+
+
+# --- Вечнозелени SEO страници „планета в знак" ---
+_PLANET_FAQ = [
+    {"q": "Това точно ли е значението за мен?",
+     "a": "Това е общото значение за всички, родени с тази позиция. Конкретно за теб то зависи от дома, аспектите и останалите планети в твоята карта — затова е нужен персонален анализ."},
+    {"q": "Каква е разликата с наталната карта?",
+     "a": "Тук виждаш една-единствена позиция извън контекст. Наталната карта показва как всички планети си взаимодействат заедно и какво значи това лично за теб."},
+    {"q": "Как да разбера точната си позиция?",
+     "a": "Създай безплатната си натална карта — тя изчислява позицията на всяка планета до градус и я обяснява конкретно за теб."},
+]
+
+
+@app.get("/{planet_slug}-v-{sign_slug}", response_class=HTMLResponse)
+async def planet_sign_page(request: Request, planet_slug: str, sign_slug: str):
+    planet = PLANETS_BY_SLUG.get(planet_slug)
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not planet or not sign:
+        raise HTTPException(404, "Няма такава страница.")
+
+    cached = get_planet_sign(planet["key"], sign["sign"])
+    ctx = seo_context(request, path=f"/{planet_slug}-v-{sign_slug}")
+    ctx["seo_title"] = f"{planet['name']} в {sign['name']} — какво означава | {brand_name()}"
+    ctx["seo_description"] = (f"{planet['name']} в {sign['name']}: общото значение за характера, любовта и работата. "
+                              f"Виж какво значи конкретно в твоята натална карта.")
+    ctx["seo_keywords"] = f"{planet['name'].lower()} в {sign['name'].lower()}, {planet['name'].lower()} в знак {sign['name'].lower()}"
+    ctx["planet"] = planet
+    ctx["sign"] = sign
+    ctx["planets"] = PLANETS
+    ctx["signs"] = ZODIAC_SIGNS
+    ctx["faq"] = _PLANET_FAQ
+    if cached:
+        ctx["body_html"] = _md_to_html(cached)
+    return HTMLResponse(templates.get_template("planet_sign.html").render(ctx))
+
+
+@app.get("/api/planeta/{planet_slug}-v-{sign_slug}")
+def api_planet_sign(planet_slug: str, sign_slug: str, refresh: bool = False):
+    """Generate (or return cached) the evergreen "planet in sign" teaser."""
+    planet = PLANETS_BY_SLUG.get(planet_slug)
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not planet or not sign:
+        raise HTTPException(404, "Няма такава страница.")
+    cache_key = f"planet:{planet['key']}:{sign['sign']}"
+
+    if not refresh:
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            return {"pending": True}
+        cached = get_planet_sign(planet["key"], sign["sign"])
+        if cached:
+            return {"body": cached, "cached": True}
+
+    job = ai_job(cache_key, lambda: _generate_planet_sign(planet, sign))
+    if job["done"].is_set():
+        cached = get_planet_sign(planet["key"], sign["sign"])
+        if cached:
+            return {"body": cached, "cached": False}
+        return {"body": AI_UNAVAILABLE}
+    return {"pending": True}
+
+
+@app.get("/api/planeta/warm")
+def api_planet_warm():
+    """Generate every planet×sign combo that has no cache yet (132 pages, one-off)."""
+    started = 0
+    for p in PLANETS:
+        for s in ZODIAC_SIGNS:
+            if get_planet_sign(p["key"], s["sign"]):
+                continue
+            cache_key = f"planet:{p['key']}:{s['sign']}"
+            with _AI_JOBS_LOCK:
+                running = _AI_JOBS.get(cache_key)
+            if running and not running["done"].is_set():
+                continue
+            ai_job(cache_key, lambda pp=p, ss=s: _generate_planet_sign(pp, ss))
+            started += 1
+    return {"started": started}
 
 
 @app.get("/healthz")
