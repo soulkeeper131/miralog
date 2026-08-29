@@ -662,6 +662,7 @@ templates.env.globals["legal"] = legal
 # restart. Empty string means "no analytics" — the consent layer keeps gtag
 # dormant until the visitor opts in anyway.
 templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or "").strip()
+templates.env.globals["fb_pixel_id"] = lambda: (seo_settings().get("fb_pixel_id") or "").strip()
 # Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
 templates.env.globals["admin_host"] = ADMIN_HOST
 # Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
@@ -2171,6 +2172,8 @@ SEO_DEFAULTS = {
     "seo_robots": "index,follow",
     "seo_verification": "",
     "analytics_id": "G-CY4NT2QLFX",
+    # Meta/Facebook pixel. Empty means no pixel is loaded at all.
+    "fb_pixel_id": "",
 }
 
 def seo_settings() -> dict:
@@ -3101,51 +3104,6 @@ def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
         ],
     }
 
-@app.post("/api/features/{feature_key}/request")
-def api_request_feature(feature_key: str, request: Request,
-                        user: Tuple[int, str] = Depends(get_current_user)):
-    """Start Stripe checkout when configured; otherwise email the admin."""
-    user_id, email = user
-    row = get_user_by_id(user_id)
-    if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
-    if feature_key in unlocked_features(row):
-        return {"ok": True, "already": True}
-
-    offer = feature_offer(feature_key)
-    if not offer:
-        raise HTTPException(404, "Тази функция не се продава отделно.")
-
-    if billing.stripe_enabled():
-        base = site_base_url(request)
-        success = stripe_success_url(f"{base}/settings?paid=1")
-        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
-        try:
-            url = billing.create_feature_checkout(
-                customer_email=email,
-                customer_id=row.get("stripe_customer_id"),
-                user_id=user_id,
-                feature_key=feature_key,
-                feature_name=offer["name"],
-                amount_cents=offer["price_cents"],
-                currency=offer["currency"],
-                success_url=success,
-                cancel_url=cancel,
-                brand=brand_name(),
-            )
-            return {"ok": True, "checkout_url": url, "offer": offer}
-        except Exception as e:
-            log.warning("Stripe checkout за %s се провали: %s", feature_key, e)
-
-    to = get_setting("smtp_from") or get_setting("smtp_user")
-    if to:
-        try_send_template(
-            to, "unlock_request",
-            email=email, user_id=user_id, name=offer["name"],
-            price=f"{offer['price_cents'] / 100:.2f}", currency=offer["currency"],
-        )
-    return {"ok": True, "offer": offer, "manual": True}
-
 @app.post("/api/features/bundle/request")
 def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_current_user)):
     """Buy every remaining module in one payment, at the bundle price.
@@ -3203,6 +3161,51 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
             bundle_name=BUNDLE_NAME, price=f"{BUNDLE_PRICE_CENTS / 100:.2f}",
         )
     return {"ok": True, "bundle": bundle, "manual": True}
+
+@app.post("/api/features/{feature_key}/request")
+def api_request_feature(feature_key: str, request: Request,
+                        user: Tuple[int, str] = Depends(get_current_user)):
+    """Start Stripe checkout when configured; otherwise email the admin."""
+    user_id, email = user
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if feature_key in unlocked_features(row):
+        return {"ok": True, "already": True}
+
+    offer = feature_offer(feature_key)
+    if not offer:
+        raise HTTPException(404, "Тази функция не се продава отделно.")
+
+    if billing.stripe_enabled():
+        base = site_base_url(request)
+        success = stripe_success_url(f"{base}/settings?paid=1")
+        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        try:
+            url = billing.create_feature_checkout(
+                customer_email=email,
+                customer_id=row.get("stripe_customer_id"),
+                user_id=user_id,
+                feature_key=feature_key,
+                feature_name=offer["name"],
+                amount_cents=offer["price_cents"],
+                currency=offer["currency"],
+                success_url=success,
+                cancel_url=cancel,
+                brand=brand_name(),
+            )
+            return {"ok": True, "checkout_url": url, "offer": offer}
+        except Exception as e:
+            log.warning("Stripe checkout за %s се провали: %s", feature_key, e)
+
+    to = get_setting("smtp_from") or get_setting("smtp_user")
+    if to:
+        try_send_template(
+            to, "unlock_request",
+            email=email, user_id=user_id, name=offer["name"],
+            price=f"{offer['price_cents'] / 100:.2f}", currency=offer["currency"],
+        )
+    return {"ok": True, "offer": offer, "manual": True}
 
 @app.get("/api/admin/settings")
 def api_admin_settings(admin: dict = Depends(require_admin)):
@@ -4075,10 +4078,26 @@ def api_billing_session(session_id: str,
         fulfill_checkout_session(raw)
 
     row = get_user_by_id(user_id)
+    # The page fires the purchase event, and an event without a value produces
+    # a report that counts sales but cannot total them — so the amount, the
+    # currency and the order id travel back with the answer.
+    keys = []
+    if meta.get("feature_keys"):
+        keys = [k.strip() for k in meta["feature_keys"].split(",") if k.strip()]
+    elif meta.get("feature_key"):
+        keys = [meta["feature_key"]]
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
     return {
         "paid": paid,
         "status": raw.get("payment_status"),
         "unlocked": unlocked_features(row) if row else [],
+        "purchase": {
+            "transaction_id": session_id,
+            "price_cents": int(raw.get("amount_total") or 0),
+            "currency": (raw.get("currency") or "eur").upper(),
+            "keys": keys,
+            "name": ", ".join(names.get(k, k) for k in keys),
+        } if paid else None,
     }
 
 

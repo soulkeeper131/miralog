@@ -1639,6 +1639,10 @@
                             '<input type="text" id="seoAnalyticsId" placeholder="G-XXXXXXXXXX" value="' +
                             escapeHtml(seo.analytics_id || '') + '">' +
                             '<div class="hint">Измервателен ID (G-…). Празно = аналитиката е изключена.</div></div>' +
+                        '<div class="form-group"><label for="seoFbPixel">Facebook Pixel ID</label>' +
+                            '<input type="text" id="seoFbPixel" placeholder="напр. 1234567890" value="' +
+                            escapeHtml(seo.fb_pixel_id || '') + '">' +
+                            '<div class="hint">Празно = пикселът не се зарежда изобщо.</div></div>' +
                     '</div>' +
                     '<div class="btn-row"><button class="btn" id="saveSeoBtn">Запази SEO</button>' +
                         '<a class="btn btn-ghost" href="/" target="_blank" rel="noopener">Виж страницата</a></div></div>';
@@ -1836,6 +1840,7 @@
                         seo_robots: document.getElementById('seoRobots').value,
                         seo_verification: document.getElementById('seoVerification').value.trim(),
                         analytics_id: document.getElementById('seoAnalyticsId').value.trim(),
+                        fb_pixel_id: document.getElementById('seoFbPixel').value.trim(),
                     },
                 }, 'SEO настройките са запазени.');
             });
