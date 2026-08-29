@@ -159,7 +159,7 @@
                 {% for f in faq %}
                 <div class="faq-item">
                     <h3>{{ f.q }}</h3>
-                    <p>{{ f.a }}</p>
+                    <p>{% if f.a_html %}{{ f.a_html|safe }}{% else %}{{ f.a }}{% endif %}</p>
                 </div>
                 {% endfor %}
             </div>
