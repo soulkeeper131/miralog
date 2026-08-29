@@ -6643,6 +6643,23 @@ async def sign_profile_page(request: Request, sign_slug: str):
     return HTMLResponse(templates.get_template("sign_profile.html").render(ctx))
 
 
+@app.get("/api/zodia/warm")
+def api_sign_profile_warm():
+    """Generate every sign profile that has no cache yet (12 pages, one-off)."""
+    started = 0
+    for s in ZODIAC_SIGNS:
+        if get_sign_profile(s["sign"]):
+            continue
+        cache_key = f"profile:{s['sign']}"
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            continue
+        ai_job(cache_key, lambda ss=s: _generate_sign_profile(ss))
+        started += 1
+    return {"started": started}
+
+
 @app.get("/api/zodia/{sign_slug}")
 def api_sign_profile(sign_slug: str, refresh: bool = False):
     """Generate (or return cached) the evergreen sign profile."""
@@ -6667,23 +6684,6 @@ def api_sign_profile(sign_slug: str, refresh: bool = False):
             return {"body": cached, "cached": False}
         return {"body": AI_UNAVAILABLE}
     return {"pending": True}
-
-
-@app.get("/api/zodia/warm")
-def api_sign_profile_warm():
-    """Generate every sign profile that has no cache yet (12 pages, one-off)."""
-    started = 0
-    for s in ZODIAC_SIGNS:
-        if get_sign_profile(s["sign"]):
-            continue
-        cache_key = f"profile:{s['sign']}"
-        with _AI_JOBS_LOCK:
-            running = _AI_JOBS.get(cache_key)
-        if running and not running["done"].is_set():
-            continue
-        ai_job(cache_key, lambda ss=s: _generate_sign_profile(ss))
-        started += 1
-    return {"started": started}
 
 
 @app.get("/healthz")
