@@ -1059,7 +1059,10 @@
 
                 // Picked modules go straight to Stripe; otherwise to the chart.
                 if (data.checkout_url) {
-                    window.track('begin_checkout');
+                    const p = {};
+                    if (data.amount_cents > 0) p.value = data.amount_cents / 100;
+                    if (data.currency) p.currency = data.currency;
+                    window.track('begin_checkout', p);
                     window.location.href = data.checkout_url; return;
                 }
 

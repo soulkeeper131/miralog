@@ -2554,7 +2554,17 @@
             const paid = new URLSearchParams(location.search).get('paid');
             if (paid === '1') {
                 uiToast('Плащането е прието. Ако модулите още са заключени, презареди след няколко секунди.', 'ok');
-                if (typeof window.track === 'function') window.track('purchase');
+                if (typeof window.track === 'function') {
+                    const q = new URLSearchParams(location.search);
+                    const cents = parseInt(q.get('amount_cents') || '0', 10);
+                    const cur = q.get('currency') || '';
+                    const sid = q.get('session_id') || '';
+                    const p = {};
+                    if (cents > 0) p.value = cents / 100;
+                    if (cur) p.currency = cur;
+                    if (sid) p.transaction_id = sid;
+                    window.track('purchase', p);
+                }
             } else if (paid === '0') {
                 uiToast('Плащането беше отказано.', 'err');
             }

@@ -1976,12 +1976,16 @@ def api_onboard(data: OnboardRequest, request: Request):
                 items = [{"key": k, "name": feature_offer(k)["name"],
                           "amount_cents": feature_offer(k)["price_cents"],
                           "currency": feature_offer(k)["currency"]} for k in wanted]
+            total = sum(it["amount_cents"] for it in items)
+            cur = (items[0]["currency"] if items else "EUR")
+            result["amount_cents"] = total
+            result["currency"] = cur
             result["checkout_url"] = billing.create_features_checkout(
                 customer_email=email,
                 customer_id=None,
                 user_id=user["id"],
                 items=items,
-                success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}",
+                success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}&amount_cents={total}&currency={cur}",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
                 brand=brand_name(),
             )
@@ -3338,7 +3342,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 "currency": offer["currency"],
             })
         base = site_base_url(request)
-        success = stripe_success_url(f"{base}/settings?paid=1")
+        success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=BUNDLE_PRICE_CENTS, currency=(items[0]["currency"] if items else "EUR"))
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
         try:
             url = billing.create_features_checkout(
@@ -3380,7 +3384,7 @@ def api_request_feature(feature_key: str, request: Request,
 
     if billing.stripe_enabled():
         base = site_base_url(request)
-        success = stripe_success_url(f"{base}/settings?paid=1")
+        success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
         try:
             url = billing.create_feature_checkout(
@@ -3840,17 +3844,25 @@ def _strip_stripe(obj):
         return [_strip_stripe(v) for v in obj]
     return obj
 
-def stripe_success_url(default_path: str) -> str:
+def stripe_success_url(default_path: str, amount_cents: Optional[int] = None, currency: str = "") -> str:
     """Success URL for Checkout, always carrying the session id.
 
     Stripe substitutes {CHECKOUT_SESSION_ID} on redirect. The page uses it to
     settle the purchase immediately instead of waiting for the webhook, so an
     override that forgets the placeholder would quietly reintroduce the bug
     where a paid module still looks locked.
+
+    When amount/currency are known they ride along too, so the redirect page
+    can fire a value-carrying purchase event for GA4 and Meta Pixel — without
+    them the reports count sales but cannot total the revenue.
     """
     url = (os.environ.get("STRIPE_SUCCESS_URL") or "").strip() or default_path
     if "CHECKOUT_SESSION_ID" not in url:
         url += ("&" if "?" in url else "?") + "session_id={CHECKOUT_SESSION_ID}"
+    if amount_cents is not None:
+        url += ("&" if "?" in url else "?") + f"amount_cents={amount_cents}"
+        if currency:
+            url += f"&currency={currency.upper()}"
     return url
 
 
@@ -4223,7 +4235,7 @@ def api_checkout_feature(feature_key: str, request: Request,
     if not offer:
         raise HTTPException(404, "Тази функция не се продава отделно.")
     base = site_base_url(request)
-    success = stripe_success_url(f"{base}/settings?paid=1")
+    success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
     cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
     try:
         url = billing.create_feature_checkout(
