@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    {% if seo_keywords %}<meta name="keywords" content="{{ seo_keywords }}">{% endif %}
+    <meta name="robots" content="{{ seo_robots }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    {% if seo_verification %}<meta name="google-site-verification" content="{{ seo_verification }}">{% endif %}
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ brand().name }}">
+    <meta property="og:locale" content="bg_BG">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ seo_title }}">
+    <meta name="twitter:description" content="{{ seo_description }}">
+    {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {% for f in faq %}
+            {"@type": "Question", "name": "{{ f.q }}", "acceptedAnswer": {"@type": "Answer", "text": "{{ f.a }}"}}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }
+    </script>
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    {% include "_critical.html" %}
+    <link rel="preload" href="/static/landing.min.css?v=1" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="/static/landing.min.css?v=1">
+        <link rel="stylesheet" href="/static/consent.css?v=4">
+    </noscript>
+    {% include "_analytics.html" %}
+    <style>
+        .horo-reading { max-width: 760px; margin: 0 auto; }
+        .horo-reading h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin: 1.6em 0 0.5em; }
+        .horo-reading h3:first-child { margin-top: 0; }
+        .horo-reading p { color: var(--text-soft); line-height: 1.75; margin-bottom: 0.9em; }
+        .horo-reading ul { list-style: none; padding: 0; margin: 0 0 1em; }
+        .horo-reading ul li { position: relative; padding-left: 1.2em; color: var(--text-soft); line-height: 1.65; margin-bottom: 0.4em; }
+        .horo-reading ul li::before { content: "✦"; position: absolute; left: 0; color: var(--accent); font-size: 0.8em; top: 0.2em; }
+        .pair-glyphs { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 8px 0 4px; }
+        .pair-glyphs .g { font-size: 3.4rem; line-height: 1; color: var(--accent); }
+        .pair-glyphs .x { color: var(--text-soft); font-size: 1.2rem; }
+        .pair-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 24px auto 0; max-width: 760px; }
+        .pair-meta .meta-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+        .pair-meta .meta-card .who { font-size: 0.78rem; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+        .pair-meta .meta-card .row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; padding: 3px 0; }
+        .pair-meta .meta-card .row .k { color: var(--text-soft); }
+        .pair-meta .meta-card .row .v { color: var(--text-heading); font-weight: 600; }
+        .wall { max-width: 720px; margin: 40px auto; padding: 26px 28px; border: 1px solid var(--accent); border-radius: 16px; background: var(--surface, transparent); }
+        .wall h3 { color: var(--text-heading); margin-bottom: 10px; font-size: 1.05rem; }
+        .wall p { color: var(--text-soft); line-height: 1.7; margin-bottom: 16px; }
+        .horo-loading { text-align: center; color: var(--text-soft); padding: 40px 0; }
+        @media (max-width: 560px) { .pair-meta { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <main>
+    <header class="hero hero--feature">
+        <div class="wrap">
+            <div class="page-nav">
+                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
+                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                </a>
+                <a class="back-link" href="/savmestimost">← Всички двойки</a>
+            </div>
+            <div class="pair-glyphs" aria-hidden="true">
+                <span class="g">{{ sign_a.glyph }}</span>
+                <span class="x">×</span>
+                <span class="g">{{ sign_b.glyph }}</span>
+            </div>
+            <p><span class="kicker">Съвместимост по зодии</span></p>
+            <h1>Съвместимост {{ sign_a.name }} и {{ sign_b.name }}</h1>
+            <p class="lede">Любов, комуникация и предизвикателства — общата картина на връзката между {{ sign_a.name }} и {{ sign_b.name }}.</p>
+            <div class="cta-row">
+                <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
+            </div>
+            <p class="cta-note">Истинската съвместимост зависи от двете пълни карти — не само от Слънцето.</p>
+        </div>
+    </header>
+
+    <section>
+        <div class="wrap">
+            <div class="pair-meta">
+                <div class="meta-card">
+                    <div class="who">{{ sign_a.glyph }} {{ sign_a.name }}</div>
+                    <div class="row"><span class="k">Стихия</span><span class="v">{{ sign_a.element }}</span></div>
+                    <div class="row"><span class="k">Модалност</span><span class="v">{{ sign_a.modality }}</span></div>
+                    <div class="row"><span class="k">Управител</span><span class="v">{{ sign_a.ruler }}</span></div>
+                </div>
+                <div class="meta-card">
+                    <div class="who">{{ sign_b.glyph }} {{ sign_b.name }}</div>
+                    <div class="row"><span class="k">Стихия</span><span class="v">{{ sign_b.element }}</span></div>
+                    <div class="row"><span class="k">Модалност</span><span class="v">{{ sign_b.modality }}</span></div>
+                    <div class="row"><span class="k">Управител</span><span class="v">{{ sign_b.ruler }}</span></div>
+                </div>
+            </div>
+
+            {% if body_html %}
+            <div class="horo-reading" style="margin-top: 40px;">{{ body_html|safe }}</div>
+
+            <div class="wall">
+                <h3>Това е общият случай — не точното ви разчитане</h3>
+                <p>Горното описва какво е типично за повечето двойки с тези слънчеви знаци. В <strong>вашата</strong> връзка всичко зависи от Луната, Асцендента и аспектите между двете натални карти — затова реалната ви съвместимост може да се различава значително.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
+                </div>
+            </div>
+            {% else %}
+            <div class="horo-loading" id="horoLoading">
+                <p>Страницата се подготвя…</p>
+                <p style="font-size: 0.85rem;">Ще се обнови автоматично след няколко секунди.</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">{{ sign_a.glyph }}</span>
+                <h2>{{ sign_a.name }} с другите знаци</h2>
+                <p>Виж съвместимостта на {{ sign_a.name }} с останалите зодии.</p>
+            </div>
+            <div class="related">
+                {% for r in related_a %}
+                <a href="/savmestimost/{{ r.slug }}">
+                    <span class="r-glyph" aria-hidden="true">{{ r.sign.glyph }}</span>
+                    <span class="r-name">{{ r.sign.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">{{ sign_b.glyph }}</span>
+                <h2>{{ sign_b.name }} с другите знаци</h2>
+                <p>Виж съвместимостта на {{ sign_b.name }} с останалите зодии.</p>
+            </div>
+            <div class="related">
+                {% for r in related_b %}
+                <a href="/savmestimost/{{ r.slug }}">
+                    <span class="r-glyph" aria-hidden="true">{{ r.sign.glyph }}</span>
+                    <span class="r-name">{{ r.sign.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    {% if faq %}
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Често задавани въпроси</h2>
+                <p>Кратко и по същество.</p>
+            </div>
+            <div class="faq">
+                {% for f in faq %}
+                <div class="faq-item">
+                    <h3>{{ f.q }}</h3>
+                    <p>{% if f.a_html %}{{ f.a_html|safe }}{% else %}{{ f.a }}{% endif %}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Вижте истинската си съвместимост</h2>
+                <p>Създайте двете натални карти — оттам нататък имате точното сравнение за всяка планета, дом и аспект.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    </main>
+    <footer>
+        <div class="wrap">
+            {{ brand().name }} · {{ brand().tagline }}<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
+        </div>
+    </footer>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
+    <script src="/static/consent.js?v=2"></script>
+    {% if not body_html %}
+    <script>
+        (async function() {
+            const slug = {{ pair_slug|tojson }};
+            for (let i = 0; i < 80; i++) {
+                try {
+                    const r = await fetch('/api/savmestimost/' + slug);
+                    const d = await r.json();
+                    if (!d.pending) { location.reload(); return; }
+                } catch (e) { /* retry */ }
+                await new Promise(res => setTimeout(res, 3000));
+            }
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>

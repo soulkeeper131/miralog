@@ -270,6 +270,16 @@ def init_db():
                 generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Evergreen "sign compatibility" SEO pages (e.g. /savmestimost/oven-telec).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS compatibility_cache (
+                sign_a TEXT NOT NULL,
+                sign_b TEXT NOT NULL,
+                content TEXT NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (sign_a, sign_b)
+            )
+        """)
 
         # --- Accounts, plans and billing ---
         # A plan is a named bundle of features; a user points at one and has an
@@ -2590,6 +2600,70 @@ def _generate_sign_profile(sign_data: dict) -> Optional[str]:
         return None
     raw = call_ai(ai_key, provider, prompt, max_tokens=1500)
     set_sign_profile(sign_data["sign"], raw)
+    return raw
+
+
+# --- Вечнозелени SEO страници „съвместимост по зодии" (/savmestimost/{a}-{b}) ---
+# Каноничният ред е зодиакален: по-ранният знак винаги е първи, за да няма
+# дублиращи се URL-и за една и съща двойка („овен-телец" = „телец-овен").
+COMPAT_PAIRS = []          # (sign_a, sign_b, slug) — 78 двойки вкл. знак-сам-със-себе-си
+COMPAT_BY_SLUG = {}
+for _i, _sa in enumerate(ZODIAC_SIGNS):
+    for _sb in ZODIAC_SIGNS[_i:]:
+        _slug = f"{_sa['slug']}-{_sb['slug']}"
+        COMPAT_PAIRS.append((_sa, _sb, _slug))
+        COMPAT_BY_SLUG[_slug] = (_sa, _sb)
+
+
+def get_compatibility(sign_a: str, sign_b: str) -> Optional[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT content FROM compatibility_cache WHERE sign_a = ? AND sign_b = ?",
+            (sign_a, sign_b)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def set_compatibility(sign_a: str, sign_b: str, content: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO compatibility_cache (sign_a, sign_b, content, generated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(sign_a, sign_b) DO UPDATE SET content = excluded.content, generated_at = CURRENT_TIMESTAMP",
+            (sign_a, sign_b, content)
+        )
+        conn.commit()
+
+
+def _generate_compatibility(sign_a: dict, sign_b: dict) -> Optional[str]:
+    """Напиши и кеширай тизъра за съвместимостта между два знака. Вечнозелено — веднъж."""
+    name_a, name_b = sign_a["name"], sign_b["name"]
+    same = sign_a["sign"] == sign_b["sign"]
+    relation = "двама представители на един и същи знак" if same else "двама души с тези слънчеви знаци"
+
+    prompt = f"""Ти си астролог. Напиши КРАТКО обяснение на съвместимостта между {name_a} и {name_b} (в любовта и отношенията).
+
+КОНТЕКСТ:
+- Знак {name_a}: {meaning_sign(sign_a['sign'])}. Стихия {sign_a['element']}, модалност {sign_a['modality']}, управител {sign_a['ruler']}.
+- Знак {name_b}: {meaning_sign(sign_b['sign'])}. Стихия {sign_b['element']}, модалност {sign_b['modality']}, управител {sign_b['ruler']}.
+- Пишеш за {relation}.
+
+ВАЖНО: Това е ТИЗЪР за SEO страница — НЕ пълно персонално разчитане. Пиши само ОБЩИЯ случай (какво е типично за повечето двойки с тези слънчеви знаци). НЕ навлизай в домове, аспекти или конкретни градуси — това е част от персоналния анализ (синастрия), който читателят получава отделно. Целта е ясна обща представа, която да накара читателя да поиска персоналния анализ.
+
+Структура (всяко заглавие на собствен ред, обградено с **звезди**):
+**Общо съвпадение** — 2-3 изречения.
+**Любов и емоции** — 2-3 изречения.
+**Комуникация и интелект** — 2-3 изречения.
+**Предизвикателства** — 2-3 изречения.
+**Как да работи тази връзка** — 1-2 изречения.
+
+Пиши на български, ясно и практично, без жаргон. Общо ~300-400 думи. НЕ използвай маркери SUMMARY."""
+
+    ai_key, provider = get_ai_config()
+    if not ai_key:
+        return None
+    raw = call_ai(ai_key, provider, prompt, max_tokens=1500)
+    set_compatibility(sign_a["sign"], sign_b["sign"], raw)
     return raw
 
 
@@ -6269,6 +6343,9 @@ def sitemap_xml(request: Request):
                     for s in ZODIAC_SIGNS]
     # Zodiac sign profiles — the highest-volume searches ("характеристика на ...").
     entries += [(f"/zodia/{s['slug']}", "monthly", "0.8") for s in ZODIAC_SIGNS]
+    # Sign compatibility — 78 pairs, long-tail "съвместимост овен телец" searches.
+    entries.append(("/savmestimost", "monthly", "0.8"))
+    entries += [(f"/savmestimost/{slug}", "monthly", "0.7") for _, _, slug in COMPAT_PAIRS]
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
@@ -6680,6 +6757,115 @@ def api_sign_profile(sign_slug: str, refresh: bool = False):
     job = ai_job(cache_key, lambda: _generate_sign_profile(sign))
     if job["done"].is_set():
         cached = get_sign_profile(sign["sign"])
+        if cached:
+            return {"body": cached, "cached": False}
+        return {"body": AI_UNAVAILABLE}
+    return {"pending": True}
+
+
+# --- Вечнозелени SEO страници „съвместимост по зодии" ---
+_COMPAT_FAQ = [
+    {"q": "Тази съвместимост важи ли за всички двойки от тези знаци?",
+     "a": "Тя описва общия случай — типичното за повечето двойки с тези слънчеви знаци. Истинската съвместимост зависи от Луната, Асцендента и аспектите между двете натални карти."},
+    {"q": "Каква е разликата със синастрията?",
+     "a": "Съвместимостта по слънчев знак е само първата стъпка. Синастрията сравнява двете пълни натални карти — всички планети, домове и аспекти — и показва какво значи конкретно за вашата връзка."},
+    {"q": "Как да разбера истинската ни съвместимост?",
+     "a": "Създай наталната си карта и тази на партньора — сравнението на двете карти показва реалната ви съвместимост до градус."},
+    {"q": "Къде да получа пълния анализ на връзката?",
+     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+]
+
+
+def _compat_slug(a: dict, b: dict) -> str:
+    """Каноничен slug за двойка — по-ранният зодиакален знак е първи."""
+    ia = ZODIAC_SIGNS.index(a)
+    ib = ZODIAC_SIGNS.index(b)
+    if ia <= ib:
+        return f"{a['slug']}-{b['slug']}"
+    return f"{b['slug']}-{a['slug']}"
+
+
+@app.get("/savmestimost", response_class=HTMLResponse)
+async def compatibility_hub(request: Request):
+    """Матрица 12×12 със съвместимостта между всички знаци."""
+    ctx = seo_context(request, path="/savmestimost")
+    ctx["seo_title"] = f"Съвместимост по зодии — всички двойки | {brand_name()}"
+    ctx["seo_description"] = ("Съвместимост между всички 12 зодии: Овен, Телец, Близнаци, Рак, Лъв, Дева, Везни, "
+                              "Скорпион, Стрелец, Козирог, Водолей и Риби. Виж съвместимостта на всяка двойка.")
+    ctx["seo_keywords"] = "съвместимост по зодии, зодиакална съвместимост, съвместимост на зодиите"
+    ctx["signs"] = ZODIAC_SIGNS
+    # Матрица 12×12: редове = знак A, колони = знак B, клетка = каноничен slug.
+    ctx["matrix"] = [
+        [{"a": row_sign, "b": col_sign, "slug": _compat_slug(row_sign, col_sign)} for col_sign in ZODIAC_SIGNS]
+        for row_sign in ZODIAC_SIGNS
+    ]
+    return HTMLResponse(templates.get_template("compatibility_index.html").render(ctx))
+
+
+@app.get("/savmestimost/{pair_slug}", response_class=HTMLResponse)
+async def compatibility_page(request: Request, pair_slug: str):
+    pair = COMPAT_BY_SLUG.get(pair_slug)
+    if not pair:
+        raise HTTPException(404, "Няма такава страница.")
+    sign_a, sign_b = pair
+    cached = get_compatibility(sign_a["sign"], sign_b["sign"])
+    ctx = seo_context(request, path=f"/savmestimost/{pair_slug}")
+    ctx["seo_title"] = f"Съвместимост {sign_a['name']} и {sign_b['name']} — по зодии | {brand_name()}"
+    ctx["seo_description"] = (f"Съвместимост между {sign_a['name']} и {sign_b['name']}: любов, комуникация и "
+                              f"предизвикателства. Виж какво значи конкретно за вашата връзка.")
+    ctx["seo_keywords"] = (f"съвместимост {sign_a['name'].lower()} {sign_b['name'].lower()}, "
+                           f"{sign_a['name'].lower()} и {sign_b['name'].lower()} съвместимост")
+    ctx["sign_a"] = sign_a
+    ctx["sign_b"] = sign_b
+    ctx["pair_slug"] = pair_slug
+    ctx["signs"] = ZODIAC_SIGNS
+    ctx["faq"] = _COMPAT_FAQ
+    ctx["related_a"] = [{"sign": s, "slug": _compat_slug(sign_a, s)} for s in ZODIAC_SIGNS if s["sign"] != sign_a["sign"]]
+    ctx["related_b"] = [{"sign": s, "slug": _compat_slug(sign_b, s)} for s in ZODIAC_SIGNS if s["sign"] != sign_b["sign"]]
+    if cached:
+        ctx["body_html"] = _md_to_html(cached)
+    return HTMLResponse(templates.get_template("compatibility.html").render(ctx))
+
+
+@app.get("/api/savmestimost/warm")
+def api_compatibility_warm():
+    """Генерира всички двойки без кеш (78 страници, еднократно)."""
+    started = 0
+    for sa, sb, slug in COMPAT_PAIRS:
+        if get_compatibility(sa["sign"], sb["sign"]):
+            continue
+        cache_key = f"compat:{sa['sign']}:{sb['sign']}"
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            continue
+        ai_job(cache_key, lambda a=sa, b=sb: _generate_compatibility(a, b))
+        started += 1
+    return {"started": started}
+
+
+@app.get("/api/savmestimost/{pair_slug}")
+def api_compatibility(pair_slug: str, refresh: bool = False):
+    """Генерира (или връща кеширан) тизъра за съвместимостта на една двойка."""
+    pair = COMPAT_BY_SLUG.get(pair_slug)
+    if not pair:
+        raise HTTPException(404, "Няма такава страница.")
+    sign_a, sign_b = pair
+    cache_key = f"compat:{sign_a['sign']}:{sign_b['sign']}"
+
+    if not refresh:
+        with _AI_JOBS_LOCK:
+            running = _AI_JOBS.get(cache_key)
+        if running and not running["done"].is_set():
+            return {"pending": True}
+        cached = get_compatibility(sign_a["sign"], sign_b["sign"])
+        if cached:
+            return {"body": cached, "cached": True}
+
+    job = ai_job(cache_key, lambda: _generate_compatibility(sign_a, sign_b))
+    if job["done"].is_set():
+        cached = get_compatibility(sign_a["sign"], sign_b["sign"])
         if cached:
             return {"body": cached, "cached": False}
         return {"body": AI_UNAVAILABLE}

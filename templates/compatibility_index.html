@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    {% if seo_keywords %}<meta name="keywords" content="{{ seo_keywords }}">{% endif %}
+    <meta name="robots" content="{{ seo_robots }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    {% if seo_verification %}<meta name="google-site-verification" content="{{ seo_verification }}">{% endif %}
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ brand().name }}">
+    <meta property="og:locale" content="bg_BG">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ seo_title }}">
+    <meta name="twitter:description" content="{{ seo_description }}">
+    {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/favicon-180.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    {% include "_critical.html" %}
+    <link rel="preload" href="/static/landing.min.css?v=1" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="/static/landing.min.css?v=1">
+        <link rel="stylesheet" href="/static/consent.css?v=4">
+    </noscript>
+    {% include "_analytics.html" %}
+    <style>
+        .matrix-wrap { max-width: 860px; margin: 24px auto 0; overflow-x: auto; }
+        table.matrix { border-collapse: separate; border-spacing: 4px; width: 100%; }
+        table.matrix th { font-size: 0.78rem; color: var(--text-soft); font-weight: 500; padding: 2px 0; }
+        table.matrix td { padding: 0; text-align: center; }
+        table.matrix td.rowhead { text-align: right; padding-right: 8px; font-size: 0.8rem; color: var(--text-heading); font-weight: 600; white-space: nowrap; }
+        table.matrix a.cell { display: block; width: 100%; height: 100%; min-width: 34px; padding: 8px 2px; border-radius: 10px; text-decoration: none; color: var(--text-heading); font-size: 1.05rem; }
+        table.matrix a.cell:hover { background: var(--line); color: var(--accent); }
+        table.matrix a.cell.self { opacity: 0.45; }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <main>
+    <header class="hero hero--feature">
+        <div class="wrap">
+            <div class="page-nav">
+                <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
+                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                </a>
+                <a class="back-link" href="/">← Начало</a>
+            </div>
+            <p><span class="kicker">Зодиакална съвместимост</span></p>
+            <h1>Съвместимост по зодии</h1>
+            <p class="lede">Избери два знака и виж общата съвместимост между тях — любов, комуникация и предизвикателства.</p>
+            <div class="cta-row">
+                <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
+            </div>
+        </div>
+    </header>
+
+    <section>
+        <div class="wrap">
+            <div class="matrix-wrap">
+                <table class="matrix">
+                    <tr>
+                        <th></th>
+                        {% for s in signs %}<th>{{ s.glyph }}</th>{% endfor %}
+                    </tr>
+                    {% for row in matrix %}
+                    <tr>
+                        <td class="rowhead">{{ row[0].a.name }}</td>
+                        {% for cell in row %}
+                        <td>
+                            <a class="cell {% if cell.a.sign == cell.b.sign %}self{% endif %}" href="/savmestimost/{{ cell.slug }}" title="{{ cell.a.name }} и {{ cell.b.name }}">{{ cell.b.glyph }}</a>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            <p style="text-align:center; font-size: 0.82rem; color: var(--text-soft); max-width: 640px; margin: 18px auto 0;">Горната таблица е по слънчев знак — обща за всички. Точната съвместимост изисква сравнение на двете пълни натални карти.</p>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">✦</span>
+                <h2>Характеристика на всеки знак</h2>
+                <p>Първо опознай отделните знаци, после сравни съвместимостта им.</p>
+            </div>
+            <div class="related">
+                {% for s in signs %}
+                <a href="/zodia/{{ s.slug }}">
+                    <span class="r-glyph" aria-hidden="true">{{ s.glyph }}</span>
+                    <span class="r-name">{{ s.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Вижте истинската си съвместимост</h2>
+                <p>Създайте двете натални карти — оттам нататък имате точното сравнение за всяка планета, дом и аспект.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    </main>
+    <footer>
+        <div class="wrap">
+            {{ brand().name }} · {{ brand().tagline }}<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
+        </div>
+    </footer>
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
+    <script src="/static/consent.js?v=2"></script>
+</body>
+</html>
