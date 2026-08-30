@@ -84,9 +84,12 @@
         begin_checkout: 'InitiateCheckout',
         purchase: 'Purchase',
         sign_up: 'CompleteRegistration',
-        login: null,               // no standard Meta equivalent
+        login: 'Login',                    // custom — Meta няма стандартен еквивалент
         view_item: 'ViewContent',
-        click_cta: null,
+        generate_natal_chart: 'Lead',      // безплатна натална карта = мек lead
+        generate_synastry: 'ViewContent',  // преглед/генериране на синастрия
+        generate_numerology: 'ViewContent',// преглед/генериране на нумерология
+        click_cta: 'ClickCTA',             // custom
     };
 
     window.track = function (name, params) {
@@ -107,10 +110,14 @@
                 if (params.currency) payload.currency = params.currency;
                 if (params.transaction_id) payload.order_id = params.transaction_id;
                 if (params.item_name) payload.content_name = params.item_name;
+                if (params.content_type) payload.content_type = params.content_type;
+                if (params.content_name) payload.content_name = params.content_name;
                 var standard = ['InitiateCheckout', 'Purchase',
-                                'CompleteRegistration', 'ViewContent'];
+                                'CompleteRegistration', 'ViewContent', 'Lead'];
+                // Meta dedup: уникален ключ се предава като опция, не в payload.
+                var opts = params.event_id ? { eventID: String(params.event_id) } : undefined;
                 if (standard.indexOf(fbName) !== -1) {
-                    window.fbq('track', fbName, payload);
+                    window.fbq('track', fbName, payload, opts);
                 } else {
                     window.fbq('trackCustom', fbName, payload);
                 }
@@ -129,6 +136,8 @@
         if (info.transaction_id) params.transaction_id = info.transaction_id;
         if (info.name) params.item_name = info.name;
         if (info.keys) params.items = info.keys;
+        // Meta dedup: транзакцията е най-стабилният уникален ключ.
+        if (info.transaction_id) params.event_id = info.transaction_id;
         window.track(kind, params);
     };
 
