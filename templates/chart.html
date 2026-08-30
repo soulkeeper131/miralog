@@ -1874,10 +1874,12 @@
                 <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>
                 <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>
                 <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
+            // „Разчети наново“ е премахнато: повторното генериране харчи AI
+            // токени и пари без добавена стойност за клиента. Разчитането се
+            // кешира и се показва винаги; регенериране остава само за админ/API.
             return `<div class="cache-bar">
                 <span class="cache-label">${label}</span>
                 <div class="cache-actions">
-                    <button class="btn-refresh" onclick="${onRefresh}">↻ Разчети наново</button>
                     ${exportBtns}
                 </div>
             </div>`;
