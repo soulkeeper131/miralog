@@ -31,13 +31,9 @@
                 'analytics_storage': 'granted'
             });
         }
-        // Meta has its own gate; without lifting it the pixel stays silent
-        // even after the script loads.
-        if (typeof window.fbq === 'function') {
-            window.fbq('consent', 'grant');
-            window.fbq('init', window.FB_PIXEL_ID);
-            window.fbq('track', 'PageView');
-        }
+        // Meta pixel now fires on load (see _analytics.html), so there is no
+        // consent gate to lift here — lifting it again would double-fire the
+        // base PageView.
     }
 
     /* One call, both tags.

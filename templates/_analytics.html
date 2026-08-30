@@ -19,13 +19,13 @@
   {% endif %}
 
   {% if fbid %}
-  // Meta pixel, stubbed here and loaded after consent. The stub queues calls
-  // so anything fired before the script arrives is not lost.
+  // Meta pixel — fires on load (standard snippet). The stub queues the
+  // init/PageView calls until the script arrives, then flushes them.
   !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
   n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
   n.push=n;n.loaded=!0;n.version='2.0';n.queue=[]}(window,document);
-  // Meta's own consent gate: nothing is sent until revoked is lifted.
-  fbq('consent', 'revoke');
+  fbq('init', '{{ fbid }}');
+  fbq('track', 'PageView');
   {% endif %}
 
   // Both tags load after `load` so they never block the main thread. The
