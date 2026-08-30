@@ -2552,7 +2552,7 @@ def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Op
     ai_key, provider = get_ai_config()
     if not ai_key:
         return None
-    raw = call_ai(ai_key, provider, prompt, max_tokens=4000)
+    raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
     set_sign_horoscope(sign_data["sign"], date_iso, raw)
     return raw
 
@@ -5384,7 +5384,7 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -5629,7 +5629,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -5993,7 +5993,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=5000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -6379,7 +6379,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=4000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
