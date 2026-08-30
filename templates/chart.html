@@ -775,6 +775,9 @@
         .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); transform: translateY(-1px); }
         .btn-refresh:active { transform: translateY(0); }
         .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .btn-refresh.is-playing { background: var(--accent); color: white; border-color: var(--accent); }
+        .audio-progress { flex-basis: 100%; height: 4px; background: var(--border-soft); border-radius: 2px; overflow: hidden; }
+        .audio-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .crystal-loader {
@@ -1871,33 +1874,135 @@
             // Only readings the server actually stored can be exported.
             const key = data.cache_key || '';
             const exportBtns = key ? `
-                <button class="btn-refresh" onclick="playReading('${key}')" title="Чети на глас">🔊 Чети</button>
+                <button class="btn-refresh audio-btn" id="audio-btn-${key}" onclick="playReading('${key}')" title="Чети на глас">🔊 Чети</button>
                 <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>
                 <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>
                 <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
             // „Разчети наново“ е премахнато: повторното генериране харчи AI
             // токени и пари без добавена стойност за клиента. Разчитането се
             // кешира и се показва винаги; регенериране остава само за админ/API.
+            const progress = key ? `<div class="audio-progress" id="audio-progress-${key}" style="display:none"><div class="audio-progress-bar"></div></div>` : '';
             return `<div class="cache-bar">
                 <span class="cache-label">${label}</span>
                 <div class="cache-actions">
                     ${exportBtns}
                 </div>
+                ${progress}
             </div>`;
         }
 
+        // Глобален аудио плейър — само един активен поток наведнъж.
+        var audioPlayer = { key: null, audio: null, state: 'idle' };
+
+        function audioBtn(key) { return document.getElementById('audio-btn-' + key); }
+        function audioProgress(key) { return document.getElementById('audio-progress-' + key); }
+
+        function renderAudioBtn(key) {
+            const btn = audioBtn(key);
+            if (!btn) return;
+            const p = audioPlayer;
+            const active = (p.key === key);
+            btn.classList.remove('is-playing');
+            if (active && p.state === 'playing') {
+                btn.innerHTML = '⏸ Пауза';
+                btn.title = 'Пауза';
+                btn.classList.add('is-playing');
+            } else if (active && p.state === 'paused') {
+                btn.innerHTML = '▶ Продължи';
+                btn.title = 'Продължи четенето';
+            } else if (active && p.state === 'loading') {
+                btn.innerHTML = '⏳ Подготвям…';
+                btn.title = 'Генерира се аудио';
+            } else {
+                btn.innerHTML = '🔊 Чети';
+                btn.title = 'Чети на глас';
+            }
+        }
+
+        function showAudioProgress(key, show) {
+            const el = audioProgress(key);
+            if (!el) return;
+            el.style.display = show ? 'block' : 'none';
+            const fill = el.querySelector('.audio-progress-bar');
+            if (fill) fill.style.width = '0%';
+        }
+
+        function stopAudio() {
+            const p = audioPlayer;
+            if (p.audio) {
+                p.audio.onended = null;
+                p.audio.ontimeupdate = null;
+                try { p.audio.pause(); } catch (e) {}
+                p.audio = null;
+            }
+            const oldKey = p.key;
+            p.key = null;
+            p.state = 'idle';
+            if (oldKey) {
+                showAudioProgress(oldKey, false);
+                renderAudioBtn(oldKey);
+            }
+        }
+
         function playReading(key) {
-            // Пускаме синхронно в потребителския жест (клика): iOS Safari
-            // мълчаливо блокира audio.play(), ако е извикан след async fetch.
+            const p = audioPlayer;
+
+            // Същото разчитане вече свири → пауза (без рестарт отначало).
+            if (p.key === key && p.audio && p.state === 'playing') {
+                p.audio.pause();
+                p.state = 'paused';
+                renderAudioBtn(key);
+                return;
+            }
+            // Същото разчитане е на пауза → продължи от същото място.
+            if (p.key === key && p.audio && p.state === 'paused') {
+                p.state = 'playing';
+                renderAudioBtn(key);
+                p.audio.play().catch(function () {
+                    p.state = 'idle';
+                    renderAudioBtn(key);
+                    if (typeof uiToast === 'function') uiToast('Не можах да продължа четенето.', 'err');
+                });
+                return;
+            }
+
+            // Ново разчитане: спри предишното и започни отначало.
+            stopAudio();
+            p.key = key;
+            p.state = 'loading';
             getToken(); // гарантира, че miralog_token cookie е поставен
             const url = '/api/persons/{{ person.id }}/reading-audio?key=' + encodeURIComponent(key);
             const audio = new Audio(url);
+            p.audio = audio;
+            renderAudioBtn(key);
+            showAudioProgress(key, true);
             if (typeof uiToast === 'function') uiToast('Подготвям аудио…');
+
             audio.play().then(function () {
+                if (p.audio !== audio) return; // вече сменено с друг поток
+                p.state = 'playing';
+                renderAudioBtn(key);
                 if (typeof uiToast === 'function') uiToast('Чете на глас…', 'ok');
             }).catch(function () {
+                if (p.audio !== audio) return;
+                stopAudio();
+                renderAudioBtn(key);
                 if (typeof uiToast === 'function') uiToast('Не можах да прочета разчитането.', 'err');
             });
+
+            audio.onended = function () {
+                if (p.audio !== audio) return;
+                stopAudio();
+                renderAudioBtn(key);
+            };
+            audio.ontimeupdate = function () {
+                if (p.audio !== audio) return;
+                const bar = audioProgress(key);
+                if (bar && audio.duration && isFinite(audio.duration)) {
+                    const fill = bar.querySelector('.audio-progress-bar');
+                    if (fill) fill.style.width = ((audio.currentTime / audio.duration) * 100) + '%';
+                }
+            };
         }
 
         async function downloadReadingPdf(key) {
