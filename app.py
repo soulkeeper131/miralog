@@ -5145,6 +5145,7 @@ STYLE_RULES = """
 - ОБРЪЩЕНИЕ: обръщай се на "ти" и САМО с малкото име (то е подадено като "Малко име"). Никога не използвай фамилията и не пиши на "Вие".
 - ФОРМАТ: всяко номерирано заглавие започва на нов ред във вида `1. **Заглавие**`. Където изброяваш неща, ползвай тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
 - СТРУКТУРА: всяка секция да е самостоятелна и завършена. Не повтаряй едно и също през различните секции.
+- ЗАВЪРШЕК: разчитането винаги завършва със завършено изречение и кратка заключителна мисъл. Никога не оставяй текста обрязан по средата на дума или изречение.
 - ЛОГИКА: върви от общото към конкретното, така че читателят да вижда връзката между данните и изводите.
 - ДЪЛЖИНА: бъди подробен — всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи.
 - Бъди конкретен, избягвай клишета. Обяснявай астрологичните термини накратко, за да е разбираемо и за човек без познания.
@@ -6083,7 +6084,9 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=3000)
+            # Любовният хороскоп има 7 секции — 3000 токена често не стигаха
+            # и текстът спираше по средата. Повече място = по-малко продължения.
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -6456,42 +6459,47 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) ->
 
         if provider == "deepseek":
             url = "https://api.deepseek.com/chat/completions"
+            use_thinking_disable = True
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+            use_thinking_disable = False
+
+        # Ако моделът спре заради лимита на токените (finish_reason == "length"),
+        # регенерираме веднъж с двоен лимит. НЕ използваме „продължи оттам“ — то
+        # кара модела да повтори началото, вместо да довърши текста.
+        content = ""
+        for mt in (max_tokens, max_tokens * 2):
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.7,
-                "max_tokens": max_tokens,
+                "max_tokens": mt,
+            }
+            if use_thinking_disable:
                 # v4 моделите мислят (reasoning) по подразбиране и харчат max_tokens
                 # за скрити разсъждения, вместо за отговора. Изключваме го, за да
                 # се върне съдържанието директно, както старият deepseek-chat.
-                "thinking": {"type": "disabled"},
-            }
-        else:
-            url = "https://api.openai.com/v1/chat/completions"
-            payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": max_tokens
-            }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode(),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            result = json.loads(resp.read())
+                payload["thinking"] = {"type": "disabled"}
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode(),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read())
             msg = result["choices"][0]["message"]
             content = msg.get("content") or ""
             # Fallback: ако все пак моделът е мислил и content е празен, вземи
             # разсъждението, за да не се губи генерираният текст.
             if not content and msg.get("reasoning_content"):
                 content = msg["reasoning_content"]
-            return clean_bg(content)
+            if result["choices"][0].get("finish_reason") != "length":
+                break
+        return clean_bg(content)
     except urllib.error.HTTPError as e:
         raise AIError(_explain_http_error(provider, e)) from e
     except TimeoutError:
