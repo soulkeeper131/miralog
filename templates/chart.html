@@ -2407,6 +2407,9 @@
         async function runSynastry(otherId) {
             const el = document.getElementById('love-content');
             const aiEl = document.getElementById('love-ai-content');
+            // Режимът „Друг мой профил“ не минава през submitPartnerChart,
+            // затова резултатният панел трябва да се покаже изрично тук.
+            document.getElementById('love-result').style.display = 'block';
             el.innerHTML = crystalLoader('Сравняваме двете карти...');
             aiEl.innerHTML = '';
             unlockPanel(el);
