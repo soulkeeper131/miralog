@@ -1,11 +1,29 @@
 {% set gid = ga_id() %}
 {% set fbid = fb_pixel_id() %}
-{% if gid or fbid %}
+
+{% if fbid %}
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '{{ fbid }}');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+{% endif %}
+
+{% if gid %}
 <script>
   window.GA_ID = '{{ gid }}';
-  window.FB_PIXEL_ID = '{{ fbid }}';
-
-  {% if gid %}
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('consent', 'default', {
@@ -16,37 +34,14 @@
   });
   gtag('js', new Date());
   gtag('config', '{{ gid }}');
-  {% endif %}
 
-  {% if fbid %}
-  // Meta pixel — fires on load (standard snippet). The stub queues the
-  // init/PageView calls until the script arrives, then flushes them.
-  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-  n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-  n.push=n;n.loaded=!0;n.version='2.0';n.queue=[]}(window,document);
-  fbq('init', '{{ fbid }}');
-  fbq('track', 'PageView');
-  {% endif %}
-
-  // Both tags load after `load` so they never block the main thread. The
-  // queues above mean events fired earlier still arrive once the script does.
+  // gtag loads after `load` so it never blocks the main thread. The consent
+  // layer above keeps it dormant until the visitor opts in.
   window.addEventListener('load', function () {
-    {% if gid %}
     var g = document.createElement('script');
     g.async = true;
     g.src = 'https://www.googletagmanager.com/gtag/js?id={{ gid }}';
     document.head.appendChild(g);
-    {% endif %}
-    {% if fbid %}
-    var f = document.createElement('script');
-    f.async = true;
-    f.src = 'https://connect.facebook.net/en_US/fbevents.js';
-    document.head.appendChild(f);
-    {% endif %}
   });
 </script>
-{% if fbid %}
-<noscript><img height="1" width="1" style="display:none" alt=""
-  src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"></noscript>
-{% endif %}
 {% endif %}
