@@ -776,8 +776,43 @@
         .btn-refresh:active { transform: translateY(0); }
         .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .btn-refresh.is-playing { background: var(--accent); color: white; border-color: var(--accent); }
-        .audio-progress { flex-basis: 100%; height: 4px; background: var(--border-soft); border-radius: 2px; overflow: hidden; }
-        .audio-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
+
+        /* Плаващ аудио плейър — залепен отдолу, остава видим при скрол. */
+        .floating-player {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+            display: flex; flex-direction: column; gap: 8px;
+            padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
+        }
+        .fp-row { display: flex; align-items: center; gap: 12px; }
+        .fp-wave { display: flex; align-items: flex-end; gap: 2px; height: 22px; flex: 0 0 auto; }
+        .fp-wave span {
+            width: 3px; height: 5px; background: var(--accent); border-radius: 2px;
+            animation: fp-wave 1s ease-in-out infinite;
+        }
+        .fp-wave span:nth-child(1) { animation-delay: 0s; }
+        .fp-wave span:nth-child(2) { animation-delay: 0.15s; }
+        .fp-wave span:nth-child(3) { animation-delay: 0.3s; }
+        .fp-wave span:nth-child(4) { animation-delay: 0.45s; }
+        .fp-wave span:nth-child(5) { animation-delay: 0.6s; }
+        .fp-wave.paused span { animation: none; height: 5px; }
+        @keyframes fp-wave { 0%, 100% { height: 5px; } 50% { height: 20px; } }
+        .fp-info { flex: 1 1 auto; min-width: 0; }
+        .fp-title { font-size: 0.8rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .fp-controls { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+        .fp-btn {
+            width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+            background: transparent; color: var(--accent-light); cursor: pointer;
+            display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }
+        .fp-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+        .fp-btn-main { width: 46px; height: 46px; background: var(--accent); color: white; border-color: var(--accent); font-size: 1.1rem; }
+        .fp-progress { height: 6px; background: var(--border-soft); border-radius: 3px; overflow: hidden; cursor: pointer; }
+        .fp-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
+        body.has-fp { padding-bottom: 96px; }
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .crystal-loader {
@@ -1881,21 +1916,32 @@
             // „Разчети наново“ е премахнато: повторното генериране харчи AI
             // токени и пари без добавена стойност за клиента. Разчитането се
             // кешира и се показва винаги; регенериране остава само за админ/API.
-            const progress = key ? `<div class="audio-progress" id="audio-progress-${key}" style="display:none"><div class="audio-progress-bar"></div></div>` : '';
             return `<div class="cache-bar">
                 <span class="cache-label">${label}</span>
                 <div class="cache-actions">
                     ${exportBtns}
                 </div>
-                ${progress}
             </div>`;
         }
 
-        // Глобален аудио плейър — само един активен поток наведнъж.
+        // Глобален аудио плейър — един активен поток, показан в плаващ плейър.
         var audioPlayer = { key: null, audio: null, state: 'idle' };
 
+        var FP_TITLES = {
+            profile: 'Личен портрет',
+            akashic: 'Акашови записи',
+            numerology: 'Нумерологичен анализ',
+            horoscope: 'Дневен хороскоп',
+            period: 'Анализ на период',
+            love: 'Любовен хороскоп',
+            'love-full': 'Любовен хороскоп'
+        };
+        function readingTitle(key) {
+            const base = (key || '').split(':')[0];
+            return FP_TITLES[base] || 'Разчитане';
+        }
+
         function audioBtn(key) { return document.getElementById('audio-btn-' + key); }
-        function audioProgress(key) { return document.getElementById('audio-progress-' + key); }
 
         function renderAudioBtn(key) {
             const btn = audioBtn(key);
@@ -1919,15 +1965,61 @@
             }
         }
 
-        function showAudioProgress(key, show) {
-            const el = audioProgress(key);
+        function renderFloatingPlayer() {
+            const el = document.getElementById('floating-player');
             if (!el) return;
-            el.style.display = show ? 'block' : 'none';
-            const fill = el.querySelector('.audio-progress-bar');
-            if (fill) fill.style.width = '0%';
+            const p = audioPlayer;
+            const open = !!(p.key && p.audio);
+            el.style.display = open ? 'flex' : 'none';
+            document.body.classList.toggle('has-fp', open);
+            if (!open) return;
+            document.getElementById('fp-title').textContent = readingTitle(p.key);
+            const wave = document.getElementById('fp-wave');
+            const toggle = document.getElementById('fp-toggle');
+            if (p.state === 'playing') {
+                wave.classList.remove('paused');
+                toggle.innerHTML = '⏸';
+                toggle.title = 'Пауза';
+            } else if (p.state === 'paused') {
+                wave.classList.add('paused');
+                toggle.innerHTML = '▶';
+                toggle.title = 'Продължи';
+            } else {
+                wave.classList.add('paused');
+                toggle.innerHTML = '⏳';
+                toggle.title = 'Подготвям…';
+            }
         }
 
-        function stopAudio() {
+        function fpToggle() {
+            const p = audioPlayer;
+            if (!p.audio || !p.key) return;
+            if (p.state === 'playing') {
+                p.audio.pause();
+                p.state = 'paused';
+            } else if (p.state === 'paused') {
+                p.state = 'playing';
+                p.audio.play().catch(function () { p.state = 'idle'; });
+            }
+            renderAudioBtn(p.key);
+            renderFloatingPlayer();
+        }
+
+        function fpRestart() {
+            const p = audioPlayer;
+            if (!p.audio || !p.key) return;
+            p.audio.currentTime = 0;
+            p.state = 'playing';
+            renderAudioBtn(p.key);
+            renderFloatingPlayer();
+            p.audio.play().catch(function () {
+                p.state = 'idle';
+                renderAudioBtn(p.key);
+                renderFloatingPlayer();
+            });
+        }
+
+        function fpClose() {
             const p = audioPlayer;
             if (p.audio) {
                 p.audio.onended = null;
@@ -1938,10 +2030,16 @@
             const oldKey = p.key;
             p.key = null;
             p.state = 'idle';
-            if (oldKey) {
-                showAudioProgress(oldKey, false);
-                renderAudioBtn(oldKey);
-            }
+            if (oldKey) renderAudioBtn(oldKey);
+            renderFloatingPlayer();
+        }
+
+        function fpSeek(e) {
+            const p = audioPlayer;
+            if (!p.audio || !p.key || !p.audio.duration || !isFinite(p.audio.duration)) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+            p.audio.currentTime = ratio * p.audio.duration;
         }
 
         function playReading(key) {
@@ -1952,22 +2050,24 @@
                 p.audio.pause();
                 p.state = 'paused';
                 renderAudioBtn(key);
+                renderFloatingPlayer();
                 return;
             }
             // Същото разчитане е на пауза → продължи от същото място.
             if (p.key === key && p.audio && p.state === 'paused') {
                 p.state = 'playing';
                 renderAudioBtn(key);
+                renderFloatingPlayer();
                 p.audio.play().catch(function () {
                     p.state = 'idle';
                     renderAudioBtn(key);
-                    if (typeof uiToast === 'function') uiToast('Не можах да продължа четенето.', 'err');
+                    renderFloatingPlayer();
                 });
                 return;
             }
 
             // Ново разчитане: спри предишното и започни отначало.
-            stopAudio();
+            fpClose();
             p.key = key;
             p.state = 'loading';
             getToken(); // гарантира, че miralog_token cookie е поставен
@@ -1975,32 +2075,32 @@
             const audio = new Audio(url);
             p.audio = audio;
             renderAudioBtn(key);
-            showAudioProgress(key, true);
+            renderFloatingPlayer();
             if (typeof uiToast === 'function') uiToast('Подготвям аудио…');
 
             audio.play().then(function () {
                 if (p.audio !== audio) return; // вече сменено с друг поток
                 p.state = 'playing';
                 renderAudioBtn(key);
+                renderFloatingPlayer();
                 if (typeof uiToast === 'function') uiToast('Чете на глас…', 'ok');
             }).catch(function () {
                 if (p.audio !== audio) return;
-                stopAudio();
+                fpClose();
                 renderAudioBtn(key);
                 if (typeof uiToast === 'function') uiToast('Не можах да прочета разчитането.', 'err');
             });
 
             audio.onended = function () {
                 if (p.audio !== audio) return;
-                stopAudio();
+                fpClose();
                 renderAudioBtn(key);
             };
             audio.ontimeupdate = function () {
                 if (p.audio !== audio) return;
-                const bar = audioProgress(key);
+                const bar = document.getElementById('fp-progress-bar');
                 if (bar && audio.duration && isFinite(audio.duration)) {
-                    const fill = bar.querySelector('.audio-progress-bar');
-                    if (fill) fill.style.width = ((audio.currentTime / audio.duration) * 100) + '%';
+                    bar.style.width = ((audio.currentTime / audio.duration) * 100) + '%';
                 }
             };
         }
@@ -3072,5 +3172,18 @@
         }
     </script>
     <script src="/static/consent.js"></script>
+
+    <div id="floating-player" class="floating-player" style="display:none" aria-label="Аудио плейър">
+        <div class="fp-row">
+            <div class="fp-wave" id="fp-wave"><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="fp-info"><div class="fp-title" id="fp-title">Разчитане</div></div>
+            <div class="fp-controls">
+                <button class="fp-btn" onclick="fpRestart()" title="Отначало">⏮</button>
+                <button class="fp-btn fp-btn-main" id="fp-toggle" onclick="fpToggle()" title="Пауза">⏸</button>
+                <button class="fp-btn" onclick="fpClose()" title="Затвори">✕</button>
+            </div>
+        </div>
+        <div class="fp-progress" onclick="fpSeek(event)"><div class="fp-progress-bar" id="fp-progress-bar"></div></div>
+    </div>
 </body>
 </html>
