@@ -2,23 +2,36 @@
 {% set fbid = fb_pixel_id() %}
 
 {% if fbid %}
-<!-- Meta Pixel Code -->
+<!-- Meta Pixel.
+
+     Meta's copy-paste snippet calls init + PageView immediately, which sets
+     the _fbp cookie before the visitor has answered the banner. Under GDPR
+     that is tracking without a legal basis, so the pixel is stubbed here and
+     only initialised once consent is given (see static/consent.js → grant()).
+     The stub queues any event fired in the meantime, so nothing is lost for
+     a visitor who accepts. -->
 <script>
 !function(f,b,e,v,n,t,s)
 {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
 if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-n.queue=[];t=b.createElement(e);t.async=!0;
-t.src=v;s=b.getElementsByTagName(e)[0];
-s.parentNode.insertBefore(t,s)}(window, document,'script',
-'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '{{ fbid }}');
-fbq('track', 'PageView');
+n.queue=[]}(window, document);
+// Meta's own gate. Nothing leaves the browser until this is lifted.
+fbq('consent', 'revoke');
+window.FB_PIXEL_ID = '{{ fbid }}';
+// The script itself loads after `load` so it never blocks rendering. It sets
+// no cookie on its own — only init does, and that waits for consent.
+window.addEventListener('load', function () {
+  var t = document.createElement('script');
+  t.async = true;
+  t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  document.head.appendChild(t);
+});
 </script>
-<noscript><img height="1" width="1" style="display:none"
+<noscript><img height="1" width="1" style="display:none" alt=""
 src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"
 /></noscript>
-<!-- End Meta Pixel Code -->
+<!-- End Meta Pixel -->
 {% endif %}
 
 {% if gid %}

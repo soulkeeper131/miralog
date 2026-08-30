@@ -31,9 +31,47 @@
                 'analytics_storage': 'granted'
             });
         }
-        // Meta pixel now fires on load (see _analytics.html), so there is no
-        // consent gate to lift here — lifting it again would double-fire the
-        // base PageView.
+        // Meta stays revoked until here. init() is what sets _fbp, so it
+        // must not run before the visitor agrees; PageView fires once, right
+        // after, so an accepting visitor is still counted.
+        if (typeof window.fbq === 'function' && window.FB_PIXEL_ID) {
+            window.fbq('consent', 'grant');
+            window.fbq('init', window.FB_PIXEL_ID);
+            window.fbq('track', 'PageView');
+        }
+    }
+
+    /* Refusing must also clear what is already there.
+
+       A visitor who says no should not be left carrying a tracking cookie
+       from a previous visit or from a tag that fired too early. These are the
+       cookies GA4 and Meta set; removing them needs the same path and domain
+       they were written with, so both the bare host and the dot-prefixed
+       parent are tried. */
+    function revoke() {
+        if (typeof window.gtag === 'function') {
+            window.gtag('consent', 'update', {
+                'ad_storage': 'denied',
+                'ad_user_data': 'denied',
+                'ad_personalization': 'denied',
+                'analytics_storage': 'denied'
+            });
+        }
+        if (typeof window.fbq === 'function') window.fbq('consent', 'revoke');
+
+        var host = location.hostname;
+        var domains = ['', host, '.' + host];
+        var parts = host.split('.');
+        if (parts.length > 2) domains.push('.' + parts.slice(-2).join('.'));
+
+        document.cookie.split(';').forEach(function (raw) {
+            var name = raw.split('=')[0].trim();
+            if (!/^(_ga|_gid|_gat|_fbp|_fbc)/.test(name)) return;
+            domains.forEach(function (d) {
+                document.cookie = name + '=; Max-Age=0; path=/'
+                    + (d ? '; domain=' + d : '');
+            });
+        });
     }
 
     /* One call, both tags.
@@ -132,6 +170,7 @@
         function choose(value) {
             remember(value);
             if (value === 'granted') grant();
+            else revoke();
             el.classList.remove('consent-in');
             document.body.classList.remove('consent-open');
             setTimeout(function () { el.remove(); }, 220);
@@ -140,8 +179,9 @@
         el.querySelector('.consent-no').addEventListener('click', function () { choose('denied'); });
     }
 
-    // Вече дадено съгласие от предишна визита → активирай аналитиката сега.
+    // Пази избора между визитите: съгласие активира, отказ изчиства.
     if (current() === 'granted') grant();
+    else if (current() === 'denied') revoke();
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', show);
