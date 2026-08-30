@@ -1304,6 +1304,10 @@ AI_MODELS = {
     ],
 }
 
+# Платените разчитания минават през Pro (по-дълбоко, по-бавно, по-скъпо),
+# безплатните и SEO страниците — през Flash (бърз и евтин). Дефолтът е Flash.
+PAID_MODEL = "deepseek-v4-pro"
+
 def resolve_ai_model(provider: str) -> str:
     """Model id from admin settings, falling back to the provider default."""
     options = AI_MODELS.get(provider) or AI_MODELS["deepseek"]
@@ -5154,16 +5158,7 @@ STYLE_RULES = """
   представяй, не описвай процеса си и не споменавай, че си модел, асистент или
   програма. Никакви уводи от рода на "като изкуствен интелект", "въз основа на
   предоставените данни ще генерирам" или "надявам се това да е полезно".
-- Започвай направо с разчитането. Без "Разбира се", "Ето", "С удоволствие".
-
-=== ПРАВОПИС (задължително) ===
-Пиши на книжовен български. Внимавай особено за:
-- "в" / "във": пълната форма "във" се пише САМО пред думи, започващи с "в" или "ф" (във въздуха, във фокуса). Иначе винаги "в" (в дома, в знака, в картата).
-- "с" / "със": пълната форма "със" се пише САМО пред думи, започващи със "с" или "з" (със Сатурн, със знанието). Иначе винаги "с" (с Луната, с търпение, с хората).
-- Пълен и кратък член: пълен член (-ът, -ят) само при подлог (Сатурн е учителят); кратък (-а, -я) при допълнение (виждаш учителя).
-- Пълните форми на местоименията: "него/нея" след предлог, "го/я" като кратка форма.
-- Не пропускай запетаи пред "който", "която", "което", "които", "че", "но", "а".
-- Внимавай с бройната форма: два/три + мъжки род = "два аспекта", "три знака" (не "аспекти"/"знакове")."""
+- Започвай направо с разчитането. Без "Разбира се", "Ето", "С удоволствие"."""
 
 def first_name(full_name: str) -> str:
     """First name only — the readings address the person informally."""
@@ -5384,7 +5379,7 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -5567,7 +5562,7 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000, model=PAID_MODEL)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -5629,7 +5624,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -5993,7 +5988,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
     ai_key, provider = get_ai_config()
     if ai_key:
         try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
             set_ai_cache(data.person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -6086,7 +6081,7 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
         try:
             # Любовният хороскоп има 7 секции — 3000 токена често не стигаха
             # и текстът спираше по средата. Повече място = по-малко продължения.
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
+            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
             set_ai_cache(person_id, cache_key, interpretation)
             return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
         except AIError as e:
@@ -6236,7 +6231,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
         ai_key, provider = get_ai_config()
         if not ai_key:
             return  # няма ключ — кешът остава празен, следващият poll ще върне грешка
-        raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
+        raw = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
         set_ai_cache(person_id, cache_key, raw)
 
     job = ai_job(cache_key, _generate)
@@ -6425,18 +6420,24 @@ BG_GRAMMAR_RULES = """=== ЕЗИКОВИ ПРАВИЛА (задължителн�
 3. МЕСТОИМЕННИ ПАДЕЖИ: винителен „го/я/ги/те" и дателен „му/ѝ/им/ти/ми" на правилното място — „аспектът ти дава...", „помага ти", „казва ѝ". Не повтаряй „на него/на нея" там, където е нужна кратката форма.
 4. БРОЙНА ФОРМА след числителни: „два дни", „три аспекта", „четири съвета".
 5. СЛОВОРЕД: естествен български (подлог–сказуемо–допълнение). Без английски словоред и буквални преводи.
-6. Избягвай двойно членуване и несъгласувани окончания.
+6. ПРЕДЛОЗИ: „в"/„във" — пълната форма „във" се пише САМО пред думи, започващи с „в" или „ф" (във въздуха, във фокуса), иначе винаги „в" (в дома, в знака, в картата). „с"/„със" — пълната форма „със" се пише САМО пред „с" или „з" (със Сатурн, със знанието), иначе „с" (с Луната, с търпение, с хората).
+7. ЗАПЕТАИ: не пропускай запетаята пред „който", „която", „което", „които", „че", „но", „а".
+8. Избягвай двойно членуване и несъгласувани окончания.
 Накрая прочети текста веднъж само за граматика и поправи всяка грешка."""
 
-def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000) -> str:
-    """Call the configured AI provider's chat completion endpoint and return the text."""
+def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
+            model: Optional[str] = None) -> str:
+    """Call the configured AI provider's chat completion endpoint and return the text.
+
+    `model` надделява над модела от настройките: платените разчитания подават
+    `model=PAID_MODEL` (deepseek-v4-pro), безплатните ползват дефолта (Flash)."""
     import urllib.request
     import urllib.error
 
     # Граматичните правила се добавят към всяко разчитане, без значение от модела.
     prompt = BG_GRAMMAR_RULES + "\n\n" + prompt
 
-    model = resolve_ai_model(provider)
+    model = model or resolve_ai_model(provider)
     try:
         if provider == "anthropic":
             req = urllib.request.Request(
