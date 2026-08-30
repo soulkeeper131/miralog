@@ -777,21 +777,24 @@
         .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .btn-refresh.is-playing { background: var(--accent); color: white; border-color: var(--accent); }
 
-        /* Плаващ аудио плейър — центрирана карта отдолу, гласът е на преден план. */
+        /* Плаващ аудио плейър — фрост (матово стъкло), компактен и деликатен. */
         .floating-player {
-            position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
-            z-index: 1000; width: min(420px, calc(100% - 24px));
-            display: flex; flex-direction: column; align-items: center; gap: 8px;
-            padding: 12px 18px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+            z-index: 1000; width: min(320px, calc(100% - 32px));
+            display: flex; flex-direction: column; align-items: center; gap: 6px;
+            padding: 9px 14px; padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px));
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 18px;
-            box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+            background: color-mix(in srgb, var(--bg-card) 66%, transparent);
+            -webkit-backdrop-filter: blur(16px) saturate(150%);
+            backdrop-filter: blur(16px) saturate(150%);
+            border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+            border-radius: 14px;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.26);
         }
-        .fp-title { text-align: center; font-size: 0.78rem; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-        .fp-wave { display: flex; align-items: center; gap: 3px; height: 30px; }
+        .fp-title { text-align: center; font-size: 0.72rem; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .fp-wave { display: flex; align-items: center; gap: 2px; height: 20px; }
         .fp-wave span {
-            width: 4px; height: 6px; background: var(--accent); border-radius: 2px;
+            width: 3px; height: 4px; background: var(--accent); border-radius: 2px;
             animation: fp-wave 1s ease-in-out infinite;
         }
         .fp-wave span:nth-child(1) { animation-delay: 0s; }
@@ -801,20 +804,21 @@
         .fp-wave span:nth-child(5) { animation-delay: 0.48s; }
         .fp-wave span:nth-child(6) { animation-delay: 0.6s; }
         .fp-wave span:nth-child(7) { animation-delay: 0.72s; }
-        .fp-wave.paused span { animation: none; height: 6px; }
-        @keyframes fp-wave { 0%, 100% { height: 6px; } 50% { height: 26px; } }
-        .fp-controls { display: flex; align-items: center; justify-content: center; gap: 16px; }
+        .fp-wave.paused span { animation: none; height: 4px; }
+        @keyframes fp-wave { 0%, 100% { height: 4px; } 50% { height: 17px; } }
+        .fp-controls { display: flex; align-items: center; justify-content: center; gap: 12px; }
         .fp-btn {
-            width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+            width: 32px; height: 32px; border-radius: 50%;
+            border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
             background: transparent; color: var(--accent-light); cursor: pointer;
-            display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+            display: flex; align-items: center; justify-content: center; font-size: 0.82rem;
             transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
         }
         .fp-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
-        .fp-btn-main { width: 52px; height: 52px; background: var(--accent); color: white; border-color: var(--accent); font-size: 1.2rem; }
-        .fp-progress { width: 100%; height: 6px; background: var(--border-soft); border-radius: 3px; overflow: hidden; cursor: pointer; }
+        .fp-btn-main { width: 40px; height: 40px; background: var(--accent); color: white; border-color: var(--accent); font-size: 1rem; }
+        .fp-progress { width: 100%; height: 4px; background: color-mix(in srgb, var(--border-soft) 70%, transparent); border-radius: 2px; overflow: hidden; cursor: pointer; }
         .fp-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
-        body.has-fp { padding-bottom: 170px; }
+        body.has-fp { padding-bottom: 120px; }
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .crystal-loader {
