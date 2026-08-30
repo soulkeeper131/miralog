@@ -777,31 +777,33 @@
         .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .btn-refresh.is-playing { background: var(--accent); color: white; border-color: var(--accent); }
 
-        /* Плаващ аудио плейър — залепен отдолу, остава видим при скрол. */
+        /* Плаващ аудио плейър — центрирана карта отдолу, гласът е на преден план. */
         .floating-player {
-            position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
-            display: flex; flex-direction: column; gap: 8px;
-            padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+            z-index: 1000; width: min(420px, calc(100% - 24px));
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            padding: 12px 18px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
             background: var(--bg-card);
-            border-top: 1px solid var(--border);
-            box-shadow: 0 -6px 24px rgba(0,0,0,0.35);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 10px 32px rgba(0,0,0,0.45);
         }
-        .fp-row { display: flex; align-items: center; gap: 12px; }
-        .fp-wave { display: flex; align-items: flex-end; gap: 2px; height: 22px; flex: 0 0 auto; }
+        .fp-title { text-align: center; font-size: 0.78rem; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .fp-wave { display: flex; align-items: center; gap: 3px; height: 30px; }
         .fp-wave span {
-            width: 3px; height: 5px; background: var(--accent); border-radius: 2px;
+            width: 4px; height: 6px; background: var(--accent); border-radius: 2px;
             animation: fp-wave 1s ease-in-out infinite;
         }
         .fp-wave span:nth-child(1) { animation-delay: 0s; }
-        .fp-wave span:nth-child(2) { animation-delay: 0.15s; }
-        .fp-wave span:nth-child(3) { animation-delay: 0.3s; }
-        .fp-wave span:nth-child(4) { animation-delay: 0.45s; }
-        .fp-wave span:nth-child(5) { animation-delay: 0.6s; }
-        .fp-wave.paused span { animation: none; height: 5px; }
-        @keyframes fp-wave { 0%, 100% { height: 5px; } 50% { height: 20px; } }
-        .fp-info { flex: 1 1 auto; min-width: 0; }
-        .fp-title { font-size: 0.8rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .fp-controls { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+        .fp-wave span:nth-child(2) { animation-delay: 0.12s; }
+        .fp-wave span:nth-child(3) { animation-delay: 0.24s; }
+        .fp-wave span:nth-child(4) { animation-delay: 0.36s; }
+        .fp-wave span:nth-child(5) { animation-delay: 0.48s; }
+        .fp-wave span:nth-child(6) { animation-delay: 0.6s; }
+        .fp-wave span:nth-child(7) { animation-delay: 0.72s; }
+        .fp-wave.paused span { animation: none; height: 6px; }
+        @keyframes fp-wave { 0%, 100% { height: 6px; } 50% { height: 26px; } }
+        .fp-controls { display: flex; align-items: center; justify-content: center; gap: 16px; }
         .fp-btn {
             width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
             background: transparent; color: var(--accent-light); cursor: pointer;
@@ -809,10 +811,10 @@
             transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
         }
         .fp-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
-        .fp-btn-main { width: 46px; height: 46px; background: var(--accent); color: white; border-color: var(--accent); font-size: 1.1rem; }
-        .fp-progress { height: 6px; background: var(--border-soft); border-radius: 3px; overflow: hidden; cursor: pointer; }
+        .fp-btn-main { width: 52px; height: 52px; background: var(--accent); color: white; border-color: var(--accent); font-size: 1.2rem; }
+        .fp-progress { width: 100%; height: 6px; background: var(--border-soft); border-radius: 3px; overflow: hidden; cursor: pointer; }
         .fp-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
-        body.has-fp { padding-bottom: 96px; }
+        body.has-fp { padding-bottom: 170px; }
 
         .loading { text-align: center; padding: 40px; color: var(--text-muted); }
         .crystal-loader {
@@ -3174,14 +3176,12 @@
     <script src="/static/consent.js"></script>
 
     <div id="floating-player" class="floating-player" style="display:none" aria-label="Аудио плейър">
-        <div class="fp-row">
-            <div class="fp-wave" id="fp-wave"><span></span><span></span><span></span><span></span><span></span></div>
-            <div class="fp-info"><div class="fp-title" id="fp-title">Разчитане</div></div>
-            <div class="fp-controls">
-                <button class="fp-btn" onclick="fpRestart()" title="Отначало">⏮</button>
-                <button class="fp-btn fp-btn-main" id="fp-toggle" onclick="fpToggle()" title="Пауза">⏸</button>
-                <button class="fp-btn" onclick="fpClose()" title="Затвори">✕</button>
-            </div>
+        <div class="fp-title" id="fp-title">Разчитане</div>
+        <div class="fp-wave" id="fp-wave"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="fp-controls">
+            <button class="fp-btn" onclick="fpRestart()" title="Отначало">⏮</button>
+            <button class="fp-btn fp-btn-main" id="fp-toggle" onclick="fpToggle()" title="Пауза">⏸</button>
+            <button class="fp-btn" onclick="fpClose()" title="Затвори">✕</button>
         </div>
         <div class="fp-progress" onclick="fpSeek(event)"><div class="fp-progress-bar" id="fp-progress-bar"></div></div>
     </div>
