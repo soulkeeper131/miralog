@@ -951,6 +951,21 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
     except JWTError:
         raise HTTPException(401, "Сесията изтече. Влез отново.")
 
+def get_current_user_flex(request: Request) -> Tuple[int, str]:
+    """JWT от Authorization header, ?token= или miralog_token cookie.
+
+    Нужен за <audio>/<img> тагове (напр. гласово четене), които не могат да
+    слагат Authorization header — там токенът идва през cookie.
+    """
+    token = _token_from_request(request)
+    if not token:
+        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return int(payload["sub"]), payload["email"]
+    except JWTError:
+        raise HTTPException(401, "Сесията изтече. Влез отново.")
+
 def get_user_by_id(user_id: int) -> Optional[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -6651,7 +6666,7 @@ def _text_to_audio(text: str, path: str) -> None:
 
 @app.get("/api/persons/{person_id}/reading-audio")
 def api_reading_audio(person_id: int, key: str,
-                      user: Tuple[int, str] = Depends(get_current_user)):
+                      user: Tuple[int, str] = Depends(get_current_user_flex)):
     """Чете кеширано разчитане на глас (mp3, български)."""
     user_id, _ = user
     person = get_person(person_id, user_id)

@@ -1887,19 +1887,17 @@
         }
 
         function playReading(key) {
-            fetch('/api/persons/{{ person.id }}/reading-audio?key=' + encodeURIComponent(key), { headers: authHeaders() })
-                .then(function (r) {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    return r.blob();
-                })
-                .then(function (blob) {
-                    const url = URL.createObjectURL(blob);
-                    const audio = new Audio(url);
-                    audio.play().catch(function () {});
-                })
-                .catch(function () {
-                    if (typeof uiToast === 'function') uiToast('Не можах да прочета разчитането.', 'err');
-                });
+            // Пускаме синхронно в потребителския жест (клика): iOS Safari
+            // мълчаливо блокира audio.play(), ако е извикан след async fetch.
+            getToken(); // гарантира, че miralog_token cookie е поставен
+            const url = '/api/persons/{{ person.id }}/reading-audio?key=' + encodeURIComponent(key);
+            const audio = new Audio(url);
+            if (typeof uiToast === 'function') uiToast('Подготвям аудио…');
+            audio.play().then(function () {
+                if (typeof uiToast === 'function') uiToast('Чете на глас…', 'ok');
+            }).catch(function () {
+                if (typeof uiToast === 'function') uiToast('Не можах да прочета разчитането.', 'err');
+            });
         }
 
         async function downloadReadingPdf(key) {
