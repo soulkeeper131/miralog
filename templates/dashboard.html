@@ -687,10 +687,15 @@
                 if (!resp.ok) return;
                 const me = await resp.json();
                 if (me.is_admin) {
+                    // Админ панелът е на отделен поддомейн, а localStorage е per-origin,
+                    // затова токенът се подава през ?token= (admin.html го чете от URL).
+                    const token = getToken() || '';
+                    const adminUrl = 'https://{{ admin_host }}/admin'
+                        + (token ? '?token=' + encodeURIComponent(token) : '');
                     ['adminLink', 'adminLinkMobile'].forEach(function (id) {
                         const link = document.getElementById(id);
                         if (!link) return;
-                        link.href = '/admin';
+                        link.href = adminUrl;
                         link.hidden = false;
                     });
                 }
