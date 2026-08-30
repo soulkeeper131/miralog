@@ -1601,6 +1601,43 @@
                     '<div class="btn-row"><button class="btn" id="saveLegalBtn">Запази юридическите данни</button>' +
                         '<a class="btn btn-ghost" href="/terms" target="_blank" rel="noopener">Виж условията</a></div></div>';
 
+                const oa = d.oauth || {};
+                const envG = (oa.from_env || {}).google;
+                const envF = (oa.from_env || {}).facebook;
+                html += '<div class="section"><h2>Вход през Google и Facebook</h2>' +
+                    '<div class="hint" style="margin-bottom:14px;">' +
+                        'Бутонът се показва само когато и двете полета за съответния ' +
+                        'доставчик са попълнени. Пренасочващият адрес, който трябва да ' +
+                        'въведеш при тях, е <code>' + location.origin.replace('admin.', '') +
+                        '/api/auth/google/callback</code> (и съответно ' +
+                        '<code>/api/auth/facebook/callback</code>).</div>' +
+                    '<h3 style="margin-bottom:10px;">Google</h3>' +
+                    (envG ? '<div class="hint" style="margin-bottom:10px;">Зададен през ' +
+                            'променлива на средата — стойността тук се игнорира.</div>' : '') +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="oaGoogleId">Client ID</label>' +
+                            '<input type="text" id="oaGoogleId" value="' +
+                            escapeHtml(oa.google_client_id || '') + '"></div>' +
+                        '<div class="form-group"><label for="oaGoogleSecret">Client Secret</label>' +
+                            '<input type="password" id="oaGoogleSecret" autocomplete="off" placeholder="' +
+                            (oa.google_secret_set ? '•••••••• (запазен)' : 'не е зададен') + '">' +
+                            '<div class="hint">Празно поле запазва текущия.</div></div>' +
+                    '</div>' +
+                    '<h3 style="margin:18px 0 10px;">Facebook</h3>' +
+                    (envF ? '<div class="hint" style="margin-bottom:10px;">Зададен през ' +
+                            'променлива на средата — стойността тук се игнорира.</div>' : '') +
+                    '<div class="form-grid">' +
+                        '<div class="form-group"><label for="oaFbId">App ID</label>' +
+                            '<input type="text" id="oaFbId" value="' +
+                            escapeHtml(oa.facebook_app_id || '') + '"></div>' +
+                        '<div class="form-group"><label for="oaFbSecret">App Secret</label>' +
+                            '<input type="password" id="oaFbSecret" autocomplete="off" placeholder="' +
+                            (oa.facebook_secret_set ? '•••••••• (запазен)' : 'не е зададен') + '">' +
+                            '<div class="hint">Празно поле запазва текущия.</div></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveOauthBtn">Запази</button>' +
+                        '<a class="btn btn-ghost" href="/login" target="_blank" rel="noopener">Виж входа</a></div></div>';
+
                 const seo = d.seo || {};
                 html += '<div class="section"><h2>SEO</h2>' +
                     '<div class="hint" style="margin-bottom:14px;">' +
@@ -1827,6 +1864,19 @@
                         e_shop_type: document.getElementById('lgShopType').value,
                     },
                 }, 'Юридическите данни са запазени.');
+            });
+
+            document.getElementById('saveOauthBtn').addEventListener('click', async function() {
+                await saveSettings({
+                    oauth: {
+                        google_client_id: document.getElementById('oaGoogleId').value.trim(),
+                        google_client_secret: document.getElementById('oaGoogleSecret').value.trim(),
+                        facebook_app_id: document.getElementById('oaFbId').value.trim(),
+                        facebook_app_secret: document.getElementById('oaFbSecret').value.trim(),
+                    },
+                }, 'Настройките за вход са запазени.');
+                document.getElementById('oaGoogleSecret').value = '';
+                document.getElementById('oaFbSecret').value = '';
             });
 
             document.getElementById('saveSeoBtn').addEventListener('click', async function() {

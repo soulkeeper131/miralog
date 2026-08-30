@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, re, sys, json, sqlite3, datetime, urllib.parse, secrets, hashlib, asyncio, threading
+import os, re, sys, json, sqlite3, datetime, urllib.parse, urllib.request, urllib.error, secrets, hashlib, asyncio, threading, time
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
@@ -344,6 +344,22 @@ def init_db():
             )
         """)
 
+        # Which social account belongs to which user. Kept in its own table so
+        # one person can link both Google and Facebook without either column
+        # sitting empty on every password user.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_accounts (
+                provider TEXT NOT NULL,
+                provider_user_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                email TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (provider, provider_user_id)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_accounts(user_id)")
+
         # Stripe redelivers a webhook whenever it is unsure the first attempt
         # landed, and the customer's own return from checkout fulfils the same
         # session. Without a key to recognise a session already handled, one
@@ -660,6 +676,34 @@ def legal() -> dict:
     return {k: (get_setting(f"legal_{k}") or default)
             for k, default in LEGAL_DEFAULTS.items()}
 
+# Social sign-in. Empty credentials mean the button is not shown at all —
+# an OAuth button that cannot complete is worse than no button.
+OAUTH_DEFAULTS = {
+    "google_client_id": "",
+    "google_client_secret": "",
+    "facebook_app_id": "",
+    "facebook_app_secret": "",
+}
+
+def oauth_config() -> dict:
+    """Credentials, with the environment winning over the database.
+
+    Secrets belong in the deployment's environment; the database entries exist
+    so a small install can be configured from the admin panel instead.
+    """
+    out = {}
+    for key in OAUTH_DEFAULTS:
+        out[key] = (os.environ.get(key.upper()) or get_setting(f"oauth_{key}") or "").strip()
+    return out
+
+def oauth_providers() -> dict:
+    """Which buttons to show. Both halves of a pair are required."""
+    cfg = oauth_config()
+    return {
+        "google": bool(cfg["google_client_id"] and cfg["google_client_secret"]),
+        "facebook": bool(cfg["facebook_app_id"] and cfg["facebook_app_secret"]),
+    }
+
 def brand() -> dict:
     """The current brand, with saved values overriding the defaults.
 
@@ -696,6 +740,7 @@ templates.env.cache_size = 0
 # `brand` is a global rather than per-route context: every template needs it,
 # and it is a callable so an admin's rename shows up without a restart.
 templates.env.globals["brand"] = brand
+templates.env.globals["oauth_providers"] = oauth_providers
 # Юридически данни за /privacy и /terms — глобал, за да се попълват от
 # едно място (LEGAL_DEFAULTS) и да се виждат във всички документи.
 templates.env.globals["legal"] = legal
@@ -3511,6 +3556,18 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
         "seo": seo_settings(),
         "brand": {key: (get_setting(key) or default)
                   for key, default in BRAND_DEFAULTS.items()},
+        # Secrets are never echoed back — only whether one is stored, so the
+        # panel can say "configured" without handing the value to the browser.
+        "oauth": {
+            "google_client_id": oauth_config()["google_client_id"],
+            "google_secret_set": bool(oauth_config()["google_client_secret"]),
+            "facebook_app_id": oauth_config()["facebook_app_id"],
+            "facebook_secret_set": bool(oauth_config()["facebook_app_secret"]),
+            "from_env": {
+                "google": bool(os.environ.get("GOOGLE_CLIENT_ID")),
+                "facebook": bool(os.environ.get("FACEBOOK_APP_ID")),
+            },
+        },
         # Values behind the terms, the privacy policy and the N-18 documents.
         "legal": {key: (get_setting(f"legal_{key}") or default)
                   for key, default in LEGAL_DEFAULTS.items()},
@@ -3557,6 +3614,16 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     for key, value in (payload.get("brand") or {}).items():
         if key in BRAND_DEFAULTS:
             set_setting(key, str(value or "").strip())
+
+    for key, value in (payload.get("oauth") or {}).items():
+        if key not in OAUTH_DEFAULTS:
+            continue
+        text = str(value or "").strip()
+        # A blank secret means "leave it alone", so saving the form without
+        # retyping the secret does not wipe it. Ids are cleared normally.
+        if key.endswith("_secret") and not text:
+            continue
+        set_setting(f"oauth_{key}", text)
 
     for key, value in (payload.get("legal") or {}).items():
         if key in LEGAL_DEFAULTS:
@@ -4246,6 +4313,211 @@ class DigestUpdate(BaseModel):
 
 class ShareCreate(BaseModel):
     cache_key: str
+
+# --- Social sign-in -------------------------------------------------------
+# Authorisation-code flow, exchanged server-side. The browser never sees the
+# client secret, and a token forged by a hostile page cannot be replayed here
+# because we ask the provider ourselves who the code belongs to.
+
+OAUTH_ENDPOINTS = {
+    "google": {
+        "auth": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token": "https://oauth2.googleapis.com/token",
+        "profile": "https://openidconnect.googleapis.com/v1/userinfo",
+        "scope": "openid email profile",
+    },
+    "facebook": {
+        "auth": "https://www.facebook.com/v19.0/dialog/oauth",
+        "token": "https://graph.facebook.com/v19.0/oauth/access_token",
+        "profile": "https://graph.facebook.com/me?fields=id,name,email",
+        "scope": "email public_profile",
+    },
+}
+
+# Pending OAuth states, so a callback cannot be replayed or forged (CSRF).
+# In-process is enough: the window is one redirect and a restart only costs
+# the visitor a second attempt.
+_OAUTH_STATES: dict = {}
+_OAUTH_STATE_TTL = 600      # seconds
+
+
+def _oauth_state_new(provider: str, next_url: str) -> str:
+    token = secrets.token_urlsafe(24)
+    now = time.time()
+    # Opportunistic cleanup keeps the dict from growing without bound.
+    for key, value in list(_OAUTH_STATES.items()):
+        if now - value["at"] > _OAUTH_STATE_TTL:
+            _OAUTH_STATES.pop(key, None)
+    _OAUTH_STATES[token] = {"provider": provider, "next": next_url, "at": now}
+    return token
+
+
+def _oauth_state_take(token: str) -> Optional[dict]:
+    """One-shot: a state is valid once, which stops replay."""
+    data = _OAUTH_STATES.pop(token or "", None)
+    if not data or time.time() - data["at"] > _OAUTH_STATE_TTL:
+        return None
+    return data
+
+
+def _oauth_redirect_uri(request: Request, provider: str) -> str:
+    return f"{public_base_url(request)}/api/auth/{provider}/callback"
+
+
+def _oauth_post(url: str, data: dict) -> dict:
+    body = urllib.parse.urlencode(data).encode()
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _oauth_get(url: str, token: str) -> dict:
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    })
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _oauth_link_or_create(provider: str, provider_user_id: str,
+                          email: str, display_name: str) -> dict:
+    """Find the account this identity belongs to, creating one if needed.
+
+    Three cases, in order: the identity is already linked; the email matches
+    an existing account, so the identity is attached to it rather than making
+    a second account for the same person; or nobody is known and we create.
+    """
+    email = (email or "").strip().lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
+            (provider, provider_user_id)).fetchone()
+    if row:
+        user = get_user_by_id(row["user_id"])
+        if user:
+            return user
+
+    user = get_user_by_email(email) if email else None
+    if not user:
+        if not email:
+            # Facebook can withhold the email; without one there is no way to
+            # reach the person or to merge later, so we stop rather than make
+            # an unreachable account.
+            raise HTTPException(400,
+                "Профилът не върна имейл адрес. Влез с имейл и парола или "
+                "разреши достъпа до имейла си.")
+        # No usable password: this account is reached through the provider,
+        # and "forgot password" still works because the email is real.
+        user = create_user(email, hash_password(secrets.token_urlsafe(32)))
+        if display_name:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("UPDATE users SET display_name = ? WHERE id = ?",
+                             (display_name[:80], user["id"]))
+                conn.commit()
+        audit("sign_up", f"Регистрация през {provider}: {email}",
+              user_id=user["id"], actor=email)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO oauth_accounts"
+            " (provider, provider_user_id, user_id, email) VALUES (?, ?, ?, ?)",
+            (provider, provider_user_id, user["id"], email))
+        conn.commit()
+    return user
+
+
+@app.get("/api/auth/{provider}/start")
+def api_oauth_start(provider: str, request: Request, next: str = "/dashboard"):
+    """Send the visitor to the provider's consent screen."""
+    if provider not in OAUTH_ENDPOINTS or not oauth_providers().get(provider):
+        raise HTTPException(404, "Този начин за вход не е активен.")
+    cfg = oauth_config()
+    client_id = cfg["google_client_id"] if provider == "google" else cfg["facebook_app_id"]
+
+    # Only our own paths, so the callback cannot be used as an open redirect.
+    safe_next = next if next.startswith("/") and not next.startswith("//") else "/dashboard"
+    state = _oauth_state_new(provider, safe_next)
+    params = {
+        "client_id": client_id,
+        "redirect_uri": _oauth_redirect_uri(request, provider),
+        "response_type": "code",
+        "scope": OAUTH_ENDPOINTS[provider]["scope"],
+        "state": state,
+    }
+    if provider == "google":
+        # Ask for a fresh account choice rather than silently reusing one.
+        params["prompt"] = "select_account"
+    url = OAUTH_ENDPOINTS[provider]["auth"] + "?" + urllib.parse.urlencode(params)
+    return RedirectResponse(url, status_code=302)
+
+
+@app.get("/api/auth/{provider}/callback", response_class=HTMLResponse)
+def api_oauth_callback(provider: str, request: Request,
+                       code: str = "", state: str = "", error: str = ""):
+    """Where the provider sends the visitor back."""
+    if provider not in OAUTH_ENDPOINTS or not oauth_providers().get(provider):
+        raise HTTPException(404, "Този начин за вход не е активен.")
+
+    if error or not code:
+        # The visitor cancelled, which is not a failure worth an error page.
+        return RedirectResponse("/login?oauth=cancelled", status_code=302)
+
+    saved = _oauth_state_take(state)
+    if not saved or saved["provider"] != provider:
+        raise HTTPException(400, "Изтекла или невалидна заявка. Опитай пак.")
+
+    cfg = oauth_config()
+    if provider == "google":
+        client_id, client_secret = cfg["google_client_id"], cfg["google_client_secret"]
+    else:
+        client_id, client_secret = cfg["facebook_app_id"], cfg["facebook_app_secret"]
+
+    try:
+        token_data = _oauth_post(OAUTH_ENDPOINTS[provider]["token"], {
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": _oauth_redirect_uri(request, provider),
+            "grant_type": "authorization_code",
+        })
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise ValueError("no access_token in response")
+        profile = _oauth_get(OAUTH_ENDPOINTS[provider]["profile"], access_token)
+    except Exception as e:
+        log.warning("OAuth %s се провали: %s", provider, e)
+        raise HTTPException(502, "Влизането през външния профил не се получи. Опитай пак.")
+
+    provider_user_id = str(profile.get("sub") or profile.get("id") or "")
+    if not provider_user_id:
+        raise HTTPException(502, "Профилът не върна идентификатор.")
+
+    user = _oauth_link_or_create(
+        provider, provider_user_id,
+        profile.get("email") or "",
+        profile.get("name") or "")
+
+    if user.get("is_blocked"):
+        raise HTTPException(403, "Акаунтът е блокиран.")
+
+    token = create_token(user["id"], user["email"])
+    audit("login", f"Вход през {provider}: {user['email']}",
+          user_id=user["id"], actor=user["email"])
+
+    # The token is handed to the page rather than put in the URL, where it
+    # would land in history and in any referrer header.
+    return HTMLResponse(templates.get_template("oauth_done.html").render({
+        "request": request,
+        "token": token,
+        "email": user["email"],
+        "next_url": saved["next"],
+    }))
+
 
 @app.post("/api/auth/forgot-password")
 def api_forgot_password(data: ForgotPasswordRequest, request: Request):

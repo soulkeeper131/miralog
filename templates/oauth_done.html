@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex,nofollow">
+    <title>Влизане — {{ brand().name }}</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('miralog_theme');
+            var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg: #0a0a1a; --text: #e0e0e0; --text-heading: #c9b1ff;
+            --text-muted: #888; --accent: #7c3aed;
+        }
+        :root[data-theme="light"] {
+            --bg: #faf7fb; --text: #2d2438; --text-heading: #6d4a89;
+            --text-muted: #655a78; --accent: #8659a3;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100dvh; display: flex; align-items: center;
+            justify-content: center; padding: 24px; text-align: center;
+        }
+        .spinner {
+            width: 38px; height: 38px; margin: 0 auto 18px;
+            border: 3px solid rgba(124,58,237,.22);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin-bottom: 6px; }
+        p { font-size: .9rem; color: var(--text-muted); line-height: 1.6; }
+        a { color: var(--accent); }
+        @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>Влизаш в профила си…</h1>
+        <p>Ако страницата не се смени, <a href="{{ next_url }}">продължи оттук</a>.</p>
+    </div>
+
+    <script>
+        /* The token arrives in the page body rather than the query string:
+           a URL lands in browser history, in server logs and in the referrer
+           header of the next request, and a session token has no business
+           in any of those. */
+        (function () {
+            var token = {{ token | tojson }};
+            var email = {{ email | tojson }};
+            var next = {{ next_url | tojson }};
+            try {
+                localStorage.setItem('miralog_token', token);
+                localStorage.setItem('miralog_email', email);
+            } catch (e) { /* private mode — the cookie below still works */ }
+            // Same-site cookie so plain navigations (chart pages, PDFs) are
+            // authenticated too, not just fetch() calls.
+            document.cookie = 'miralog_token=' + token
+                + '; path=/; max-age=' + (60 * 60 * 24 * 30)
+                + '; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '');
+            window.location.replace(next);
+        })();
+    </script>
+    <noscript>
+        <p>Нужен е JavaScript, за да завършим влизането.
+           <a href="/login">Върни се към вход с имейл</a>.</p>
+    </noscript>
+</body>
+</html>
