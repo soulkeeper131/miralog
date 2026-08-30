@@ -12,3 +12,4 @@ timezonefinder
 reportlab
 stripe
 pyotp
+edge-tts

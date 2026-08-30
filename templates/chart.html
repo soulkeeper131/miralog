@@ -1871,6 +1871,7 @@
             // Only readings the server actually stored can be exported.
             const key = data.cache_key || '';
             const exportBtns = key ? `
+                <button class="btn-refresh" onclick="playReading('${key}')" title="Чети на глас">🔊 Чети</button>
                 <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>
                 <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>
                 <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
@@ -1883,6 +1884,22 @@
                     ${exportBtns}
                 </div>
             </div>`;
+        }
+
+        function playReading(key) {
+            fetch('/api/persons/{{ person.id }}/reading-audio?key=' + encodeURIComponent(key), { headers: authHeaders() })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.blob();
+                })
+                .then(function (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const audio = new Audio(url);
+                    audio.play().catch(function () {});
+                })
+                .catch(function () {
+                    if (typeof uiToast === 'function') uiToast('Не можах да прочета разчитането.', 'err');
+                });
         }
 
         async function downloadReadingPdf(key) {

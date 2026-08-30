@@ -6498,7 +6498,12 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             # разсъждението, за да не се губи генерираният текст.
             if not content and msg.get("reasoning_content"):
                 content = msg["reasoning_content"]
-            if result["choices"][0].get("finish_reason") != "length":
+            finish = result["choices"][0].get("finish_reason")
+            # Завършен е само ако не е обрязан по токени И завършва със
+            # завършен знак (точка/удивителна/въпросителна/кавички), а не
+            # по средата на мисъл. Иначе регенерираме с двоен лимит.
+            last = content.strip()[-1:] if content.strip() else ""
+            if finish != "length" and last in ".!?…»\"”":
                 break
         return clean_bg(content)
     except urllib.error.HTTPError as e:
@@ -6618,6 +6623,64 @@ def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(ge
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
     )
+
+
+def _text_for_speech(text: str) -> str:
+    """Премахва markdown маркерите, за да чете гладко българският TTS."""
+    import re
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)      # **bold**
+    text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.M)  # # заглавия
+    text = re.sub(r"^\s*[-•]\s+", "", text, flags=re.M)    # - bullet
+    text = re.sub(r"^\s*\d+\.\s*", "", text, flags=re.M)   # 1. номерация
+    text = re.sub(r"\*([^*\n]+)\*", r"\1", text)       # *italic*
+    text = re.sub(r"[_`]", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _text_to_audio(text: str, path: str) -> None:
+    """Генерира mp3 с българския глас Kalina (безплатен Microsoft Edge TTS)."""
+    import asyncio
+    import edge_tts
+
+    async def _gen():
+        await edge_tts.Communicate(text, "bg-BG-KalinaNeural").save(path)
+
+    asyncio.run(_gen())
+
+
+@app.get("/api/persons/{person_id}/reading-audio")
+def api_reading_audio(person_id: int, key: str,
+                      user: Tuple[int, str] = Depends(get_current_user)):
+    """Чете кеширано разчитане на глас (mp3, български)."""
+    user_id, _ = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+
+    cached = get_ai_cache(person["id"], key)
+    if not cached:
+        raise HTTPException(404, "Това разчитане още не е генерирано. Отвори го и опитай пак.")
+
+    _, body = split_summary(cached["content"])
+    speech = _text_for_speech(body)
+    if not speech:
+        raise HTTPException(404, "Няма текст за четене.")
+
+    audio_dir = DB_PATH.parent / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^0-9A-Za-z-]+", "-", key).strip("-") or "razchitane"
+    mp3_path = audio_dir / f"{person_id}_{safe}.mp3"
+
+    if not mp3_path.exists():
+        _text_to_audio(speech, str(mp3_path))
+
+    return Response(
+        content=mp3_path.read_bytes(),
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
 
 class EmailReadingRequest(BaseModel):
     key: str
