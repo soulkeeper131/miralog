@@ -305,7 +305,9 @@
         .email-toggle { margin-top: 4px; }
         .email-toggle > summary {
             list-style: none; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 7px;
+            /* flex, не inline-flex: така редът заема цялата ширина и надписът
+               застава центриран като останалото в картата. */
+            display: flex; align-items: center; justify-content: center; gap: 7px;
             min-height: 44px; padding: 4px 2px;
             color: var(--accent-light); font-size: .92rem; font-weight: 600;
         }
