@@ -16,7 +16,7 @@ if os.path.isdir(_ephe_path):
     os.environ["SE_EPHE_PATH"] = _ephe_path
 
 from fastapi import FastAPI, Request, Form, File, UploadFile, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import OAuth2PasswordBearer
@@ -613,6 +613,11 @@ def init_db():
         )
         conn.commit()
 
+# Колко тежки заявки да вървят едновременно. Съобразено е с 1 CPU / 512MB;
+# на по-голям контейнер се вдига през променлива на средата.
+AI_THREAD_LIMIT = int(os.environ.get("AI_THREAD_LIMIT", "8"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Fail loudly before serving a single request rather than running insecurely.
@@ -628,6 +633,19 @@ async def lifespan(app: FastAPI):
         log.info("Stripe не е конфигуриран — плащанията остават ръчни / заявка.")
     init_db()
     clear_smtp_db_settings()
+
+    # Синхронните рутове (AI разчитания, TTS, PDF) вървят в нишковия пул на
+    # anyio. Дефолтът е 40 — при 512MB и 1 CPU толкова паралелни тежки заявки
+    # изяждат паметта, вместо да се редят на опашка. Малък пул значи по-дълго
+    # чакане при пик, но контейнерът остава жив.
+    try:
+        from anyio.to_thread import current_default_thread_limiter
+        limiter = current_default_thread_limiter()
+        limiter.total_tokens = AI_THREAD_LIMIT
+        log.info("Нишков пул: %d едновременни заявки.", AI_THREAD_LIMIT)
+    except Exception as exc:  # anyio смени API-то → продължаваме с дефолта
+        log.warning("Нишковият пул остана по подразбиране: %s", exc)
+
     job_task = asyncio.create_task(_background_jobs_loop())
     try:
         yield
@@ -6514,11 +6532,18 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             if not content and msg.get("reasoning_content"):
                 content = msg["reasoning_content"]
             finish = result["choices"][0].get("finish_reason")
-            # Завършен е само ако не е обрязан по токени И завършва със
-            # завършен знак (точка/удивителна/въпросителна/кавички), а не
-            # по средата на мисъл. Иначе регенерираме с двоен лимит.
-            last = content.strip()[-1:] if content.strip() else ""
-            if finish != "length" and last in ".!?…»\"”":
+            # Единственият надежден признак за отрязване е finish_reason ==
+            # "length". Регенерирането е скъпо (двоен лимит = още толкова
+            # токени), затова се пуска само за него.
+            if finish != "length":
+                # Разчитане, което не свършва на препинателен знак, обикновено
+                # пак е цяло — завършва с двоеточие, цифра или скоба. Логваме
+                # го, за да се види, ако наистина зачести, но не плащаме втора
+                # генерация заради това.
+                last = content.strip()[-1:] if content.strip() else ""
+                if last and last not in ".!?…»\"”)":
+                    log.info("AI отговорът завършва на %r (finish=%s) — приемаме го.",
+                             last, finish)
                 break
         return clean_bg(content)
     except urllib.error.HTTPError as e:
@@ -6685,13 +6710,25 @@ def api_reading_audio(person_id: int, key: str,
     audio_dir = DB_PATH.parent / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^0-9A-Za-z-]+", "-", key).strip("-") or "razchitane"
-    mp3_path = audio_dir / f"{person_id}_{safe}.mp3"
+    # Хешът на текста влиза в името: регенерирано разчитане дава друго име и
+    # значи ново аудио. Без него старото mp3 се преизползва завинаги и човекът
+    # слуша предишната версия на разчитането си.
+    digest = hashlib.sha1(speech.encode("utf-8")).hexdigest()[:10]
+    mp3_path = audio_dir / f"{person_id}_{safe}_{digest}.mp3"
 
     if not mp3_path.exists():
+        # Старите версии на същото разчитане вече не трябват на никого.
+        for stale in audio_dir.glob(f"{person_id}_{safe}_*.mp3"):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
         _text_to_audio(speech, str(mp3_path))
 
-    return Response(
-        content=mp3_path.read_bytes(),
+    # FileResponse стриймва файла и поддържа Range — превъртането в плейъра не
+    # тегли всичко отначало, а и mp3-то не минава цялото през паметта.
+    return FileResponse(
+        mp3_path,
         media_type="audio/mpeg",
         headers={"Cache-Control": "private, max-age=86400"},
     )
