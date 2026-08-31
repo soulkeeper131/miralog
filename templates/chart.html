@@ -766,11 +766,31 @@
         .cache-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
         .btn-refresh {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
             padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border);
             background: transparent; color: var(--accent-light);
             font-family: var(--font-body); font-size: 0.75rem; font-weight: 500;
-            cursor: pointer; min-height: 36px;
+            cursor: pointer; min-height: 36px; white-space: nowrap;
             transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+        }
+
+        /* На телефон четирите действия се пренасяха разбъркано — три на един
+           ред и „Сподели“ само на втория. Мрежа 2x2 ги подрежда равномерно и
+           дава на всяко истински тъч таргет вместо 36px. */
+        @media (max-width: 560px) {
+            .cache-bar { align-items: flex-start; }
+            .cache-actions {
+                display: grid; grid-template-columns: 1fr 1fr;
+                gap: 8px; width: 100%;
+            }
+            .cache-actions .btn-refresh {
+                width: 100%; min-height: 44px; font-size: 0.8rem;
+            }
+            /* Нечетен брой бутони: последният заема цялата ширина, за да не
+               остава празна клетка до него. */
+            .cache-actions .btn-refresh:last-child:nth-child(odd) {
+                grid-column: 1 / -1;
+            }
         }
         .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); transform: translateY(-1px); }
         .btn-refresh:active { transform: translateY(0); }
@@ -1986,10 +2006,15 @@
             const label = data.cached ? '📖 Твоето разчитане' : '✨ Ново разчитане';
             // Only readings the server actually stored can be exported.
             const key = data.cache_key || '';
+            // Дневният хороскоп се сменя утре — имейл с PDF от него остарява,
+            // докато пристигне. Оставяме четене, сваляне и споделяне; изпращането
+            // по поща е за траен документ като личния портрет.
+            const isDaily = key.startsWith('horoscope:');
             const exportBtns = key ? `
                 <button class="btn-refresh audio-btn" id="audio-btn-${key}" onclick="playReading('${key}')" title="Чети на глас">🔊 Чети</button>
-                <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>
-                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>
+                <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>` +
+                (isDaily ? '' : `
+                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>`) + `
                 <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
             // „Разчети наново“ е премахнато: повторното генериране харчи AI
             // токени и пари без добавена стойност за клиента. Разчитането се
