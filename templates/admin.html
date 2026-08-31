@@ -1614,6 +1614,10 @@
                     '<h3 style="margin-bottom:10px;">Google</h3>' +
                     (envG ? '<div class="hint" style="margin-bottom:10px;">Зададен през ' +
                             'променлива на средата — стойността тук се игнорира.</div>' : '') +
+                    '<label class="check"><input type="checkbox" id="oaGoogleOn"' +
+                        (oa.google_enabled !== false ? ' checked' : '') +
+                        '> Показвай бутона „Продължи с Google“</label>' +
+                    '<div class="hint" id="oaGoogleState" style="margin:2px 0 12px;">' + oauthState(oa, 'google') + '</div>' +
                     '<div class="form-grid">' +
                         '<div class="form-group"><label for="oaGoogleId">Client ID</label>' +
                             '<input type="text" id="oaGoogleId" value="' +
@@ -1626,6 +1630,10 @@
                     '<h3 style="margin:18px 0 10px;">Facebook</h3>' +
                     (envF ? '<div class="hint" style="margin-bottom:10px;">Зададен през ' +
                             'променлива на средата — стойността тук се игнорира.</div>' : '') +
+                    '<label class="check"><input type="checkbox" id="oaFbOn"' +
+                        (oa.facebook_enabled !== false ? ' checked' : '') +
+                        '> Показвай бутона „Продължи с Facebook“</label>' +
+                    '<div class="hint" id="oaFbState" style="margin:2px 0 12px;">' + oauthState(oa, 'facebook') + '</div>' +
                     '<div class="form-grid">' +
                         '<div class="form-group"><label for="oaFbId">App ID</label>' +
                             '<input type="text" id="oaFbId" value="' +
@@ -1869,6 +1877,8 @@
             document.getElementById('saveOauthBtn').addEventListener('click', async function() {
                 await saveSettings({
                     oauth: {
+                        google_enabled: document.getElementById('oaGoogleOn').checked,
+                        facebook_enabled: document.getElementById('oaFbOn').checked,
                         google_client_id: document.getElementById('oaGoogleId').value.trim(),
                         google_client_secret: document.getElementById('oaGoogleSecret').value.trim(),
                         facebook_app_id: document.getElementById('oaFbId').value.trim(),
@@ -1877,6 +1887,14 @@
                 }, 'Настройките за вход са запазени.');
                 document.getElementById('oaGoogleSecret').value = '';
                 document.getElementById('oaFbSecret').value = '';
+                // Редът за състояние трябва да отрази новото положение веднага,
+                // иначе показва старото, докато панелът не се презареди.
+                try {
+                    const fresh = await api('/api/admin/settings');
+                    const noa = fresh.oauth || {};
+                    document.getElementById('oaGoogleState').textContent = oauthState(noa, 'google');
+                    document.getElementById('oaFbState').textContent = oauthState(noa, 'facebook');
+                } catch (e) { /* съобщението за запис вече е показано */ }
             });
 
             document.getElementById('saveSeoBtn').addEventListener('click', async function() {
@@ -1929,6 +1947,19 @@
                     notify('Изпратени ' + res.sent + ' темплейта.');
                 } catch (e) { notifyError(e); } finally { btn.disabled = false; }
             });
+        }
+
+        /* Ключове и чекбокс са две различни неща — този ред казва на прост
+           език какво реално се вижда на страницата за вход. Стои извън
+           loadSettings, защото и записът го вика, за да опресни реда. */
+        function oauthState(oa, name) {
+            const live = (oa.live || {})[name];
+            if (live) return '✅ Бутонът се вижда на страницата за вход.';
+            const hasKeys = name === 'google'
+                ? (oa.google_client_id && oa.google_secret_set)
+                : (oa.facebook_app_id && oa.facebook_secret_set);
+            if (!hasKeys) return '⚠️ Бутонът е скрит — липсват ключове.';
+            return '⏸️ Бутонът е скрит — изключен е оттук. Ключовете са запазени.';
         }
 
         async function saveSettings(payload, okMessage) {

@@ -701,6 +701,11 @@ OAUTH_DEFAULTS = {
     "google_client_secret": "",
     "facebook_app_id": "",
     "facebook_app_secret": "",
+    # Ключът остава записан, но бутонът може да се изключи от админ панела —
+    # например ако доставчикът се повреди и не искаме хората да удрят в стена.
+    # По подразбиране е включено, за да не изгаснат вече работещи логини.
+    "google_enabled": "1",
+    "facebook_enabled": "1",
 }
 
 def oauth_config() -> dict:
@@ -714,12 +719,23 @@ def oauth_config() -> dict:
         out[key] = (os.environ.get(key.upper()) or get_setting(f"oauth_{key}") or "").strip()
     return out
 
+def oauth_enabled(provider: str) -> bool:
+    """Дали бутонът е включен от админа. Липсваща стойност значи включен."""
+    raw = get_setting(f"oauth_{provider}_enabled")
+    if raw is None or raw == "":
+        return OAUTH_DEFAULTS.get(f"{provider}_enabled", "1") == "1"
+    return str(raw).strip() not in ("0", "false", "False", "")
+
+
 def oauth_providers() -> dict:
-    """Which buttons to show. Both halves of a pair are required."""
+    """Which buttons to show. Both halves of a pair are required, and the
+    provider must not have been switched off in the admin panel."""
     cfg = oauth_config()
     return {
-        "google": bool(cfg["google_client_id"] and cfg["google_client_secret"]),
-        "facebook": bool(cfg["facebook_app_id"] and cfg["facebook_app_secret"]),
+        "google": bool(cfg["google_client_id"] and cfg["google_client_secret"]
+                       and oauth_enabled("google")),
+        "facebook": bool(cfg["facebook_app_id"] and cfg["facebook_app_secret"]
+                         and oauth_enabled("facebook")),
     }
 
 def brand() -> dict:
@@ -3600,6 +3616,10 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             "google_secret_set": bool(oauth_config()["google_client_secret"]),
             "facebook_app_id": oauth_config()["facebook_app_id"],
             "facebook_secret_set": bool(oauth_config()["facebook_app_secret"]),
+            "google_enabled": oauth_enabled("google"),
+            "facebook_enabled": oauth_enabled("facebook"),
+            # Какво реално вижда посетителят — ключове И включен бутон.
+            "live": oauth_providers(),
             "from_env": {
                 "google": bool(os.environ.get("GOOGLE_CLIENT_ID")),
                 "facebook": bool(os.environ.get("FACEBOOK_APP_ID")),
@@ -3654,6 +3674,11 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
 
     for key, value in (payload.get("oauth") or {}).items():
         if key not in OAUTH_DEFAULTS:
+            continue
+        # Чекбоксовете идват като true/false — празният низ тук би значел
+        # „включено“ и щеше да ги прави невъзможни за изключване.
+        if key.endswith("_enabled"):
+            set_setting(f"oauth_{key}", "1" if value else "0")
             continue
         text = str(value or "").strip()
         # A blank secret means "leave it alone", so saving the form without
