@@ -59,10 +59,29 @@ function escapeHtml(text) {
 function renderLocked(el, detail, retry) {
     const offer = detail.offer;
     const name = detail.feature_name || (offer && offer.name) || 'Тази функция';
+
+    /* Пакетът се показва само когато наистина е по-изгоден от този модул
+       плюс останалите поотделно — и то като втори, по-тих ред под основния
+       бутон. Човекът е дошъл за едно конкретно разчитане; предлагаме му
+       алтернатива, не му я натрапваме вместо това, което иска. */
+    const b = detail.bundle;
+    const bundleWorthIt = b && b.keys && b.keys.length >= 2
+        && b.saving_cents > 0
+        && offer && b.keys.indexOf(offer.key) !== -1;
+    const bundleBlock = bundleWorthIt
+        ? `<div class="locked-alt">
+               <span>или всичките ${b.keys.length} за ${money(b.price_cents, b.currency)}</span>
+               <button class="locked-alt-btn" data-bundle="1">Виж пакета</button>
+           </div>`
+        : '';
+
     const priceBlock = offer
         ? `<div class="locked-price">${money(offer.price_cents, offer.currency)}
                <small>еднократно, остава завинаги</small></div>
-           <button class="locked-btn" data-feature="${escapeHtml(offer.key)}">Отключи „${escapeHtml(offer.name)}“</button>`
+           <button class="locked-btn" data-feature="${escapeHtml(offer.key)}">Отключи „${escapeHtml(offer.name)}“</button>
+           <p class="locked-perk">Платените разчитания се пишат от по-силния модел —
+              по-дълги и по-конкретни за твоята карта.</p>
+           ${bundleBlock}`
         : `<a class="locked-btn" href="/settings"
                style="text-decoration:none;">Виж пакетите</a>`;
 
@@ -83,6 +102,9 @@ function renderLocked(el, detail, retry) {
 
     const btn = el.querySelector('.locked-btn[data-feature]');
     if (btn) btn.addEventListener('click', () => requestUnlock(btn, btn.dataset.feature, retry));
+
+    const alt = el.querySelector('.locked-alt-btn');
+    if (alt) alt.addEventListener('click', () => requestUnlock(alt, 'bundle', retry));
 }
 
 // Collapse every section in the tab except the one holding the teaser, and

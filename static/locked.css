@@ -55,6 +55,32 @@
 }
 .locked-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .locked-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+/* Платените разчитания минават през по-силния модел. Това е реална разлика,
+   която досега никой не виждаше — казва се веднъж, дребно, под бутона. */
+.locked-perk {
+    margin: 10px auto 0; max-width: 34ch;
+    font-size: 0.78rem; line-height: 1.5; color: var(--text-dim);
+}
+
+/* Втората възможност: пакетът. Съзнателно е по-тиха от основния бутон —
+   човекът е дошъл за конкретно разчитане и това е негово право. Показва се
+   само когато наистина спестява пари, и то с текст, а не с втори ярък бутон,
+   който да се състезава с първия. */
+.locked-alt {
+    display: flex; align-items: center; justify-content: center;
+    flex-wrap: wrap; gap: 4px 8px;
+    margin-top: 12px; font-size: 0.85rem; color: var(--text-muted);
+}
+.locked-alt-btn {
+    background: none; border: none; padding: 6px 2px; min-height: 36px;
+    color: var(--accent-light); cursor: pointer;
+    font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+    text-decoration: underline; text-underline-offset: 3px;
+}
+.locked-alt-btn:hover { color: var(--accent); }
+.locked-alt-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 6px; }
+.locked-alt-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 @media (max-width: 600px) {
     .locked-teaser { min-height: 300px; }
     .locked-title { font-size: 1.25rem; }

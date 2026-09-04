@@ -1211,12 +1211,18 @@ def require_feature(feature: str):
             else:
                 message = (f"„{name}“ не е включена в пакета ти, "
                            f"но можеш да я отключиш еднократно.")
+            # Пакетът пътува заедно с офертата: това е моментът, в който
+            # човекът вече е решил, че иска точно това разчитане. Ако другите
+            # му излизат по-евтино наведнъж, редно е да го знае сега, а не да
+            # го открие след като е платил един модул на пълна цена.
+            bundle = bundle_offer(row) if offer else None
             detail = {
                 "reason": "locked",
                 "feature": feature,
                 "feature_name": name or "",
                 "message": message,
                 "offer": offer,
+                "bundle": bundle,
             }
             raise HTTPException(402, detail)
         return user
