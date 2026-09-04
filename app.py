@@ -861,6 +861,20 @@ async def cache_static(request: Request, call_next):
         response.headers["Cache-Control"] = _STATIC_CACHE
     elif path.startswith("/uploads/"):
         response.headers["Cache-Control"] = _UPLOADS_CACHE
+
+    # Без тези заглавки чужда страница може да вгради сайта в невидим iframe
+    # и да лови кликове върху бутона за плащане (clickjacking). Останалите
+    # спират налучкване на типа на файла и изтичане на адреса към други сайтове.
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Браузърът да не пита за камера, микрофон и локация от наше име.
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    if IS_PRODUCTION:
+        # Само по HTTPS: казва на браузъра никога повече да не опитва http.
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
@@ -4392,7 +4406,65 @@ def run_digest_emails() -> None:
         except Exception as e:
             log.warning("Digest до %s се провали: %s", u["email"], e)
 
+# Колко дневни копия да се пазят. Базата е малка (стотици килобайти),
+# затова седмица назад не тежи и покрива „вчера работеше“.
+BACKUP_KEEP_DAYS = int(os.environ.get("BACKUP_KEEP_DAYS", "7"))
+
+
+class _BackupExists(Exception):
+    """Днешното копие вече съществува — не е грешка, само прескача записа."""
+
+
+def run_db_backup() -> None:
+    """Прави дневно копие на базата и трие по-старите от BACKUP_KEEP_DAYS.
+
+    Volume-ът в Coolify пази базата между деплойте, но не пази от повредена
+    база, сбъркана миграция или изтрити по погрешка данни. Копието се прави
+    през sqlite3 backup API — той е консистентен дори докато се пише, за
+    разлика от обикновено копиране на файла.
+    """
+    backup_dir = DB_PATH.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.date.today().isoformat()
+    target = backup_dir / f"persons-{today}.db"
+
+    tmp = target.with_suffix(".part")
+    try:
+        if target.exists():
+            raise _BackupExists          # днешното вече е направено
+        # contextlib.closing, а не самото connect: `with sqlite3.connect(...)`
+        # прави commit, но НЕ затваря файла — а докато е отворен, Windows не
+        # позволява преименуването и копието се проваля всеки път.
+        import contextlib
+        with contextlib.closing(sqlite3.connect(DB_PATH)) as src,              contextlib.closing(sqlite3.connect(tmp)) as dst:
+            src.backup(dst)
+        os.replace(tmp, target)
+        log.info("Копие на базата: %s (%.0f KB)", target.name, target.stat().st_size / 1024)
+    except _BackupExists:
+        pass                             # пропускаме записа, но чистим по-долу
+    except Exception:
+        log.exception("Копието на базата се провали")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return
+
+    cutoff = datetime.date.today() - datetime.timedelta(days=BACKUP_KEEP_DAYS)
+    for old_file in backup_dir.glob("persons-*.db"):
+        try:
+            stamp = datetime.date.fromisoformat(old_file.stem.split("persons-")[1])
+        except (ValueError, IndexError):
+            continue
+        if stamp < cutoff:
+            try:
+                old_file.unlink()
+            except OSError:
+                pass
+
+
 def run_scheduled_jobs() -> None:
+    run_db_backup()
     run_digest_emails()
 
 class ForgotPasswordRequest(BaseModel):
