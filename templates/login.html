@@ -226,6 +226,12 @@
         .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
+        /* Прекратен или изтекъл вход не е счупено — неутрален тон. */
+        .error-msg.is-notice {
+            background: var(--bg-input);
+            border-color: var(--border);
+            color: var(--text-soft, var(--text));
+        }
         .error-msg {
             background: var(--danger-bg);
             border: 1px solid var(--danger);
@@ -388,6 +394,33 @@
     </div>
 
     <script>
+        /* Влизането през Google/Facebook се проваля извън тази страница, а
+           после връща тук с ?oauth=<причина>. Всяка причина има текст, който
+           казва какво да направи човекът — иначе се озовава на празна форма
+           без обяснение защо не е влязъл. */
+        (function showOauthNotice() {
+            const reason = new URLSearchParams(location.search).get('oauth');
+            if (!reason) return;
+            const MESSAGES = {
+                cancelled: ['Влизането беше прекратено. Опитай пак или влез с имейл и парола.', false],
+                expired:   ['Заявката изтече. Натисни бутона отново.', false],
+                failed:    ['Влизането не се получи. Опитай пак след минута или влез с имейл и парола.', true],
+                noemail:   ['Профилът не сподели имейл адрес. Разреши достъпа до имейла или се регистрирай с имейл и парола.', true],
+                blocked:   ['Този акаунт е блокиран. Пиши ни, ако смяташ, че е грешка.', true],
+                disabled:  ['Този начин за вход е временно изключен. Влез с имейл и парола.', true],
+            };
+            const entry = MESSAGES[reason];
+            if (!entry) return;
+            const box = document.getElementById('error');
+            box.textContent = entry[0];
+            // Прекратяването и изтичането не са грешки на човека — показват се
+            // по-меко, за да не изглежда като че ли нещо се е счупило.
+            if (!entry[1]) box.classList.add('is-notice');
+            box.style.display = 'block';
+            // Причината се маха от адреса, за да не се показва пак при опресняване.
+            history.replaceState({}, '', location.pathname);
+        })();
+
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
             document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';

@@ -580,6 +580,19 @@ def init_db():
             "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
             " WHERE feature_key = 'chart'")
 
+        # Безплатните функции се раздаваха само в /api/onboard, затова всеки,
+        # който е влязъл през Google, Facebook или /register, е останал без
+        # достъп до собствената си натална карта. Няма как да си я купи —
+        # chart и horoscope не се продават. Наваксваме за заварените акаунти.
+        for key in ("chart", "horoscope"):
+            conn.execute(
+                "INSERT OR IGNORE INTO feature_purchases"
+                " (user_id, feature_key, price_cents, currency, payment_id)"
+                " SELECT id, ?, 0, 'EUR', NULL FROM users"
+                " WHERE id NOT IN (SELECT user_id FROM feature_purchases"
+                "                  WHERE feature_key = ?)",
+                (key, key))
+
         # Features added after a plan was first seeded do not appear in existing
         # rows, so the paid plan would silently lose access to them.
         for key, feature in []:
@@ -2030,8 +2043,7 @@ def api_onboard(data: OnboardRequest, request: Request):
 
     # The chart is what they came for, so it is theirs from the start — and
     # the daily reading with it, since that is what brings people back.
-    for free_key in ("chart", "horoscope"):
-        grant_feature_purchase(user["id"], free_key, 0, "EUR", None)
+    grant_signup_features(user["id"])
 
     if not chose_password:
         send_welcome_set_password(user["id"])
@@ -2117,6 +2129,7 @@ def api_register(data: AuthRequest, request: Request):
         raise HTTPException(409, "Вече съществува акаунт с този имейл.")
 
     user = create_user(email, hash_password(data.password))
+    grant_signup_features(user["id"])
     token = create_token(user["id"], user["email"])
     audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
     try_send_template(
@@ -4020,6 +4033,19 @@ def grant_feature_purchase(user_id: int, feature_key: str, price_cents: int,
             (user_id, feature_key, price_cents, currency, payment_id))
         conn.commit()
 
+# Картата е това, за което човекът е дошъл, а дневният хороскоп е причината
+# да се върне. И двете са безплатни — но се раздаваха само в /api/onboard,
+# затова влезлите през Google или Facebook оставаха с акаунт, който не може
+# да види собствената си натална карта.
+FREE_ON_SIGNUP = ("chart", "horoscope")
+
+
+def grant_signup_features(user_id: int) -> None:
+    """Дава безплатните функции на нов акаунт, независимо през кой вход е минал."""
+    for key in FREE_ON_SIGNUP:
+        grant_feature_purchase(user_id, key, 0, "EUR", None)
+
+
 def _strip_stripe(obj):
     """Recursively flatten Stripe's StripeObject into plain dicts/lists.
 
@@ -4481,6 +4507,7 @@ def _oauth_link_or_create(provider: str, provider_user_id: str,
                 conn.execute("UPDATE users SET display_name = ? WHERE id = ?",
                              (display_name[:80], user["id"]))
                 conn.commit()
+        grant_signup_features(user["id"])
         audit("sign_up", f"Регистрация през {provider}: {email}",
               user_id=user["id"], actor=email)
 
@@ -4518,20 +4545,31 @@ def api_oauth_start(provider: str, request: Request, next: str = "/dashboard"):
     return RedirectResponse(url, status_code=302)
 
 
+def _oauth_fail(reason: str):
+    """Връща човека на страницата за вход с обяснение.
+
+    Гола JSON грешка на бяла страница е задънена улица — човекът не разбира
+    какво стана и няма къде да натисне. Причината пътува като код, а текстът
+    се показва от /login."""
+    return RedirectResponse(f"/login?oauth={reason}", status_code=302)
+
+
 @app.get("/api/auth/{provider}/callback", response_class=HTMLResponse)
 def api_oauth_callback(provider: str, request: Request,
                        code: str = "", state: str = "", error: str = ""):
     """Where the provider sends the visitor back."""
     if provider not in OAUTH_ENDPOINTS or not oauth_providers().get(provider):
-        raise HTTPException(404, "Този начин за вход не е активен.")
+        return _oauth_fail("disabled")
 
     if error or not code:
         # The visitor cancelled, which is not a failure worth an error page.
-        return RedirectResponse("/login?oauth=cancelled", status_code=302)
+        return _oauth_fail("cancelled")
 
     saved = _oauth_state_take(state)
     if not saved or saved["provider"] != provider:
-        raise HTTPException(400, "Изтекла или невалидна заявка. Опитай пак.")
+        # Най-честата причина е бавно влизане (над 10 минути) или рестарт на
+        # сървъра, а не атака — затова текстът кани да опита пак.
+        return _oauth_fail("expired")
 
     cfg = oauth_config()
     if provider == "google":
@@ -4553,19 +4591,23 @@ def api_oauth_callback(provider: str, request: Request,
         profile = _oauth_get(OAUTH_ENDPOINTS[provider]["profile"], access_token)
     except Exception as e:
         log.warning("OAuth %s се провали: %s", provider, e)
-        raise HTTPException(502, "Влизането през външния профил не се получи. Опитай пак.")
+        return _oauth_fail("failed")
 
     provider_user_id = str(profile.get("sub") or profile.get("id") or "")
     if not provider_user_id:
-        raise HTTPException(502, "Профилът не върна идентификатор.")
+        return _oauth_fail("failed")
 
-    user = _oauth_link_or_create(
-        provider, provider_user_id,
-        profile.get("email") or "",
-        profile.get("name") or "")
+    try:
+        user = _oauth_link_or_create(
+            provider, provider_user_id,
+            profile.get("email") or "",
+            profile.get("name") or "")
+    except HTTPException:
+        # Липсващ имейл (Facebook може да го скрие) — казваме го на страницата.
+        return _oauth_fail("noemail")
 
     if user.get("is_blocked"):
-        raise HTTPException(403, "Акаунтът е блокиран.")
+        return _oauth_fail("blocked")
 
     token = create_token(user["id"], user["email"])
     audit("login", f"Вход през {provider}: {user['email']}",
