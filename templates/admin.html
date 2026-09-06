@@ -330,6 +330,7 @@
         .badge-user { background: var(--surface-sky); color: var(--on-sky); }
         .badge-blocked { background: var(--danger-bg); color: var(--danger-text); }
         .badge-ok { background: var(--ok-bg); color: var(--ok-text); }
+        .badge-warn { background: var(--danger-bg); color: var(--danger-text); }
 
         /* list rows */
         .rows { display: flex; flex-direction: column; }
@@ -804,6 +805,33 @@
                 html += statCard('Карти', d.persons, 'Създадени натални карти');
                 html += statCard('Приход общо', money(d.revenue_cents, 'EUR'), 'Всички отбелязани плащания');
                 html += statCard('Този месец', money(d.revenue_month_cents, 'EUR'), 'От началото на месеца');
+                html += '</div></div>';
+
+                /* Три неща, които се чупят тихо: плащанията без webhook взимат
+                   пари, без да отключват; без SMTP не тръгват фактурите и
+                   възстановяването на парола; а липсващо копие се забелязва
+                   чак когато потрябва. Затова се показват тук. */
+                const ph = d.payments_health || {};
+                const bk = d.backups || {};
+                const ok = (good, text) =>
+                    '<div class="row-item"><span class="badge ' +
+                    (good ? 'badge-ok' : 'badge-warn') + '">' + (good ? 'наред' : 'внимание') +
+                    '</span><span class="row-meta">' + text + '</span></div>';
+
+                html += '<div class="section"><h2>Състояние</h2><div class="rows">';
+                html += ok(ph.ready,
+                    ph.ready ? 'Плащанията са включени и webhook-ът е настроен.'
+                             : (ph.checkout_key ? 'Има ключ, но липсва webhook — парите влизат, модулът не се отключва.'
+                                                : 'Плащанията не са включени.'));
+                html += ok(d.email_ready,
+                    d.email_ready ? 'Имейлът е настроен (фактури и забравена парола).'
+                                  : 'Няма SMTP — фактури и възстановяване на парола не тръгват.');
+                html += ok(bk.count > 0 && (bk.age_hours === null || bk.age_hours < 48),
+                    bk.count
+                        ? ('Последно копие: ' + escapeHtml(bk.latest || '') + ' · ' +
+                           escapeHtml(String(bk.size_kb)) + ' KB · пазят се ' +
+                           escapeHtml(String(bk.count)))
+                        : 'Няма копие на базата.');
                 html += '</div></div>';
 
                 html += '<div class="section"><h2>Разбивка по пакети</h2><div class="rows">';

@@ -2996,6 +2996,12 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
             "webhook_secret": billing.webhook_secret_present(),
             "ready": billing.stripe_enabled(),
         },
+        # Копие, което никой не проверява, е копие, което го няма. Панелът
+        # показва кога е последното и колко са — иначе се разбира чак когато
+        # някой поиска да възстанови нещо.
+        "backups": backup_status(),
+        # Без SMTP не тръгват нито фактурите, нито възстановяването на парола.
+        "email_ready": bool(smtp_setting("smtp_host")),
     }
 
 @app.get("/api/admin/users")
@@ -4461,6 +4467,22 @@ def run_db_backup() -> None:
                 old_file.unlink()
             except OSError:
                 pass
+
+
+def backup_status() -> dict:
+    """Кога е последното копие и колко се пазят — за админ панела."""
+    backup_dir = DB_PATH.parent / "backups"
+    files = sorted(backup_dir.glob("persons-*.db")) if backup_dir.exists() else []
+    if not files:
+        return {"count": 0, "latest": None, "size_kb": 0, "age_hours": None}
+    latest = files[-1]
+    age = (time.time() - latest.stat().st_mtime) / 3600
+    return {
+        "count": len(files),
+        "latest": latest.stem.replace("persons-", ""),
+        "size_kb": round(latest.stat().st_size / 1024),
+        "age_hours": round(age, 1),
+    }
 
 
 def run_scheduled_jobs() -> None:
