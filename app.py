@@ -3120,6 +3120,13 @@ def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
             (user_id,))
         conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        # Покупките и връзките към Google/Facebook също са на този акаунт.
+        # SQLite не налага външните ключове (foreign_keys е изключен по
+        # подразбиране), затова остават като сираци — а ако по-късно нов
+        # акаунт получи същото id, наследява платените модули безплатно.
+        conn.execute("DELETE FROM feature_purchases WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM oauth_accounts WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM share_links WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
     audit("user_deleted", f"Изтрит потребител {target['email']} (id={user_id})",

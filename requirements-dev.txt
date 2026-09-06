@@ -1,0 +1,4 @@
+# Само за разработка и тестове — не влиза в Docker образа.
+-r requirements.txt
+pytest
+edge-tts
