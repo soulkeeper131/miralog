@@ -2028,6 +2028,10 @@
         }
 
         // Глобален аудио плейър — един активен поток, показан в плаващ плейър.
+        // Ползва се от locked.js, за да извади истинския откъс от картата
+        // за размазания панел.
+        window.PERSON_ID = {{ person.id }};
+
         var audioPlayer = { key: null, audio: null, state: 'idle' };
 
         var FP_TITLES = {

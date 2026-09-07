@@ -67,6 +67,43 @@ TOKEN_EXPIRE_MINUTES = 60 * 24 * 30  # 30 days
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = ENVIRONMENT in ("production", "prod")
 
+# Външно следене на грешките. Без SENTRY_DSN нищо не се включва и нищо не
+# се праща навън — приложението работи както преди. Смисълът е да се разбира
+# за проблем от инструмент, а не от клиент.
+SENTRY_DSN = (os.environ.get("SENTRY_DSN") or "").strip()
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        def _scrub(event, hint):
+            """Маха личните данни, преди събитието да напусне сървъра.
+
+            Рождените данни и имейлите са лични по смисъла на GDPR — за
+            намирането на бъг стигат видът на грешката и мястото в кода.
+            """
+            event.pop("request", None)
+            event.pop("user", None)
+            for key in ("extra", "contexts"):
+                value = event.get(key)
+                if isinstance(value, dict):
+                    value.pop("body", None)
+                    value.pop("data", None)
+            return event
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=ENVIRONMENT,
+            # Без записи на заявките и без профилиране: интересуват ни
+            # грешките, а следенето на производителност струва пари.
+            traces_sample_rate=0.0,
+            send_default_pii=False,
+            before_send=_scrub,
+        )
+    except Exception as exc:      # счупен DSN не бива да спира сайта
+        # print, а не log: logging се настройва по-надолу във файла и още
+        # не е готов на този ред.
+        print(f"Sentry не се включи: {exc}", file=sys.stderr)
+
 # Lets the whole purchase flow be walked through without a payment processor:
 # the button grants the modules and records a payment marked as a test. Refused
 # in production so a live site can never hand out paid modules for free.
@@ -488,7 +525,7 @@ def init_db():
                     ("synastry", 700, 1),
                     ("love", 500, 1),
                     ("akashic", 900, 1),
-                    ("moon", 300, 1),
+                    ("moon", 299, 1),
                     # The chart is granted free at onboarding, so it is never
                     # offered for sale; planets and aspects ride along with it.
                     ("chart", 0, 0),
@@ -5498,6 +5535,50 @@ def build_profile(chart_data: dict) -> dict:
         "moon_phase_meaning": chart_data.get("moon_phase_meaning"),
         "diurnal": chart_data.get("diurnal"),
     }
+
+@app.get("/api/persons/{person_id}/teaser")
+def api_teaser(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart"))):
+    """Истински откъс от картата за размазания панел.
+
+    Досега под размазването стоеше измислен текст — еднакъв за всички. А
+    ядрото на картата (Слънце, Луна, Асцендент) вече е изчислено и е
+    безплатно. Показваме него: конкретно за този човек, вярно, и без нито
+    една обещана дума, която платеното разчитане да не покрие.
+    """
+    user_id, _ = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+
+    prof = build_profile(compute_natal(person))
+    core = prof.get("core") or {}
+    name = first_name(person["name"]) or person["name"]
+
+    def line(key, label):
+        point = core.get(key)
+        if not point or not point.get("sign_bg"):
+            return None
+        meaning = (point.get("sign_meaning") or "").strip()
+        return {
+            "label": label,
+            "position": f"{point['sign_bg']}, {point.get('house_bg', '')}".strip().rstrip(","),
+            "meaning": meaning,
+        }
+
+    rows = [r for r in (line("sun", "Слънце"), line("moon", "Луна"),
+                        line("ascendant", "Асцендент")) if r]
+
+    elements = prof.get("elements") or {}
+    dominant = elements.get("dominant")
+    element_note = (elements.get("dominant_meaning") or "").strip()
+
+    return {
+        "name": name,
+        "rows": rows,
+        "element": {"name": dominant, "meaning": element_note} if dominant else None,
+        "aspect_count": len(prof.get("key_aspects") or []),
+    }
+
 
 @app.get("/api/persons/{person_id}/profile")
 def api_profile(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart"))):

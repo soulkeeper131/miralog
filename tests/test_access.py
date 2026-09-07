@@ -153,3 +153,43 @@ def test_missing_flag_means_enabled(app):
     assert app.oauth_providers()["google"] is True
     for key in ("oauth_google_client_id", "oauth_google_client_secret"):
         app.set_setting(key, "")
+
+
+# --- откъсът под размазването -----------------------------------------------
+
+def test_teaser_needs_only_the_free_chart_feature(app, user):
+    """Иначе заключеният панел не може да покаже нищо на човек без покупка."""
+    pid = _person(app, user["id"])
+    data = app.api_teaser(pid, user=(user["id"], user["email"]))
+    assert data["rows"], "откъсът е празен"
+
+
+def test_teaser_shows_real_positions_from_this_chart(app, user):
+    """Смисълът на промяната: конкретни данни, не измислен общ текст."""
+    pid = _person(app, user["id"])
+    data = app.api_teaser(pid, user=(user["id"], user["email"]))
+    labels = {r["label"] for r in data["rows"]}
+    assert {"Слънце", "Луна"} <= labels
+    for row in data["rows"]:
+        assert row["position"], f"{row['label']} е без позиция"
+        assert row["meaning"], f"{row['label']} е без обяснение"
+
+
+def test_teaser_never_returns_the_paid_reading(app, user):
+    """Откъсът е от изчислената карта, а не от платения AI текст."""
+    pid = _person(app, user["id"])
+    app.set_ai_cache(pid, "profile", "ТАЙНО ПЛАТЕНО РАЗЧИТАНЕ, което не бива да изтича.")
+    data = app.api_teaser(pid, user=(user["id"], user["email"]))
+    blob = str(data)
+    assert "ТАЙНО" not in blob, "платеното разчитане изтича в безплатния откъс"
+
+
+def test_teaser_refuses_someone_elses_chart(app, db):
+    a = db.create_user(f"ta-{secrets.token_hex(3)}@example.com", db.hash_password("x"))
+    b = db.create_user(f"tb-{secrets.token_hex(3)}@example.com", db.hash_password("x"))
+    db.grant_signup_features(a["id"])
+    db.grant_signup_features(b["id"])
+    pid = _person(app, a["id"])
+    with pytest.raises(HTTPException) as err:
+        app.api_teaser(pid, user=(b["id"], b["email"]))
+    assert err.value.status_code == 404

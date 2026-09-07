@@ -11,6 +11,24 @@
     padding: 18px 20px;
     min-height: 260px;
 }
+/* Когато под размазването стои истинският откъс от картата, първите редове
+   се четат ясно, а размазването започва след тях. Размазан докрай откъс не
+   продава нищо — човекът трябва да види, че данните са неговите, преди да
+   реши. Плътността расте постепенно, вместо да реже по средата на дума. */
+.locked-teaser.has-excerpt {
+    filter: none;
+    opacity: 1;
+    min-height: 0;
+    padding-bottom: 0;
+}
+.locked-teaser.has-excerpt .teaser-row:nth-child(n + 4) {
+    filter: blur(5px);
+    opacity: 0.5;
+}
+.locked-teaser.has-excerpt .teaser-more {
+    filter: blur(5px);
+    opacity: 0.5;
+}
 .locked-teaser h4 {
     color: var(--accent-light); font-size: 1rem; margin: 14px 0 6px;
 }
@@ -22,6 +40,16 @@
     background: linear-gradient(180deg,
         color-mix(in srgb, var(--bg-card) 55%, transparent) 0%,
         color-mix(in srgb, var(--bg-card) 88%, transparent) 45%);
+}
+/* С истински откъс наслагването слиза под текста, вместо да го покрива:
+   иначе четимите редове са безсмислени — никой не ги вижда. */
+.locked.has-excerpt { overflow: visible; }
+.locked.has-excerpt .locked-overlay {
+    position: static; inset: auto;
+    background: linear-gradient(180deg,
+        transparent 0%,
+        color-mix(in srgb, var(--bg-card) 92%, transparent) 22%);
+    margin-top: -70px; padding-top: 78px;
 }
 .locked-badge {
     display: inline-flex; align-items: center; gap: 6px;
@@ -55,6 +83,23 @@
 }
 .locked-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .locked-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+/* Истинският откъс под размазването: ядрото на картата, ред по ред.
+   По-структуриран от обикновен абзац, за да се вижда още през блура, че
+   отдолу има конкретни данни, а не общи приказки. */
+.teaser-intro { margin-bottom: 14px; }
+.teaser-row { margin-bottom: 14px; }
+.teaser-row-head {
+    display: flex; align-items: baseline; gap: 8px;
+    margin-bottom: 3px; flex-wrap: wrap;
+}
+.teaser-label {
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--accent-light);
+}
+.teaser-pos { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+.teaser-row p { margin: 0; }
+.teaser-more { font-style: italic; opacity: 0.85; }
+
 /* Платените разчитания минават през по-силния модел. Това е реална разлика,
    която досега никой не виждаше — казва се веднъж, дребно, под бутона. */
 .locked-perk {

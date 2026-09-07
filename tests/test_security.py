@@ -141,3 +141,49 @@ def test_backup_status_reports_what_exists(app):
     assert status["count"] >= 1
     assert status["size_kb"] > 0
     assert status["age_hours"] is not None and status["age_hours"] < 1
+
+
+# --- следене на грешки ------------------------------------------------------
+
+def test_sentry_is_off_without_a_dsn(app):
+    """Без SENTRY_DSN нищо не се праща навън."""
+    assert app.SENTRY_DSN == ""
+
+
+def test_sentry_scrubbing_removes_personal_data(app, monkeypatch):
+    """Рождените данни и имейлите са лични по GDPR — не бива да напускат
+    сървъра заради една грешка."""
+    import importlib
+    import sys as _sys
+
+    monkeypatch.setenv("SENTRY_DSN", "https://key@example.ingest.sentry.io/1")
+    captured = {}
+
+    class _FakeSentry:
+        VERSION = "test"
+        @staticmethod
+        def init(**kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(_sys.modules, "sentry_sdk", _FakeSentry)
+    importlib.reload(app)
+
+    scrub = captured.get("before_send")
+    assert scrub, "няма функция за изчистване"
+    assert captured.get("send_default_pii") is False
+
+    event = scrub({
+        "request": {"data": {"email": "ivan@example.com", "year": 1990}},
+        "user": {"email": "ivan@example.com", "id": 42},
+        "extra": {"body": "рождени данни"},
+        "exception": {"values": [{"type": "ValueError"}]},
+    }, None)
+
+    blob = str(event)
+    assert "ivan@example.com" not in blob, "имейлът изтича към Sentry"
+    assert "рождени данни" not in blob, "лични данни изтичат към Sentry"
+    assert "ValueError" in blob, "изгубена е самата грешка"
+
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+    monkeypatch.delitem(_sys.modules, "sentry_sdk", raising=False)
+    importlib.reload(app)

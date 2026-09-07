@@ -13,3 +13,4 @@ reportlab
 stripe
 pyotp
 edge-tts
+sentry-sdk[fastapi]

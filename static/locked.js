@@ -30,23 +30,73 @@ function money(cents, currency) {
     return value.toFixed(2).replace('.00', '') + ' ' + symbol;
 }
 
-// Filler text sitting under the blur — long enough to look like a real
-// reading, vague enough to give nothing away. Each section says something
-// different: one paragraph repeated three times reads as a bug, not a blur.
+// Под размазването стои истинското ядро на картата — Слънце, Луна и
+// Асцендент с реалните им значения. Данните са безплатни (искат само
+// "chart"), затова нищо не се генерира и нищо не се раздава наготово.
+// Общият текст остава само като резерва, ако извличането се провали.
 function teaserText(featureName) {
-    const paras = [
-        'Разчитането стъпва на точните позиции в твоята карта и обяснява какво означават те за теб — не общи думи за зодията, а конкретните градуси и домове от мига на раждането ти.',
-        'Тук се описват страните, на които можеш да разчиташ: къде идва увереността ти, кои умения ти се удават без усилие и в кои периоди начинанията ти вървят по-леко от обикновено.',
-        'А тук — местата, които искат внимание: кое те дърпа назад, кои повтарящи се ситуации имат общ корен и как да подходиш към тях, вместо да ги приемаш за случайност.',
-    ];
     return `<div class="locked-teaser">
         <h4>${escapeHtml(featureName || 'Разчитане')}</h4>
-        <p>${paras[0]}</p>
+        <p>Разчитането стъпва на точните позиции в твоята карта и обяснява
+           какво означават те за теб — не общи думи за зодията, а конкретните
+           градуси и домове от мига на раждането ти.</p>
         <h4>Какво ти помага</h4>
-        <p>${paras[1]}</p>
+        <p>Тук се описват страните, на които можеш да разчиташ: къде идва
+           увереността ти и кои умения ти се удават без усилие.</p>
         <h4>За какво да внимаваш</h4>
-        <p>${paras[2]}</p>
+        <p>А тук — местата, които искат внимание: кое те дърпа назад и как да
+           подходиш към него, вместо да го приемаш за случайност.</p>
     </div>`;
+}
+
+// Заменя резервния текст с истинския откъс, щом данните пристигнат.
+async function fillTeaser(el, featureName) {
+    const personId = (window.PERSON_ID !== undefined && window.PERSON_ID !== null)
+        ? window.PERSON_ID : null;
+    if (personId === null) return;
+    try {
+        const resp = await fetch('/api/persons/' + encodeURIComponent(personId) + '/teaser',
+                                 { headers: authHeaders() });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.rows || !data.rows.length) return;
+
+        const host = el.querySelector('.locked-teaser');
+        if (!host) return;
+
+        const rows = data.rows.map(r => `
+            <div class="teaser-row">
+                <div class="teaser-row-head">
+                    <span class="teaser-label">${escapeHtml(r.label)}</span>
+                    <span class="teaser-pos">${escapeHtml(r.position)}</span>
+                </div>
+                <p>${escapeHtml(r.meaning)}</p>
+            </div>`).join('');
+
+        const element = data.element && data.element.name
+            ? `<div class="teaser-row">
+                   <div class="teaser-row-head">
+                       <span class="teaser-label">Стихия</span>
+                       <span class="teaser-pos">${escapeHtml(data.element.name)}</span>
+                   </div>
+                   <p>${escapeHtml(data.element.meaning)}</p>
+               </div>`
+            : '';
+
+        const more = data.aspect_count
+            ? `<p class="teaser-more">…и още ${data.aspect_count} силни аспекта,
+                   разчетени в пълния текст.</p>`
+            : '';
+
+        host.innerHTML = `<h4>${escapeHtml(featureName || 'Разчитане')}</h4>
+            <p class="teaser-intro">Ето какво показва твоята карта${
+                data.name ? ', ' + escapeHtml(data.name) : ''}:</p>
+            ${rows}${element}${more}`;
+        // Класът превключва оформлението: първите редове стават четими, а
+        // наслагването с цената слиза под тях.
+        host.classList.add('has-excerpt');
+        el.classList.add('has-excerpt');
+    } catch (e) { /* остава резервният текст */ }
 }
 
 function escapeHtml(text) {
@@ -99,6 +149,8 @@ function renderLocked(el, detail, retry) {
     // have. Panels that are only partly paid (the astro portrait, whose data is
     // free and whose reading is not) pass keepSiblings and stay in place.
     if (!detail.keepSiblings) hideSiblingSections(el);
+
+    fillTeaser(el, name);
 
     const btn = el.querySelector('.locked-btn[data-feature]');
     if (btn) btn.addEventListener('click', () => requestUnlock(btn, btn.dataset.feature, retry));
