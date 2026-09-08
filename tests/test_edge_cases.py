@@ -232,3 +232,41 @@ def test_excerpt_stays_short_enough_for_the_card(app):
 def test_excerpt_survives_empty_and_heading_only(app):
     assert app._first_sentences("") == ""
     assert app._first_sentences("1. Общо усещане за деня") == ""
+
+
+# --- частично разчитане по зодия ---------------------------------------------
+
+def test_sign_reading_is_partial(app):
+    """Целият хороскоп даром не оставя причина човек да продължи към картата."""
+    html = "".join(f"<h3><span>{i}</span> Раздел {i}</h3><p>Текст {i}.</p>"
+                   for i in range(1, 10))
+    free, hidden, count = app._split_reading(html)
+    assert free.count("<h3") == app.SIGN_FREE_SECTIONS
+    assert hidden.count("<h3") == 9 - app.SIGN_FREE_SECTIONS
+    assert count == 9 - app.SIGN_FREE_SECTIONS
+
+
+def test_split_loses_nothing(app):
+    """Скритото остава в HTML-а — Google трябва да вижда целия текст."""
+    html = "".join(f"<h3>Р{i}</h3><p>Т{i}</p>" for i in range(1, 10))
+    free, hidden, _ = app._split_reading(html)
+    assert free + hidden == html
+
+
+def test_short_reading_is_not_split(app):
+    """Под пет раздела блурът само дразни, без да остави какво да се чака."""
+    html = "".join(f"<h3>Р{i}</h3><p>Т{i}</p>" for i in range(1, 4))
+    free, hidden, count = app._split_reading(html)
+    assert hidden == "" and count == 0
+    assert free == html
+
+
+def test_split_handles_empty_input(app):
+    assert app._split_reading("") == ("", "", 0)
+    assert app._split_reading(None) == ("", "", 0)
+
+
+def test_section_number_is_separated_from_the_title(app):
+    """Иначе излиза „1Общо усещане“ вместо „1 Общо усещане“."""
+    out = app._md_to_html("1. **Общо усещане за деня**\n\nТекст.")
+    assert "</span> " in out, "номерът е слепен със заглавието"

@@ -2606,7 +2606,7 @@ def _md_to_html(raw: str) -> str:
         if num:
             flush_list()
             flush_para()
-            out.append(f"<h3><span>{num.group(1)}</span>{inline(num.group(2))}</h3>")
+            out.append(f"<h3><span>{num.group(1)}</span> {inline(num.group(2))}</h3>")
             if num.group(3):
                 para.append(inline(num.group(3)))
             continue
@@ -7287,6 +7287,31 @@ _SIGN_FAQ = [
 ]
 
 
+# Колко раздела от дневния хороскоп се четат свободно. Останалите се
+# размазват — зодийният хороскоп е стръв за наталната карта, а даден изцяло
+# не оставя причина човекът да продължи нататък.
+SIGN_FREE_SECTIONS = int(os.environ.get("SIGN_FREE_SECTIONS", "3"))
+
+
+def _split_reading(body_html: str, free: int = None) -> tuple:
+    """Разделя разчитането на свободна и размазана част по <h3> границите.
+
+    Връща (свободно, скрито, брой_скрити_раздела). Ако разделите са малко,
+    нищо не се скрива — по-добре цял кратък текст, отколкото дразнещ блур.
+    """
+    import re
+    if not body_html:
+        return "", "", 0
+    free = SIGN_FREE_SECTIONS if free is None else free
+
+    starts = [m.start() for m in re.finditer(r"<h3[ >]", body_html)]
+    # Под пет раздела текстът е твърде къс, за да се реже смислено.
+    if len(starts) < 5 or free >= len(starts):
+        return body_html, "", 0
+    cut = starts[free]
+    return body_html[:cut], body_html[cut:], len(starts) - free
+
+
 def _sign_seo_context(request: Request, sign: dict, date_bg: str) -> dict:
     """SEO context for one sign's horoscope page."""
     ctx = seo_context(request, path=f"/horoskop/{sign['slug']}")
@@ -7405,7 +7430,11 @@ async def horoskop_sign(request: Request, sign_slug: str):
     if cached:
         summary, body = split_summary(cached)
         ctx["summary"] = summary
-        ctx["body_html"] = _md_to_html(body)
+        full = _md_to_html(body)
+        free_html, hidden_html, hidden_count = _split_reading(full)
+        ctx["body_html"] = free_html
+        ctx["body_hidden"] = hidden_html
+        ctx["hidden_sections"] = hidden_count
     return HTMLResponse(templates.get_template("horoscope_sign.html").render(ctx))
 
 

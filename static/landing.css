@@ -1181,3 +1181,28 @@
 .hero--list { padding: clamp(24px, 3vw, 36px) 0 clamp(20px, 2.5vw, 30px); }
 .hero--list .hero-glyph { width: 68px; height: 68px; margin-bottom: 14px; }
 .hero--list .lede { margin-bottom: 0; }
+
+/* Номерът пред заглавието на раздела беше слепен с текста („1Общо усещане“),
+   защото span-ът нямаше стил. */
+.horo-reading h3 > span {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6em; height: 1.6em; margin-right: .5em;
+    border-radius: 50%; background: var(--surface-icy, rgba(255,255,255,.08));
+    color: var(--accent-light); font-size: .72em; font-weight: 600;
+    vertical-align: middle;
+}
+
+/* Частично разчитане: последните раздели се размазват, за да остане нещо,
+   за което да си струва наталната карта. */
+.horo-locked { position: relative; }
+.horo-locked .horo-fade {
+    filter: blur(5px); opacity: .5; pointer-events: none; user-select: none;
+    max-height: 260px; overflow: hidden;
+}
+.horo-more {
+    margin-top: -60px; padding-top: 70px; position: relative; text-align: center;
+    background: linear-gradient(180deg, transparent 0%,
+        color-mix(in srgb, var(--bg, #0a0a1a) 92%, transparent) 30%);
+}
+.horo-more h3 { margin-bottom: 8px; }
+.horo-more p { max-width: 46ch; margin: 0 auto 16px; color: var(--text-muted); }

@@ -48,10 +48,10 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=5" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=4">
+        <link rel="stylesheet" href="/static/landing.min.css?v=5">
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
@@ -141,10 +141,25 @@
             {% if body_html %}
             <div class="sec-head" style="margin-top: 40px;">
                 <span class="mark">{{ sign.glyph }}</span>
-                <h2>Пълният хороскоп за {{ sign.name }}</h2>
+                <h2>Хороскопът за {{ sign.name }} днес</h2>
                 <p>Разгърнатото разчитане на днешния ден.</p>
             </div>
             <div class="horo-reading">{{ body_html|safe }}</div>
+
+            {% if body_hidden %}
+            <div class="horo-locked">
+                <div class="horo-reading horo-fade" aria-hidden="true">{{ body_hidden|safe }}</div>
+                <div class="horo-more">
+                    <h3>Още {{ hidden_sections }} раздела за днес</h3>
+                    <p>Любов, работа, здраве и какво да избягваш — но по зодия те
+                       важат за милиони души наведнъж. Твоята натална карта показва
+                       кои от днешните транзити засягат точно теб.</p>
+                    <div class="cta-row">
+                        <a class="btn btn-primary" href="/start">Направи безплатната си натална карта</a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             {% else %}
             <div class="horo-loading" id="horoLoading">
                 <p>Хороскопът за днес се пише в момента…</p>
