@@ -1145,7 +1145,14 @@
 .sp-glyph { font-size: 1.9rem; line-height: 1; color: var(--accent-light); }
 .sign-preview h3 { margin: 0; font-size: 1.05rem; color: var(--text-heading); }
 .sp-dates { font-size: .78rem; color: var(--text-muted); }
-.sp-text { margin: 0; font-size: .9rem; line-height: 1.65; color: var(--text-soft); }
+/* Откъсите излизат различно дълги — от едно изречение до три реда. Без
+   ограничение картите стават стълбовидни и мрежата изглежда небрежна.
+   Три реда изравняват височините, а „…“ подсказва, че има продължение. */
+.sp-text {
+    margin: 0; font-size: .9rem; line-height: 1.65; color: var(--text-soft);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; min-height: calc(3 * 1.65em);
+}
 .sp-muted { opacity: .65; font-style: italic; }
 .sp-more {
     margin-top: auto; font-size: .82rem; font-weight: 600; color: var(--accent-light);

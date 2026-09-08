@@ -7297,17 +7297,45 @@ def _sign_seo_context(request: Request, sign: dict, date_bg: str) -> dict:
     return ctx
 
 
-def _first_sentences(text: str, count: int = 2, limit: int = 220) -> str:
-    """Първите изречения от разчитането — за откъса на общата страница."""
+def _first_sentences(text: str, count: int = 2, limit: int = 190) -> str:
+    """Първите изречения от разчитането — за откъса на общата страница.
+
+    Разчитанията започват със заглавие като „1. Общо усещане за деня“. То
+    трябва да отпадне, преди редовете да се слепят — иначе всеки откъс
+    започва с него и дванайсетте карти изглеждат еднакви и счупени.
+    """
     import re
-    clean = re.sub(r"[*#`_]", "", (text or "")).strip()
-    clean = re.sub(r"\s+", " ", clean)
+    if not text:
+        return ""
+
+    lines = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        # Markdown заглавието се разпознава ПРЕДИ да махнем решетките —
+        # иначе „## Общо усещане“ става обикновен ред и остава в откъса.
+        if stripped.startswith("#"):
+            continue
+        line = re.sub(r"[*#`_>]", "", stripped).strip()
+        if not line:
+            continue
+        # Номерирано или markdown заглавие: „1. Нещо“, „## Нещо“, „Нещо:“ —
+        # къс ред без завършващ препинателен знак.
+        if re.match(r"^\d+[.)]\s", line):
+            line = re.sub(r"^\d+[.)]\s*", "", line)
+            if len(line) < 60 and not line.endswith((".", "!", "?", "…")):
+                continue                      # само заглавие, без текст
+        if len(line) < 60 and line.endswith(":"):
+            continue
+        lines.append(line)
+
+    clean = re.sub(r"\s+", " ", " ".join(lines)).strip()
     if not clean:
         return ""
+
     parts = re.findall(r"[^.!?]+[.!?]", clean)
     out = "".join(parts[:count]).strip() if parts else clean
     if len(out) > limit:
-        cut = out[:limit].rsplit(" ", 1)[0]
+        cut = out[:limit].rsplit(" ", 1)[0].rstrip(" ,;:—-")
         out = cut + "…"
     return out
 

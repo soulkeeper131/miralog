@@ -196,3 +196,39 @@ def test_admin_delete_endpoint_cleans_everything(app, db):
             left = c.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id = ?",
                              (uid,)).fetchone()[0]
             assert left == 0, f"{table} остава след изтриване на акаунта"
+
+
+# --- откъсите на общата страница за хороскопи --------------------------------
+
+def test_excerpt_drops_the_numbered_heading(app):
+    """Разчитанията започват с „1. Общо усещане за деня“. Ако заглавието
+    остане, всичките 12 карти започват еднакво и изглеждат счупени."""
+    raw = ("1. Общо усещане за деня\n\nДенят носи усещане за преосмисляне. "
+           "Луната е в балсамична фаза.\n\n2. Любов\n\nРазговорите вървят леко.")
+    out = app._first_sentences(raw)
+    assert "Общо усещане" not in out
+    assert not out.lstrip()[:2].strip().isdigit()
+    assert out.startswith("Денят носи")
+
+
+def test_excerpt_drops_markdown_headings(app):
+    out = app._first_sentences("## Общо усещане\n\nДнес нещата се подреждат. Втора мисъл.")
+    assert "#" not in out
+    assert "Общо усещане" not in out
+
+
+def test_excerpt_drops_colon_labels(app):
+    out = app._first_sentences("Любов:\nДнес партньорът ще те изненада. И още едно.")
+    assert not out.startswith("Любов")
+
+
+def test_excerpt_stays_short_enough_for_the_card(app):
+    """Картите са с фиксирана височина — прекалено дълъг откъс се реже."""
+    long_text = "Много дълго изречение, което продължава без край. " * 20
+    out = app._first_sentences(long_text)
+    assert len(out) <= 191, f"откъсът е {len(out)} знака"
+
+
+def test_excerpt_survives_empty_and_heading_only(app):
+    assert app._first_sentences("") == ""
+    assert app._first_sentences("1. Общо усещане за деня") == ""
