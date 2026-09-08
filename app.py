@@ -7297,14 +7297,60 @@ def _sign_seo_context(request: Request, sign: dict, date_bg: str) -> dict:
     return ctx
 
 
+def _first_sentences(text: str, count: int = 2, limit: int = 220) -> str:
+    """Първите изречения от разчитането — за откъса на общата страница."""
+    import re
+    clean = re.sub(r"[*#`_]", "", (text or "")).strip()
+    clean = re.sub(r"\s+", " ", clean)
+    if not clean:
+        return ""
+    parts = re.findall(r"[^.!?]+[.!?]", clean)
+    out = "".join(parts[:count]).strip() if parts else clean
+    if len(out) > limit:
+        cut = out[:limit].rsplit(" ", 1)[0]
+        out = cut + "…"
+    return out
+
+
 @app.get("/horoskop", response_class=HTMLResponse)
 async def horoskop_hub(request: Request):
-    """Hub listing all 12 signs."""
+    """Общата страница за всички зодии.
+
+    Дълго време тук стоеше само меню от 12 връзки — около 120 думи. Google я
+    класира вместо подстраниците с истинско съдържание, което даваше слаба
+    позиция за „хороскоп“. Затова страницата носи и днешното небе, и по
+    няколко изречения от всяка зодия: текстовете вече са генерирани, тоест
+    нищо не струва допълнително.
+    """
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    date_iso = now.date().isoformat()
+    date_bg = now.strftime("%d.%m.%Y")
+
     ctx = seo_context(request, path="/horoskop")
-    ctx["seo_title"] = f"Дневен хороскоп за всички зодии — днес | {brand_name()}"
-    ctx["seo_description"] = ("Дневен хороскоп за всичките 12 зодии: Овен, Телец, Близнаци, Рак, Лъв, Дева, "
-                              "Везни, Скорпион, Стрелец, Козирог, Водолей и Риби. Актуализира се всеки ден.")
-    ctx["signs"] = ZODIAC_SIGNS
+    ctx["seo_title"] = f"Дневен хороскоп за всички зодии — {date_bg} | {brand_name()}"
+    ctx["seo_description"] = (
+        f"Дневен хороскоп за всичките 12 зодии за {date_bg}: Овен, Телец, Близнаци, Рак, "
+        "Лъв, Дева, Везни, Скорпион, Стрелец, Козирог, Водолей и Риби. Пише се наново "
+        "всяка сутрин по реалните позиции на планетите.")
+
+    # Откъс от всяка зодия — от вече кешираните разчитания за днес.
+    previews = []
+    for sign in ZODIAC_SIGNS:
+        cached = get_sign_horoscope(sign["sign"], date_iso)
+        excerpt = ""
+        if cached:
+            _, body = split_summary(cached)
+            excerpt = _first_sentences(body)
+        previews.append({**sign, "excerpt": excerpt})
+
+    ctx.update({
+        "signs": ZODIAC_SIGNS,
+        "previews": previews,
+        "date_bg": date_bg,
+        "date_iso": date_iso,
+        "sky": daily_sky(),
+        "faq": _SIGN_FAQ,
+    })
     return HTMLResponse(templates.get_template("horoscope_index.html").render(ctx))
 
 

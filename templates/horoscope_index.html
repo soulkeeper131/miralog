@@ -21,6 +21,49 @@
     <meta name="twitter:description" content="{{ seo_description }}">
     {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
 
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "CollectionPage",
+                "name": {{ seo_title | tojson }},
+                "description": {{ seo_description | tojson }},
+                "inLanguage": "bg-BG",
+                "datePublished": "{{ date_iso }}",
+                "dateModified": "{{ date_iso }}",
+                "hasPart": [
+                    {% for s in previews %}
+                    {"@type": "Article",
+                     "headline": "Дневен хороскоп за {{ s.name }} — {{ date_bg }}",
+                     "url": "https://{{ brand().domain }}/horoskop/{{ s.slug }}",
+                     "inLanguage": "bg-BG",
+                     "datePublished": "{{ date_iso }}"}{% if not loop.last %},{% endif %}
+                    {% endfor %}
+                ]
+            },
+            {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    {"@type": "ListItem", "position": 1, "name": "Начало",
+                     "item": "https://{{ brand().domain }}/"},
+                    {"@type": "ListItem", "position": 2, "name": "Дневен хороскоп",
+                     "item": "https://{{ brand().domain }}/horoskop"}
+                ]
+            }{% if faq %},
+            {
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {% for f in faq %}
+                    {"@type": "Question", "name": {{ f.q | tojson }},
+                     "acceptedAnswer": {"@type": "Answer", "text": {{ f.a | tojson }}}}{% if not loop.last %},{% endif %}
+                    {% endfor %}
+                ]
+            }{% endif %}
+        ]
+    }
+    </script>
+
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
@@ -35,10 +78,10 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=1" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=2" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=1">
+        <link rel="stylesheet" href="/static/landing.min.css?v=2">
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
@@ -57,7 +100,7 @@
             </div>
             <div class="hero-glyph" aria-hidden="true">☽</div>
             <p><span class="kicker">Дневен хороскоп</span></p>
-            <h1>Дневен хороскоп за всички зодии</h1>
+            <h1>Дневен хороскоп за всички зодии — {{ date_bg }}</h1>
             <p class="lede">Избери своя знак и виж какво ти носи днешният ден.</p>
             <p class="sub">Хороскопите се пишат наново всяка сутрин на база на реалните позиции на планетите за деня.</p>
             <div class="cta-row">
@@ -67,18 +110,48 @@
         </div>
     </header>
 
+    {% if sky.positions %}
+    <div class="ephemeris" aria-label="Позиции на планетите днес">
+        <div class="wrap">
+            <div class="eph-inner">
+                <span class="eph-label">Небето днес</span>
+                <ul class="eph-list">
+                    {% for p in sky.positions %}
+                    <li>
+                        <span class="eph-glyph">{{ p.symbol }}</span>
+                        <span class="eph-name">{{ p.name_bg }}</span>
+                        <span class="eph-pos">{{ p.degree }}° {{ p.sign_bg }}{% if p.retrograde %} ℞{% endif %}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <section>
         <div class="wrap">
             <div class="sec-head">
                 <span class="mark">✦</span>
-                <h2>Избери своята зодия</h2>
-                <p>Кликни върху своя знак, за да видиш днешния хороскоп.</p>
+                <h2>Хороскопът за днес, зодия по зодия</h2>
+                <p>Ето началото на всяко разчитане за {{ date_bg }}. Отвори своята зодия за целия текст.</p>
             </div>
-            <div class="related">
-                {% for s in signs %}
-                <a href="/horoskop/{{ s.slug }}">
-                    <span class="r-glyph" aria-hidden="true">{{ s.glyph }}</span>
-                    <span class="r-name">{{ s.name }}</span>
+            <div class="sign-previews">
+                {% for s in previews %}
+                <a class="sign-preview" href="/horoskop/{{ s.slug }}">
+                    <div class="sp-head">
+                        <span class="sp-glyph" aria-hidden="true">{{ s.glyph }}</span>
+                        <div>
+                            <h3>{{ s.name }}</h3>
+                            <span class="sp-dates">{{ s.dates }}</span>
+                        </div>
+                    </div>
+                    {% if s.excerpt %}
+                    <p class="sp-text">{{ s.excerpt }}</p>
+                    {% else %}
+                    <p class="sp-text sp-muted">Разчитането за днес се подготвя.</p>
+                    {% endif %}
+                    <span class="sp-more">Виж целия хороскоп →</span>
                 </a>
                 {% endfor %}
             </div>
@@ -87,16 +160,63 @@
 
     <section>
         <div class="wrap">
-            <div class="final">
-                <h2>Виж какво пише в твоята карта</h2>
-                <p>Персоналният дневен хороскоп стъпва на точно твоята натална карта, а не само на зодията.</p>
-                <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
-                    <a class="btn btn-ghost" href="/login">Вход</a>
-                </div>
+            <div class="sec-head">
+                <span class="mark">✦</span>
+                <h2>Какво е дневен хороскоп и докъде стига</h2>
+            </div>
+            <div class="prose">
+                <p>Дневният хороскоп по зодия тръгва от едно-единствено нещо: в кой
+                   знак е било Слънцето в деня на раждането ти. Оттам се гледа как
+                   днешните позиции на планетите се отнасят към този знак — кои
+                   аспекти се затварят днес, коя планета сменя знак, къде е Луната.</p>
+                <p>Затова е общ. Всички, родени в рамките на около месец, споделят
+                   един и същ слънчев знак — а това са милиони хора. Прогнозата е
+                   вярна за посоката на деня, но не може да знае нищо за останалите
+                   девет планети в твоята карта, нито за домовете, нито за
+                   асцендента, който се сменя на всеки два часа.</p>
+                <p>Точно тук се вижда разликата между хороскоп по зодия и разчитане
+                   по натална карта. Един и същ транзит може да мине незабелязано за
+                   единия и да бъде повратна точка за другия — според това къде
+                   попада в личната му карта.</p>
             </div>
         </div>
     </section>
+
+    <section>
+        <div class="wrap">
+            <div class="final">
+                <h2>Твоята карта казва повече от зодията ти</h2>
+                <p>Наталната карта се изчислява по дата, час и място на раждане — и е
+                   различна дори за двама души, родени в един и същи ден. Направи я
+                   безплатно и виж своите планети, домове и аспекти.</p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="/start">Направи безплатната си натална карта</a>
+                    <a class="btn btn-ghost" href="/login">Вход</a>
+                </div>
+                <p class="final-note">Картата и дневният хороскоп остават безплатни.
+                   По-задълбочените разчитания се отключват еднократно, когато решиш.</p>
+            </div>
+        </div>
+    </section>
+
+    {% if faq %}
+    <section>
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">✦</span>
+                <h2>Често задавани въпроси</h2>
+            </div>
+            <div class="faq">
+                {% for item in faq %}
+                <details>
+                    <summary>{{ item.q }}</summary>
+                    <p>{{ item.a_html | safe if item.a_html else item.a }}</p>
+                </details>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
 
     </main>
     <footer>
