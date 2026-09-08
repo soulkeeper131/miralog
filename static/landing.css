@@ -1166,3 +1166,18 @@
 .final-note {
     margin-top: 14px; font-size: .85rem; color: var(--text-muted);
 }
+
+/* Заглавието остава за Google и за екранните четци, но не заема място —
+   картите отдолу вече казват какво е това. */
+.sr-head {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Общата страница за хороскопи е списък, не представяне: човекът е дошъл
+   за своята зодия и трябва да я вижда бързо. Затова героят тук е по-нисък
+   и лунният кръг по-малък, отколкото на рекламните страници. */
+.hero--list { padding: clamp(24px, 3vw, 36px) 0 clamp(20px, 2.5vw, 30px); }
+.hero--list .hero-glyph { width: 68px; height: 68px; margin-bottom: 14px; }
+.hero--list .lede { margin-bottom: 0; }
