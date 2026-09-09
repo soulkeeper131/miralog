@@ -48,10 +48,10 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=5" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=7" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=5">
+        <link rel="stylesheet" href="/static/landing.min.css?v=7">
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
@@ -122,20 +122,53 @@
                 <h2>Денят накратко</h2>
                 <p>Резюме на днешната енергия за {{ sign.name }}.</p>
             </div>
-            <div class="trust">
-                <div class="trust-item"><span class="trust-ico">🎭</span><div><h3>Настроение</h3><p>{{ summary.mood }}</p></div></div>
-                <div class="trust-item"><span class="trust-ico">⚡</span><div><h3>Енергия</h3><p>{{ summary.energy }}</p></div></div>
-                <div class="trust-item"><span class="trust-ico">🎯</span><div><h3>Фокус</h3><p>{{ summary.focus }}</p></div></div>
-                <div class="trust-item"><span class="trust-ico">⚠️</span><div><h3>Внимавай</h3><p>{{ summary.caution }}</p></div></div>
+            <div class="day-facts">
+                {% if summary.mood %}
+                <div class="fact">
+                    <span class="fact-ico" aria-hidden="true">🎭</span>
+                    <span class="fact-label">Настроение</span>
+                    <span class="fact-value">{{ summary.mood }}</span>
+                </div>
+                {% endif %}
+                {% if summary.energy %}
+                <div class="fact">
+                    <span class="fact-ico" aria-hidden="true">⚡</span>
+                    <span class="fact-label">Енергия</span>
+                    <span class="fact-value">{{ summary.energy }}</span>
+                </div>
+                {% endif %}
+                {% if summary.focus %}
+                <div class="fact fact--wide">
+                    <span class="fact-ico" aria-hidden="true">🎯</span>
+                    <span class="fact-label">Фокус</span>
+                    <span class="fact-value">{{ summary.focus }}</span>
+                </div>
+                {% endif %}
             </div>
-            <div class="horo-meta" style="margin-top: 12px;">
+
+            {% if summary.caution %}
+            <p class="day-caution">
+                <span aria-hidden="true">⚠️</span>
+                <span>{% set c = summary.caution | trim %}{% if c.lower().startswith("внимавай") %}{{ c }}{% else %}<strong>Внимавай:</strong> {{ c }}{% endif %}</span>
+            </p>
+            {% endif %}
+
+            {% if summary.do or summary.avoid %}
+            <div class="day-lists">
                 {% if summary.do %}
-                <div class="trust-item"><span class="trust-ico">✅</span><div><h3>Благоприятно е за</h3>{% for d in summary.do %}<p style="margin:0 0 4px;">· {{ d }}</p>{% endfor %}</div></div>
+                <div class="day-list day-list--do">
+                    <h3><span aria-hidden="true">✅</span> Благоприятно е за</h3>
+                    <ul>{% for d in summary.do %}<li>{{ d }}</li>{% endfor %}</ul>
+                </div>
                 {% endif %}
                 {% if summary.avoid %}
-                <div class="trust-item"><span class="trust-ico">🚫</span><div><h3>Избягвай</h3>{% for a in summary.avoid %}<p style="margin:0 0 4px;">· {{ a }}</p>{% endfor %}</div></div>
+                <div class="day-list day-list--avoid">
+                    <h3><span aria-hidden="true">🚫</span> Избягвай</h3>
+                    <ul>{% for a in summary.avoid %}<li>{{ a }}</li>{% endfor %}</ul>
+                </div>
                 {% endif %}
             </div>
+            {% endif %}
             {% endif %}
 
             {% if body_html %}
