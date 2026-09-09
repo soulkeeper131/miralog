@@ -300,3 +300,55 @@ def test_advice_handles_empty_and_punctuation(app):
 
 def test_advice_capitalises_the_result(app):
     assert app.normalise_advice("спокойни разговори")[0].isupper()
+
+
+# --- известия при нова регистрация -------------------------------------------
+
+def test_new_user_notification_is_sent(app, db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "try_send_template",
+                        lambda to, kind, **f: sent.append((to, kind, f)) or True)
+    app.set_setting("notify_email", "vladi@example.com")
+    app.set_setting("notify_new_users", "1")
+
+    app.notify_new_user(1, "nov@example.com", "Google")
+    assert sent, "не е изпратено известие"
+    to, kind, fields = sent[0]
+    assert to == "vladi@example.com"
+    assert kind == "new_user"
+    assert fields["email"] == "nov@example.com"
+    assert fields["method"] == "Google"
+    app.set_setting("notify_email", "")
+
+
+def test_notification_can_be_switched_off(app, db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "try_send_template",
+                        lambda to, kind, **f: sent.append(kind) or True)
+    app.set_setting("notify_email", "vladi@example.com")
+    app.set_setting("notify_new_users", "0")
+    app.notify_new_user(1, "nov@example.com", "Google")
+    assert sent == [], "известието тръгва, макар да е изключено"
+    app.set_setting("notify_new_users", "1")
+    app.set_setting("notify_email", "")
+
+
+def test_failed_notification_never_breaks_signup(app, db, monkeypatch):
+    """Регистрацията е по-важна от писмото — SMTP авария не бива да я спира."""
+    def boom(*a, **k):
+        raise RuntimeError("SMTP е долу")
+    monkeypatch.setattr(app, "try_send_template", boom)
+    app.set_setting("notify_email", "vladi@example.com")
+    app.notify_new_user(1, "nov@example.com", "Google")   # не хвърля
+    app.set_setting("notify_email", "")
+
+
+def test_notification_needs_a_valid_address(app, db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "try_send_template",
+                        lambda to, kind, **f: sent.append(kind) or True)
+    monkeypatch.setattr(app, "smtp_setting", lambda key: "")
+    app.set_setting("notify_email", "това-не-е-имейл")
+    app.notify_new_user(1, "nov@example.com", "Google")
+    assert sent == [], "праща се към невалиден адрес"
+    app.set_setting("notify_email", "")

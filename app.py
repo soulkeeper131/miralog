@@ -2189,6 +2189,7 @@ def api_register(data: AuthRequest, request: Request):
     grant_signup_features(user["id"])
     token = create_token(user["id"], user["email"])
     audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
+    notify_new_user(user["id"], email, "имейл и парола")
     try_send_template(
         email, "welcome",
         name=email.split("@")[0],
@@ -2348,6 +2349,16 @@ EMAIL_TEMPLATES = {
         "Благодарим за покупката! Касовият документ за продажбата ти "
         "е прикачен към това писмо като PDF.\n\n"
         "Поздрави,\n{brand}"
+    ),
+    # Известие до собственика при нова регистрация. Шаблонът е тук, за да
+    # може да се редактира от админ панела като всички останали.
+    "new_user_subject": "Нов потребител: {email}",
+    "new_user_body": (
+        "Нова регистрация в {brand}.\n\n"
+        "Имейл: {email}\n"
+        "Начин: {method}\n"
+        "Кога: {when}\n"
+        "Общо потребители: {total}\n"
     ),
     "unlock_request_subject": "Заявка за отключване: {name}",
     "unlock_request_body": (
@@ -3709,6 +3720,12 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             },
         },
         # Values behind the terms, the privacy policy and the N-18 documents.
+        # Известия при нова регистрация: адрес и превключвател.
+        "notify": {
+            "email": get_setting("notify_email") or "",
+            "new_users": (get_setting("notify_new_users") or "1") not in ("0", "false", "False"),
+            "fallback": (smtp_setting("smtp_from") or smtp_setting("smtp_user") or ""),
+        },
         "legal": {key: (get_setting(f"legal_{key}") or default)
                   for key, default in LEGAL_DEFAULTS.items()},
     }
@@ -3769,6 +3786,13 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
         if key.endswith("_secret") and not text:
             continue
         set_setting(f"oauth_{key}", text)
+
+    notify = payload.get("notify")
+    if isinstance(notify, dict):
+        if "email" in notify:
+            set_setting("notify_email", str(notify.get("email") or "").strip())
+        if "new_users" in notify:
+            set_setting("notify_new_users", "1" if notify.get("new_users") else "0")
 
     for key, value in (payload.get("legal") or {}).items():
         if key in LEGAL_DEFAULTS:
@@ -4038,6 +4062,31 @@ def render_email_template(kind: str, **fields) -> Tuple[str, str]:
     # Every template may reference {brand}; a caller-supplied value wins.
     safe.setdefault("brand", brand_name())
     return _fill_template(subject, safe), _fill_template(body, safe)
+
+def notify_new_user(user_id: int, email: str, method: str) -> None:
+    """Известява собственика за нова регистрация.
+
+    Адресът се взима от настройката „notify_email“; ако е празна, пада към
+    подателя на SMTP. Никога не хвърля — регистрацията не бива да се проваля,
+    защото известието не е тръгнало.
+    """
+    try:
+        to = (get_setting("notify_email") or "").strip()
+        if not to:
+            to = (smtp_setting("smtp_from") or smtp_setting("smtp_user") or "").strip()
+        if not to or "@" not in to:
+            return
+        if (get_setting("notify_new_users") or "1").strip() in ("0", "false", "False"):
+            return
+
+        with sqlite3.connect(DB_PATH) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        when = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M")
+        try_send_template(to, "new_user", brand=brand_name(), email=email,
+                          method=method, when=when, total=total)
+    except Exception:
+        log.warning("Известието за нов потребител не тръгна", exc_info=True)
+
 
 def try_send_template(to: str, kind: str, **fields) -> bool:
     """Send a templated email; returns False when SMTP is missing or send fails."""
@@ -4654,6 +4703,7 @@ def _oauth_link_or_create(provider: str, provider_user_id: str,
         grant_signup_features(user["id"])
         audit("sign_up", f"Регистрация през {provider}: {email}",
               user_id=user["id"], actor=email)
+        notify_new_user(user["id"], email, provider.capitalize())
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(

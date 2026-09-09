@@ -1629,6 +1629,24 @@
                     '<div class="btn-row"><button class="btn" id="saveLegalBtn">Запази юридическите данни</button>' +
                         '<a class="btn btn-ghost" href="/terms" target="_blank" rel="noopener">Виж условията</a></div></div>';
 
+                const nt = d.notify || {};
+                html += '<div class="section"><h2>Известия</h2>' +
+                    '<div class="hint" style="margin-bottom:14px;">' +
+                        'Писмо при всяка нова регистрация — с имейла на човека, ' +
+                        'начина на влизане и общия брой потребители.</div>' +
+                    '<label class="check"><input type="checkbox" id="ntNew"' +
+                        (nt.new_users !== false ? ' checked' : '') +
+                        '> Пиши ми при нов потребител</label>' +
+                    '<div class="form-grid" style="margin-top:12px;">' +
+                        '<div class="form-group"><label for="ntEmail">Адрес за известия</label>' +
+                            '<input type="email" id="ntEmail" value="' +
+                            escapeHtml(nt.email || '') + '" placeholder="' +
+                            escapeHtml(nt.fallback || 'твоят имейл') + '">' +
+                            '<div class="hint">Празно поле праща към подателя на SMTP' +
+                            (nt.fallback ? ' (' + escapeHtml(nt.fallback) + ')' : '') + '.</div></div>' +
+                    '</div>' +
+                    '<div class="btn-row"><button class="btn" id="saveNotifyBtn">Запази</button></div></div>';
+
                 const oa = d.oauth || {};
                 const envG = (oa.from_env || {}).google;
                 const envF = (oa.from_env || {}).facebook;
@@ -1900,6 +1918,15 @@
                         e_shop_type: document.getElementById('lgShopType').value,
                     },
                 }, 'Юридическите данни са запазени.');
+            });
+
+            document.getElementById('saveNotifyBtn').addEventListener('click', async function() {
+                await saveSettings({
+                    notify: {
+                        email: document.getElementById('ntEmail').value.trim(),
+                        new_users: document.getElementById('ntNew').checked,
+                    },
+                }, 'Настройките за известия са запазени.');
             });
 
             document.getElementById('saveOauthBtn').addEventListener('click', async function() {
