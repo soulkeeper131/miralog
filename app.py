@@ -2102,6 +2102,11 @@ def api_onboard(data: OnboardRequest, request: Request):
     # the daily reading with it, since that is what brings people back.
     grant_signup_features(user["id"])
 
+    # Това е най-честият път за регистрация — от началната страница, а не от
+    # /register. Известието стоеше само на другите два и затова не тръгваше.
+    audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
+    notify_new_user(user["id"], email, "натална карта")
+
     if not chose_password:
         send_welcome_set_password(user["id"])
 

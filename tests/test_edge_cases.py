@@ -352,3 +352,14 @@ def test_notification_needs_a_valid_address(app, db, monkeypatch):
     app.notify_new_user(1, "nov@example.com", "Google")
     assert sent == [], "праща се към невалиден адрес"
     app.set_setting("notify_email", "")
+
+
+def test_every_signup_path_notifies(app):
+    """Известието стоеше на /register и OAuth, но не и на /api/onboard —
+    най-честият път, защото минава през началната страница. Този тест пази
+    всички да викат notify_new_user."""
+    import inspect
+    for func in (app.api_register, app.api_onboard, app._oauth_link_or_create):
+        source = inspect.getsource(func)
+        assert "notify_new_user" in source, \
+            f"{func.__name__} създава акаунт, но не известява"
