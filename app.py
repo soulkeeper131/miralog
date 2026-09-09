@@ -7654,7 +7654,7 @@ def api_horoskop(sign_slug: str, refresh: bool = False):
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": True}
         if running and running["done"].is_set() and running["error"]:
-            return {"body": AI_UNAVAILABLE, "date": date_bg}
+            return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_sign_horoscope(sign, date_bg, date_iso))
     if job["done"].is_set():
@@ -7662,7 +7662,7 @@ def api_horoskop(sign_slug: str, refresh: bool = False):
         if cached:
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": False}
-        return {"body": AI_UNAVAILABLE, "date": date_bg}
+        return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
     return {"pending": True, "date": date_bg}
 
 
@@ -7746,7 +7746,7 @@ def api_planet_house(planet_slug: str, house_num: int, refresh: bool = False):
         cached = get_planet_house(planet["key"], house["key"])
         if cached:
             return {"body": cached, "cached": False}
-        return {"body": AI_UNAVAILABLE}
+        return {"body": AI_UNAVAILABLE, "error": True}
     return {"pending": True}
 
 
@@ -7810,7 +7810,7 @@ def api_planet_sign(planet_slug: str, sign_slug: str, refresh: bool = False):
         cached = get_planet_sign(planet["key"], sign["sign"])
         if cached:
             return {"body": cached, "cached": False}
-        return {"body": AI_UNAVAILABLE}
+        return {"body": AI_UNAVAILABLE, "error": True}
     return {"pending": True}
 
 
@@ -7904,7 +7904,7 @@ def api_sign_profile(sign_slug: str, refresh: bool = False):
         cached = get_sign_profile(sign["sign"])
         if cached:
             return {"body": cached, "cached": False}
-        return {"body": AI_UNAVAILABLE}
+        return {"body": AI_UNAVAILABLE, "error": True}
     return {"pending": True}
 
 
@@ -8013,7 +8013,7 @@ def api_compatibility(pair_slug: str, refresh: bool = False):
         cached = get_compatibility(sign_a["sign"], sign_b["sign"])
         if cached:
             return {"body": cached, "cached": False}
-        return {"body": AI_UNAVAILABLE}
+        return {"body": AI_UNAVAILABLE, "error": True}
     return {"pending": True}
 
 

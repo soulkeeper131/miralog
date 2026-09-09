@@ -292,7 +292,8 @@
                 try {
                     const r = await fetch('/api/horoskop/' + slug);
                     const d = await r.json();
-                    if (!d.pending) { location.reload(); return; }
+                    if (d.error) { var hl = document.getElementById('horoLoading'); if (hl) hl.innerHTML = '<p>' + (d.body || 'Не се получи този път. Опитай пак след малко.') + '</p>'; return; }
+                    if (d.body) { location.reload(); return; }
                 } catch (e) { /* retry */ }
                 await new Promise(res => setTimeout(res, 3000));
             }
