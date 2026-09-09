@@ -495,6 +495,37 @@
         .oauth-split::before, .oauth-split::after {
             content: ""; flex: 1; height: 1px; background: var(--border);
         }
+        /* Връзките в реда за съгласие нямаха свой цвят и браузърът им слагаше
+           тъмносиньото по подразбиране (#0000ee) — 2.1:1 върху тъмния фон,
+           тоест практически невидими. */
+        .terms-row a {
+            color: var(--accent-light);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        .terms-row a:hover { color: var(--text); }
+        .terms-row.terms-missing a { color: var(--danger-text, #e2836b); }
+
+        /* Имейлът е втора възможност, не равностойна на Google. */
+        .email-toggle { margin: 4px 0 10px; }
+        .email-toggle > summary {
+            list-style: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 7px;
+            min-height: 44px; padding: 4px 2px;
+            color: var(--accent-light); font-size: .9rem; font-weight: 600;
+        }
+        .email-toggle > summary::-webkit-details-marker { display: none; }
+        .email-toggle > summary::after {
+            content: "▾"; font-size: .8em; transition: transform .15s ease;
+        }
+        .email-toggle[open] > summary::after { transform: rotate(180deg); }
+        .email-toggle > summary:focus-visible {
+            outline: none; box-shadow: var(--focus-ring); border-radius: 8px;
+        }
+        /* Без доставчик формата е единственият вход — тогава бутонът за
+           разгъване няма смисъл и се маха. */
+        .email-toggle.email-only > summary { display: none; }
+
         /* Съгласието с условията: показва се на място, не в модал. */
         .terms-row {
             display: flex; align-items: flex-start; gap: 8px;
@@ -675,20 +706,26 @@
                     {% endif %}
                 </div>
                 <p class="oauth-note">Без нова парола за помнене. Взимаме само имейла ти.</p>
-                <div class="oauth-split" role="separator"><span>или с имейл</span></div>
                 {% endif %}
 
-                <div class="save-fields">
-                    <label class="save-label" for="fEmail">Имейл</label>
-                    <input type="email" id="fEmail" placeholder="име@поща.bg" autocomplete="email">
+                {# Полетата за имейл се крият зад бутон, когато има Google —
+                   така най-бързият път остава пръв и сам. Без доставчик те са
+                   единственият вход и стоят отворени. #}
+                <details class="email-toggle{% if not (oauth_providers().google or oauth_providers().facebook) %} email-only{% endif %}"
+                         {% if not (oauth_providers().google or oauth_providers().facebook) %}open{% endif %}>
+                    <summary>Или запази с имейл и парола</summary>
+                    <div class="save-fields">
+                        <label class="save-label" for="fEmail">Имейл</label>
+                        <input type="email" id="fEmail" placeholder="име@поща.bg" autocomplete="email">
 
-                    <label class="save-label" for="fPassword">Парола <span class="opt">(по избор)</span></label>
-                    <input type="password" id="fPassword" placeholder="поне 6 символа"
-                           autocomplete="new-password">
-                    <p class="hint" id="saveHint">
-                        Ако оставиш паролата празна, ти пращаме връзка да я зададеш по-късно.
-                    </p>
-                </div>
+                        <label class="save-label" for="fPassword">Парола <span class="opt">(по избор)</span></label>
+                        <input type="password" id="fPassword" placeholder="поне 6 символа"
+                               autocomplete="new-password">
+                        <p class="hint" id="saveHint">
+                            Ако оставиш паролата празна, ти пращаме връзка да я зададеш по-късно.
+                        </p>
+                    </div>
+                </details>
 
                 <label class="terms-row" id="termsRow">
                     <input type="checkbox" id="termsAgree">
@@ -1188,6 +1225,16 @@
             const passEl = document.getElementById('fPassword');
             const email = emailEl.value.trim();
             const password = passEl.value;
+
+            // Полето може да е скрито зад „Или запази с имейл и парола“.
+            // Оплакване за празен имейл, който човекът не вижда, е безсмислено —
+            // първо отваряме секцията.
+            const toggle = emailEl.closest('details');
+            if (toggle && !toggle.open) {
+                toggle.open = true;
+                emailEl.focus();
+                return;
+            }
 
             if (email.indexOf('@') < 0) {
                 emailEl.focus();
