@@ -1509,9 +1509,30 @@
                     '</div>' +
                     '<div class="btn-row"><button class="btn" id="saveAiBtn">Запази AI настройките</button></div></div>';
 
+                /* „Ключовете са в Coolify“ и „процесът ги вижда“ са различни
+                   неща: сгрешено име или липсващ рестарт дават празно тук. */
+                const seen = smtp.env_seen || {};
+                const missing = Object.keys(seen).filter(function (k) {
+                    return !seen[k] && k !== 'SMTP_USE_TLS' && k !== 'SMTP_FROM';
+                });
                 html += '<div class="section"><h2>SMTP</h2>' +
                     (smtpLocked
                         ? '<div class="hint" style="margin-bottom:12px;">Настройките идват от Coolify environment променливи (SMTP_*) — полетата са само за преглед. Промяната става в Coolify, после рестарт.</div>'
+                        : '') +
+                    (Object.keys(seen).length
+                        ? '<div class="rows" style="margin-bottom:14px;">' +
+                          Object.keys(seen).map(function (k) {
+                              return '<div class="row-item"><span class="badge ' +
+                                  (seen[k] ? 'badge-ok' : 'badge-warn') + '">' +
+                                  (seen[k] ? 'вижда се' : 'липсва') + '</span>' +
+                                  '<span class="row-meta"><code>' + escapeHtml(k) + '</code></span></div>';
+                          }).join('') + '</div>'
+                        : '') +
+                    (missing.length
+                        ? '<div class="hint" style="margin-bottom:12px;color:var(--danger-text);">' +
+                          'Приложението не вижда ' + escapeHtml(missing.join(', ')) +
+                          '. Провери точното изписване в Coolify и рестартирай — ' +
+                          'променливите се четат при стартиране.</div>'
                         : '') +
                     '<div class="form-grid">' +
                         '<div class="form-group"><label for="smtpHost">Хост</label>' +

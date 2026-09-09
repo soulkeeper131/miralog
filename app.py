@@ -3695,6 +3695,10 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             "use_tls": (smtp_setting("smtp_use_tls") or "1") == "1",
             "password_set": bool(smtp_setting("smtp_password")),
             "source": "env" if any(os.environ.get(n) for n in _SMTP_ENV.values()) else "db",
+            # Кои променливи ги вижда самият процес. „Ключовете са в Coolify“
+            # и „приложението ги получава“ са две различни неща — при празен
+            # рестарт или сгрешено име тук се вижда веднага кое липсва.
+            "env_seen": {name: bool(os.environ.get(name)) for name in _SMTP_ENV.values()},
         },
         "templates": {
             key: get_setting(f"tpl_{key}") or default
