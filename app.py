@@ -7239,6 +7239,18 @@ async def index(request: Request):
          "features": FEATURE_PAGES, "zodiac_signs": ZODIAC_SIGNS,
          **seo_context(request, path="/")}))
 
+# Ботове, които гребят данни за обучение/скрейпинг, без да носят трафик.
+# Търсачките (Googlebot/Bingbot) и AI-тата, които цитират с линк
+# (OAI-SearchBot, ChatGPT-User, PerplexityBot, Applebot, ClaudeBot), остават позволени.
+_BLOCKED_BOTS = (
+    "GPTBot", "CCBot", "Bytespider", "Amazonbot", "Google-Extended",
+    "Meta-ExternalAgent", "Meta-ExternalFetcher",
+    "AhrefsBot", "SemrushBot", "MJ12bot", "BLEXBot", "PetalBot",
+    "YandexBot", "Baiduspider", "Sogou", "YisouSpider", "DotBot",
+    "DataForSeoBot", "SeekportBot", "Cliqzbot", "Exabot",
+)
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt(request: Request):
     """Crawler rules. The private app pages are never worth indexing."""
@@ -7256,7 +7268,8 @@ def robots_txt(request: Request):
             "Disallow: /admin\n"
             "Disallow: /synastry\n"
             "Disallow: /api/\n"
-            f"\nSitemap: {base}/sitemap.xml\n"
+            + "".join(f"\nUser-agent: {b}\nDisallow: /\n" for b in _BLOCKED_BOTS)
+            + f"\nSitemap: {base}/sitemap.xml\n"
         )
     return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
 
