@@ -495,6 +495,36 @@
         .oauth-split::before, .oauth-split::after {
             content: ""; flex: 1; height: 1px; background: var(--border);
         }
+        /* Съгласието с условията: показва се на място, не в модал. */
+        .terms-row {
+            display: flex; align-items: flex-start; gap: 8px;
+            font-size: 0.82rem; color: var(--text-muted); cursor: pointer;
+            margin: 14px 0; padding: 8px 10px; margin-left: -10px; margin-right: -10px;
+            border-radius: 10px; border: 1px solid transparent;
+            transition: border-color .15s ease, background-color .15s ease;
+        }
+        .terms-row input[type="checkbox"] {
+            margin-top: 3px; min-width: 16px; min-height: 16px;
+            accent-color: var(--accent); cursor: pointer;
+        }
+        .terms-row.terms-missing {
+            border-color: var(--danger, #e2836b);
+            background: color-mix(in srgb, var(--danger, #e2836b) 10%, transparent);
+            animation: terms-shake .32s ease;
+        }
+        .terms-row.terms-missing input[type="checkbox"] { accent-color: var(--danger, #e2836b); }
+        .terms-hint {
+            margin: -6px 0 12px; font-size: .8rem; font-weight: 600;
+            color: var(--danger-text, #e2836b);
+        }
+        @keyframes terms-shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .terms-row.terms-missing { animation: none; }
+        }
 </style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
@@ -660,10 +690,11 @@
                     </p>
                 </div>
 
-                <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.82rem;color:var(--text-muted);cursor:pointer;margin:14px 0;">
-                    <input type="checkbox" id="termsAgree" style="margin-top:3px;min-width:16px;min-height:16px;">
+                <label class="terms-row" id="termsRow">
+                    <input type="checkbox" id="termsAgree">
                     <span>Съгласен съм с <a href="/terms" target="_blank">Общите условия</a> и <a href="/privacy" target="_blank">Политиката за поверителност</a>.</span>
                 </label>
+                <p class="terms-hint" id="termsHint" hidden>Отметни съгласието, за да продължиш.</p>
 
                 <button type="button" class="btn" id="saveBtn">Запази картата</button>
             </div>
@@ -906,6 +937,36 @@
             } catch (e) { return null; }
         }
 
+        /* Модал за „не си отметнал съгласието“ е грешната реакция: изскача
+           върху екрана, човекът го затваря и не разбира какво иска от него —
+           изглежда като че ли нищо не се е случило. Вместо това отметката
+           светва в червено и се появява ред под нея. */
+        function flagTerms() {
+            var row = document.getElementById('termsRow');
+            var hint = document.getElementById('termsHint');
+            if (hint) hint.hidden = false;
+            if (!row) return;
+            row.classList.remove('terms-missing');
+            void row.offsetWidth;              // рестартира анимацията при втори клик
+            row.classList.add('terms-missing');
+            row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            var box = document.getElementById('termsAgree');
+            if (box) box.focus({ preventScroll: true });
+        }
+
+        // Щом човекът се съгласи, предупреждението изчезва само.
+        (function () {
+            var box = document.getElementById('termsAgree');
+            if (!box) return;
+            box.addEventListener('change', function () {
+                if (!box.checked) return;
+                var row = document.getElementById('termsRow');
+                var hint = document.getElementById('termsHint');
+                if (row) row.classList.remove('terms-missing');
+                if (hint) hint.hidden = true;
+            });
+        })();
+
         document.querySelectorAll('#oauthRow .oauth-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 if (!lastBirth) {
@@ -913,8 +974,7 @@
                     return;
                 }
                 if (!document.getElementById('termsAgree').checked) {
-                    uiAlert('Приеми Общите условия и Политиката за поверителност, за да продължиш.',
-                            { title: 'Нужно е съгласие' });
+                    flagTerms();
                     return;
                 }
                 stashPendingChart();
@@ -1141,8 +1201,7 @@
                 return;
             }
             if (!document.getElementById('termsAgree').checked) {
-                uiAlert('За да запазиш картата, трябва да приемеш Общите условия и Политиката за поверителност.',
-                        { title: 'Проверка' });
+                flagTerms();
                 return;
             }
             if (!lastBirth) { location.reload(); return; }
