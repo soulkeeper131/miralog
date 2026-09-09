@@ -2536,8 +2536,37 @@
         // Quick-glance cards above the full daily reading.
         function summaryCards(s) {
             if (!s) return '';
+            /* Старите кеширани разчитания са писани с повелителни глаголи
+               („Провери интуицията си“), които не се четат след заглавие
+               „Благоприятно е за:“. Сменя се само водещият глагол. */
+            const ADVICE_FIXES = {
+                'провери': 'проверка на', 'изчакай преди': 'изчакване преди',
+                'изчакай': 'изчакване преди', 'фокусирай се върху': 'фокус върху',
+                'фокусирай се': 'фокус върху', 'внимавай със': 'внимание към',
+                'внимавай с': 'внимание към', 'обърни внимание на': 'внимание към',
+                'погрижи се за': 'грижа за', 'подреди': 'подреждане на',
+                'довърши': 'довършване на', 'започни': 'започване на',
+                'планирай': 'планиране на', 'почини си': 'почивка',
+                'отдъхни': 'почивка', 'говори с': 'разговор с',
+                'запази': 'запазване на', 'потърси': 'търсене на', 'избягвай': '',
+            };
+            const advice = (raw) => {
+                let text = String(raw == null ? '' : raw).trim().replace(/\.$/, '');
+                if (!text) return '';
+                const low = text.toLowerCase();
+                const verbs = Object.keys(ADVICE_FIXES).sort((a, b) => b.length - a.length);
+                for (const verb of verbs) {
+                    if (low !== verb && !low.startsWith(verb + ' ')) continue;
+                    let rest = text.slice(verb.length).trim();
+                    // „себе си“ е устойчив израз и не се разполовява.
+                    if (!/себе\s+си$/.test(rest)) rest = rest.replace(/\s+си$/, '').trim();
+                    const out = (ADVICE_FIXES[verb] ? ADVICE_FIXES[verb] + ' ' + rest : rest).trim();
+                    return out ? out[0].toUpperCase() + out.slice(1) : '';
+                }
+                return text[0].toUpperCase() + text.slice(1);
+            };
             const list = (arr) => (Array.isArray(arr) ? arr : [])
-                .map(x => `<li>${escapeHtmlText(String(x))}</li>`).join('');
+                .map(x => `<li>${escapeHtmlText(advice(x))}</li>`).join('');
             const cards = [];
 
             if (s.mood) cards.push(`<div class="sum-card sum-mood">
@@ -2554,7 +2583,7 @@
 
             const cols = [];
             if (Array.isArray(s.do) && s.do.length) cols.push(`<div class="sum-col sum-do">
-                <div class="sum-col-head">✓ Добре е да</div><ul>${list(s.do)}</ul></div>`);
+                <div class="sum-col-head">✓ Благоприятно е за</div><ul>${list(s.do)}</ul></div>`);
             if (Array.isArray(s.avoid) && s.avoid.length) cols.push(`<div class="sum-col sum-avoid">
                 <div class="sum-col-head">✕ Избягвай</div><ul>${list(s.avoid)}</ul></div>`);
             if (cols.length) html += `<div class="sum-cols">${cols.join('')}</div>`;

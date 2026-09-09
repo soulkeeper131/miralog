@@ -158,13 +158,13 @@
                 {% if summary.do %}
                 <div class="day-list day-list--do">
                     <h3><span aria-hidden="true">✅</span> Благоприятно е за</h3>
-                    <ul>{% for d in summary.do %}<li>{{ d }}</li>{% endfor %}</ul>
+                    <ul>{% for d in summary.do %}<li>{{ d | advice }}</li>{% endfor %}</ul>
                 </div>
                 {% endif %}
                 {% if summary.avoid %}
                 <div class="day-list day-list--avoid">
                     <h3><span aria-hidden="true">🚫</span> Избягвай</h3>
-                    <ul>{% for a in summary.avoid %}<li>{{ a }}</li>{% endfor %}</ul>
+                    <ul>{% for a in summary.avoid %}<li>{{ a | advice }}</li>{% endfor %}</ul>
                 </div>
                 {% endif %}
             </div>

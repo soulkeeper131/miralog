@@ -270,3 +270,33 @@ def test_section_number_is_separated_from_the_title(app):
     """Иначе излиза „1Общо усещане“ вместо „1 Общо усещане“."""
     out = app._md_to_html("1. **Общо усещане за деня**\n\nТекст.")
     assert "</span> " in out, "номерът е слепен със заглавието"
+
+
+# --- съветите след заглавието „Благоприятно е за:“ ---------------------------
+
+def test_imperative_advice_becomes_a_noun_phrase(app):
+    """„Благоприятно е за: Провери интуицията си“ не е български."""
+    assert app.normalise_advice("Провери интуицията си") == "Проверка на интуицията"
+    assert app.normalise_advice("Изчакай преди решения") == "Изчакване преди решения"
+    assert app.normalise_advice("Подреди дома си") == "Подреждане на дома"
+
+
+def test_reflexive_phrase_stays_whole(app):
+    """„себе си“ се чупи, ако „си“ отпадне като обикновено притежателно."""
+    assert app.normalise_advice("Фокусирай се върху себе си") == "Фокус върху себе си"
+
+
+def test_noun_phrases_are_left_alone(app):
+    """Новите разчитания вече идват както трябва — не ги пипаме."""
+    for text in ("Конфликти вкъщи", "Бързи ангажименти", "Претоварване с работа"):
+        assert app.normalise_advice(text) == text
+
+
+def test_advice_handles_empty_and_punctuation(app):
+    assert app.normalise_advice("") == ""
+    assert app.normalise_advice(None) == ""
+    assert app.normalise_advice("почини си.") == "Почивка"
+
+
+def test_advice_capitalises_the_result(app):
+    assert app.normalise_advice("спокойни разговори")[0].isupper()
