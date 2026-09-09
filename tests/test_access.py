@@ -193,3 +193,47 @@ def test_teaser_refuses_someone_elses_chart(app, db):
     with pytest.raises(HTTPException) as err:
         app.api_teaser(pid, user=(b["id"], b["email"]))
     assert err.value.status_code == 404
+
+
+# --- изнасяне на разчитане навън (PDF, аудио, имейл) --------------------------
+
+def test_export_of_a_paid_reading_needs_the_purchase(app, user):
+    """Проверката стоеше само на рутовете в приложението. PDF-ът и аудиото
+    гледаха само „твоя ли е картата“ — а кеширано платено разчитане може да
+    остане и след като правото е отпаднало."""
+    with pytest.raises(HTTPException) as err:
+        app.require_reading_access(user["id"], "profile")
+    assert err.value.status_code == 402
+    assert err.value.detail["offer"]["price_cents"] > 0
+
+
+def test_export_of_a_free_reading_is_allowed(app, user):
+    """Дневният хороскоп е безплатен — изнасянето му не бива да се блокира."""
+    app.require_reading_access(user["id"], "horoscope:2026-09-09")
+    app.require_reading_access(user["id"], "chart")
+
+
+def test_export_allowed_after_paying(app, user):
+    app.grant_feature_purchase(user["id"], "profile", 499, "EUR", None)
+    app.require_reading_access(user["id"], "profile")
+
+
+def test_export_key_suffix_is_ignored(app, user):
+    """Ключът носи дата или период — правото се гледа по базовия модул."""
+    app.grant_feature_purchase(user["id"], "period", 399, "EUR", None)
+    app.require_reading_access(user["id"], "period:2026-09-01_2026-09-30")
+
+
+def test_love_full_maps_to_the_love_module(app, user):
+    with pytest.raises(HTTPException):
+        app.require_reading_access(user["id"], "love-full")
+    app.grant_feature_purchase(user["id"], "love", 599, "EUR", None)
+    app.require_reading_access(user["id"], "love-full")
+
+
+def test_admin_can_export_anything(app, db):
+    admin = db.create_user(f"ax-{secrets.token_hex(3)}@example.com", db.hash_password("x"))
+    with sqlite3.connect(app.DB_PATH) as c:
+        c.execute("UPDATE users SET role = 'admin' WHERE id = ?", (admin["id"],))
+        c.commit()
+    app.require_reading_access(admin["id"], "profile")

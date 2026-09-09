@@ -6822,6 +6822,45 @@ READING_TITLES = {
     "love-full":  "Любовен хороскоп",
 }
 
+# Ключът на кеша носи и суфикс („horoscope:2026-09-09“), а правото за достъп
+# се пази по базовия ключ. „love-full“ е част от любовния модул.
+_READING_FEATURE = {"love-full": "love"}
+
+
+def reading_feature(cache_key: str) -> str:
+    """Кой модул трябва да е отключен, за да се изнесе това разчитане."""
+    base = (cache_key or "").split(":", 1)[0]
+    return _READING_FEATURE.get(base, base)
+
+
+def require_reading_access(user_id: int, cache_key: str) -> None:
+    """Пази изнасянето на разчитане навън (PDF, аудио, имейл).
+
+    Проверката за достъп стоеше само на рутовете, които показват текста в
+    приложението. Изнасянето минаваше само през „твоя ли е картата“ — а
+    кеширано платено разчитане може да съществува и след като правото е
+    отпаднало (върнати пари, отменен админ достъп). Тогава PDF-ът го
+    подаваше на човек без покупка.
+    """
+    feature = reading_feature(cache_key)
+    if not feature:
+        return
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    if row.get("role") == "admin":
+        return
+    known = {f["key"] for f in FEATURE_CATALOGUE}
+    if feature in known and feature not in unlocked_features(row):
+        raise HTTPException(402, {
+            "reason": "locked",
+            "feature": feature,
+            "feature_name": reading_title(cache_key),
+            "message": "Това разчитане не е отключено в профила ти.",
+            "offer": feature_offer(feature),
+        })
+
+
 def reading_title(cache_key: str) -> str:
     """Human title for a cache key, which may carry a ':suffix' (date, period, sign)."""
     base = (cache_key or "").split(":", 1)[0]
@@ -6910,6 +6949,7 @@ def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(ge
     person = get_person(person_id, user_id)
     if not person:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
+    require_reading_access(user_id, key)
 
     pdf, filename = build_person_pdf(person, key)
     # The filename holds Cyrillic, so it goes out RFC 5987-encoded.
@@ -7005,6 +7045,7 @@ def api_reading_audio(person_id: int, key: str,
     person = get_person(person_id, user_id)
     if not person:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
+    require_reading_access(user_id, key)
 
     cached = get_ai_cache(person["id"], key)
     if not cached:
@@ -7058,6 +7099,7 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
     to = (data.to or email or "").strip()
     if "@" not in to:
         raise HTTPException(400, "Въведи валиден имейл адрес.")
+    require_reading_access(user_id, data.key)
 
     pdf, filename = build_person_pdf(person, data.key)
     title = reading_title(data.key)
