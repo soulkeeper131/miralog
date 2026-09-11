@@ -206,3 +206,18 @@
     .mod-overlay, .mod-sheet, .mod-card { transition: none; }
     .mod-sheet { transform: none; }
 }
+
+/* Избор от регистрацията, чието плащане не е тръгнало. Не отмятаме вместо
+   човека — всяко копче тук купува веднага — но казваме кое е искал и го
+   открояваме, за да не го търси наново. */
+.mod-pending {
+    margin: 0 0 14px; padding: 12px 14px;
+    border-radius: 12px; border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    font-size: .88rem; line-height: 1.6; color: var(--text-soft);
+}
+.mod-pending strong { color: var(--text-heading); }
+.mod-card--wanted {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}

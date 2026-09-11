@@ -231,6 +231,26 @@
                 ? sellable.map(cardHtml).join('')
                 : '<div class="mod-loading">Няма допълнителни модули в момента.</div>';
 
+            /* Ако плащането при регистрацията не е тръгнало, човекът е избрал
+               нещо и го е загубил. Не отмятаме вместо него — тук всяко копче
+               купува веднага — но му казваме кое беше и го извеждаме отпред. */
+            const want = opts && opts.preselect;
+            if (want && (want.keys || []).length) {
+                const names = (want.keys || []).map(k => {
+                    const m = sellable.find(i => i.key === k);
+                    return m ? m.name : k;
+                });
+                const note = document.createElement('div');
+                note.className = 'mod-pending';
+                note.innerHTML = `<strong>Избра ги при регистрацията:</strong> ${esc(names.join(', '))}.
+                    Плащането тогава не тръгна — вземи ги оттук.`;
+                grid.parentNode.insertBefore(note, grid);
+                (want.keys || []).forEach(k => {
+                    const card = grid.querySelector(`[data-key="${CSS.escape(k)}"]`);
+                    if (card) card.closest('.mod-card')?.classList.add('mod-card--wanted');
+                });
+            }
+
             // The bundle sits above the grid: it is a different kind of choice
             // from "pick this one module", and burying it among the cards
             // would make it read as a seventh module.
@@ -270,9 +290,15 @@
        but only if there is actually something left to buy. Somebody who
        already owns every module has nothing to choose from. */
     window.maybeShowModulePicker = async function () {
-        if (localStorage.getItem(SEEN_KEY)) return;
+        let pending = null;
         try {
             const data = await loadFeatures();
+            // Избор от регистрацията, чието плащане не е тръгнало. Има
+            // предимство пред „вече е показван“ — човекът е искал да плати
+            // и не бива да търси модулите наново.
+            pending = data.pending;
+            if (!pending && localStorage.getItem(SEEN_KEY)) return;
+
             const forSale = (data.catalogue || []).filter(item =>
                 !item.included && !item.unlocked && item.offer);
             if (!forSale.length) {
@@ -283,7 +309,7 @@
         } catch (e) {
             return;   // a failed check must never pop an empty sheet
         }
-        openModulePicker({ firstTime: true });
+        openModulePicker({ firstTime: true, preselect: pending });
     };
 })();
 

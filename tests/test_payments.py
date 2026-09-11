@@ -157,3 +157,89 @@ def test_every_locked_module_can_be_bought(app, user):
             continue
         assert app.feature_offer(key) or key in buyable, \
             f"{key} е заключен, но не може да се купи по никакъв начин"
+
+
+# --- когато плащането не тръгне ----------------------------------------------
+
+class _Req:
+    """Достатъчно от Request, колкото ползва api_onboard."""
+    headers = {"host": "astrokarta.bg"}
+    base_url = "https://astrokarta.bg/"
+    url = type("U", (), {"scheme": "https"})()
+
+    class client:
+        host = "1.2.3.4"
+
+
+def _onboard(app, email, wanted):
+    data = app.OnboardRequest(
+        email=email, password="parola123", wanted=wanted,
+        name="Тест", year=1990, month=5, day=14, hour=8, minute=30,
+        lat=42.7, lon=23.3, timezone="Europe/Sofia")
+    return app.api_onboard(data, _Req())
+
+
+def test_failed_checkout_still_creates_the_account(app, db, monkeypatch):
+    """Счупен Stripe не бива да спира регистрацията."""
+    monkeypatch.setattr(app, "MOCK_PAYMENTS", False)
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("Stripe е долу")))
+    result = _onboard(app, f"f-{secrets.token_hex(3)}@example.com", ["profile"])
+    assert result["ok"] is True
+    assert result.get("checkout_url") is None
+
+
+def test_failed_checkout_tells_the_customer(app, db, monkeypatch):
+    """Мълчаливият провал беше същинският проблем: човекът се озоваваше на
+    картата си, без изобщо да го питат за пари."""
+    monkeypatch.setattr(app, "MOCK_PAYMENTS", False)
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("Stripe е долу")))
+    result = _onboard(app, f"f-{secrets.token_hex(3)}@example.com", ["profile"])
+    assert result.get("checkout_error"), "клиентът не научава, че плащането е пропаднало"
+
+
+def test_failed_checkout_remembers_the_choice(app, db, monkeypatch):
+    """Изборът не бива да се губи — иначе трябва да се прави наново."""
+    monkeypatch.setattr(app, "MOCK_PAYMENTS", False)
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("Stripe е долу")))
+    email = f"f-{secrets.token_hex(3)}@example.com"
+    _onboard(app, email, ["profile", "akashic"])
+
+    with sqlite3.connect(app.DB_PATH) as c:
+        uid = c.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
+
+    pending = app.api_my_features(user=(uid, email))["pending"]
+    assert pending and set(pending["keys"]) == {"profile", "akashic"}
+
+
+def test_pending_choice_is_delivered_once(app, db, monkeypatch):
+    """Второ отваряне не бива да показва същото предложение пак."""
+    monkeypatch.setattr(app, "MOCK_PAYMENTS", False)
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("Stripe е долу")))
+    email = f"f-{secrets.token_hex(3)}@example.com"
+    _onboard(app, email, ["profile"])
+    with sqlite3.connect(app.DB_PATH) as c:
+        uid = c.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
+
+    assert app.api_my_features(user=(uid, email))["pending"] is not None
+    assert app.api_my_features(user=(uid, email))["pending"] is None
+
+
+def test_failed_checkout_unlocks_nothing(app, db, monkeypatch):
+    """Най-важното: провалено плащане не бива да дава достъп."""
+    monkeypatch.setattr(app, "MOCK_PAYMENTS", False)
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("Stripe е долу")))
+    email = f"f-{secrets.token_hex(3)}@example.com"
+    _onboard(app, email, ["profile"])
+    with sqlite3.connect(app.DB_PATH) as c:
+        uid = c.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
+    assert "profile" not in app.unlocked_features(app.get_user_by_id(uid))

@@ -2173,7 +2173,22 @@ def api_onboard(data: OnboardRequest, request: Request):
                 brand=brand_name(),
             )
         except Exception as e:
-            log.warning("Onboarding checkout за %s се провали: %s", email, e)
+            # Мълчаливият провал беше по-лош от самата грешка: човекът се
+            # озоваваше на картата си, без изобщо да го питат за пари, а от
+            # админа изглеждаше като регистрация без поръчка. Сега клиентът
+            # научава, а изборът се запомня, за да плати от картата.
+            log.warning("Onboarding checkout за %s се провали: %s", email, e, exc_info=True)
+            result["checkout_error"] = (
+                "Профилът е готов, но плащането не можа да се подготви. "
+                "Избраните разчитания те чакат в картата — опитай оттам.")
+            remember_pending_purchase(user["id"], wanted, is_bundle)
+    elif wanted:
+        # Нито тестов режим, нито Stripe: акаунтът е направен, но няма как да
+        # се плати. Изборът пак се пази, за да не се губи.
+        result["checkout_error"] = (
+            "Профилът е готов. Плащанията са временно изключени — "
+            "избраните разчитания те чакат в картата.")
+        remember_pending_purchase(user["id"], wanted, is_bundle)
     result["wanted"] = wanted
     result["bundle"] = is_bundle
     return result
@@ -3569,6 +3584,9 @@ def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
             }
             for f in FEATURE_CATALOGUE
         ],
+        # Какво е избрал при регистрация, ако плащането тогава не е тръгнало.
+        # Показва се отметнато, за да не се търси наново.
+        "pending": take_pending_purchase(user_id),
     }
 
 @app.post("/api/features/bundle/request")
@@ -4166,6 +4184,34 @@ def grant_feature_purchase(user_id: int, feature_key: str, price_cents: int,
 # затова влезлите през Google или Facebook оставаха с акаунт, който не може
 # да види собствената си натална карта.
 FREE_ON_SIGNUP = ("chart", "horoscope")
+
+
+def remember_pending_purchase(user_id: int, keys: list, is_bundle: bool) -> None:
+    """Запомня какво е искал човекът, когато плащането не е тръгнало.
+
+    Без това изборът изчезва и трябва да се прави наново — а точно тогава
+    повечето хора се отказват. Пази се като настройка, не като покупка:
+    нищо не се отключва, само се помни.
+    """
+    try:
+        payload = json.dumps({"keys": list(keys or []), "bundle": bool(is_bundle)},
+                             ensure_ascii=False)
+        set_setting(f"pending_purchase_{user_id}", payload)
+    except Exception:
+        log.warning("Неуспешно запомняне на избора за user=%s", user_id, exc_info=True)
+
+
+def take_pending_purchase(user_id: int) -> Optional[dict]:
+    """Връща запомнения избор и го изтрива — ползва се веднъж."""
+    raw = get_setting(f"pending_purchase_{user_id}")
+    if not raw:
+        return None
+    set_setting(f"pending_purchase_{user_id}", "")
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    return data if data.get("keys") else None
 
 
 def grant_signup_features(user_id: int) -> None:

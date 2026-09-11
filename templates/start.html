@@ -1293,6 +1293,13 @@
                         + '; path=/; SameSite=Lax; max-age=2592000';
                 }
 
+                // Плащането не е тръгнало: казваме го, вместо човекът да се
+                // озове на картата и да не разбере защо не е платил.
+                if (data.checkout_error) {
+                    await uiAlert(escapeHtml(data.checkout_error),
+                                  { title: 'Профилът е готов' });
+                }
+
                 // Picked modules go straight to Stripe; otherwise to the chart.
                 if (data.checkout_url) {
                     const p = {};
