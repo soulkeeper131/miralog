@@ -858,6 +858,21 @@ _ADMIN_HOST_ALLOWED_EXACT = {
 _ADMIN_HOST_ALLOWED_PREFIXES = ("/api/admin/", "/static/", "/uploads/")
 
 
+def _is_oauth_auth_path(path: str) -> bool:
+    """OAuth start/callback — нужни за Google/Facebook вход от админ панела.
+
+    OAUTH_ENDPOINTS е дефиниран по-надолу в модула; тук го четем лениво (при
+    заявка), когато модулът вече е зареден изцяло.
+    """
+    parts = path.strip("/").split("/")
+    return (
+        len(parts) == 4
+        and parts[0] == "api" and parts[1] == "auth"
+        and parts[2] in OAUTH_ENDPOINTS
+        and parts[3] in ("start", "callback")
+    )
+
+
 @app.middleware("http")
 async def admin_host_guard(request: Request, call_next):
     host = (request.headers.get("host") or "").split(":")[0].strip().lower()
@@ -872,6 +887,7 @@ async def admin_host_guard(request: Request, call_next):
     if is_admin_host:
         allowed = (
             path in _ADMIN_HOST_ALLOWED_EXACT
+            or _is_oauth_auth_path(path)
             or any(path.startswith(p) for p in _ADMIN_HOST_ALLOWED_PREFIXES)
         )
         if not allowed:
