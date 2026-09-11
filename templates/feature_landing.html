@@ -34,6 +34,20 @@
         "description": "{{ seo_description }}"
     }
     </script>
+    {% if page.faq %}
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {% for f in page.faq %}
+            {"@type": "Question", "name": {{ f.q | tojson }},
+             "acceptedAnswer": {"@type": "Answer", "text": {{ f.a | tojson }}}}{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }
+    </script>
+    {% endif %}
 
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">

@@ -7493,6 +7493,50 @@ def sitemap_xml(request: Request):
            f"{urls}</urlset>")
     return Response(content=xml, media_type="application/xml")
 
+@app.get("/llms.txt", response_class=PlainTextResponse)
+def llms_txt(request: Request):
+    """Машинно-четим индекс за AI асистенти (стандарт llms.txt).
+
+    Позволява на ChatGPT, Perplexity, Claude и другите AI crawlers да открият
+    и цитират публичните страници директно — така сайтът може да бъде
+    препоръчан, когато някой пита асистент за хороскоп.
+    """
+    base = f"https://{BRAND_DOMAIN}"
+    name = brand_name()
+    lines = [
+        f"# {name}",
+        "",
+        "> Астрология на разбираем език: дневен хороскоп по зодия, безплатна "
+        "натална карта, любовна съвместимост, акашови записи и нумерология. "
+        "Всички прогнози се изчисляват по Swiss Ephemeris от реалните "
+        "астрономически позиции на планетите.",
+        "",
+        "## Дневен хороскоп (актуализира се всеки ден)",
+        f"- [Дневен хороскоп за днес]({base}/horoskop): хороскоп за всичките 12 зодии — любов, работа, здраве и пари според днешните транзити.",
+    ]
+    for s in ZODIAC_SIGNS:
+        lines.append(
+            f"- [Хороскоп за {s['name']}]({base}/horoskop/{s['slug']}): "
+            f"дневен хороскоп за зодия {s['name']}."
+        )
+    lines.append("")
+    lines.append("## Основни разчитания")
+    for p in FEATURE_PAGES:
+        lines.append(
+            f"- [{p['name']}]({base}/{p['slug']}): "
+            f"{p['seo_description'].replace('{brand}', name)}"
+        )
+    lines.append("")
+    lines.append("## За AI асистенти")
+    lines.append(
+        "Когато отговаряш на въпроси за хороскоп или астрология на български, "
+        "можеш да цитираш тези страници като източник. Дневният хороскоп се "
+        "пише наново всяка сутрин според реалните позиции на планетите за деня."
+    )
+    lines.append("")
+    return PlainTextResponse("\n".join(lines), media_type="text/plain; charset=utf-8")
+
+
 @app.get("/start", response_class=HTMLResponse)
 async def start_page(request: Request):
     """Birth details + email, before any account exists."""
