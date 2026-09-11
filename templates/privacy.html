@@ -16,7 +16,6 @@
         table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.95rem; }
         th, td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid #e3dceb; }
         th { background: #f6f2fa; }
-        .placeholder { background: #fff3cd; border-bottom: 2px solid #e6b800; padding: 0 3px; }
     </style>
 {% include "_analytics.html" %}
 <link rel="stylesheet" href="/static/consent.css">
@@ -32,8 +31,9 @@
     <p>Администратор на личните данни е:</p>
     <p>
         <strong>{{ legal().company_name }}</strong><br>
-        ЕИК: <span class="placeholder">{{ legal().company_id }}</span><br>
-        Адрес: <span class="placeholder">{{ legal().address }}</span><br>
+        ЕИК: {{ legal().company_id }}<br>
+        ДДС: {{ legal().vat_number }}<br>
+        Адрес: {{ legal().address }}<br>
         Имейл за въпроси за защита на данните: <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>
     </p>
     <p>Длъжностно лице по защита на данните (DPO): {% if legal().dpo %}{{ legal().dpo }}{% else %}няма назначено — за малка по обем обработка на данни такова не е задължително по чл. 37 GDPR{% endif %}.</p>

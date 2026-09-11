@@ -12,7 +12,6 @@
         h2 { font-size: 1.25rem; margin-top: 2.2em; }
         a { color: #764a93; }
         .muted { color: #655a78; font-size: 0.95rem; }
-        .placeholder { background: #fff3cd; border-bottom: 2px solid #e6b800; padding: 0 3px; }
     </style>
 {% include "_analytics.html" %}
 <link rel="stylesheet" href="/static/consent.css">
@@ -28,8 +27,9 @@
     <p>Администратор на услугата („Доставчик“):</p>
     <p>
         <strong>{{ legal().company_name }}</strong><br>
-        ЕИК: <span class="placeholder">{{ legal().company_id }}</span><br>
-        Адрес: <span class="placeholder">{{ legal().address }}</span><br>
+        ЕИК: {{ legal().company_id }}<br>
+        ДДС: {{ legal().vat_number }}<br>
+        Адрес: {{ legal().address }}<br>
         Имейл: <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>
     </p>
 
