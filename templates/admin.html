@@ -879,6 +879,60 @@
                     html += '</tbody></table></div>';
                 }
                 html += '</div>';
+
+                /* Активност: прегледи, регистрации, активни потребители. */
+                const act = d.activity || {};
+                html += '<div class="section"><h2>Активност</h2><div class="stats">';
+                html += statCard('Прегледи · 24 ч', Number(act.views_24h) || 0, 'За последните 24 часа');
+                html += statCard('Прегледи · 7 дни', Number(act.views_7d) || 0, 'За последните 7 дни');
+                html += statCard('Прегледи · общо', Number(act.views_total) || 0, 'От пускането на брояча');
+                html += statCard('Активни · 7 дни', Number(act.active_users_7d) || 0, 'Потребители, видени наскоро');
+                html += '</div></div>';
+
+                html += '<div class="section"><h2>Скорошни регистрации</h2>';
+                const regs = act.recent_registrations || [];
+                if (!regs.length) {
+                    html += '<div class="empty">Още няма регистрации.</div>';
+                } else {
+                    html += '<div class="table-wrap"><table><thead><tr>' +
+                        '<th>Имейл</th><th>Регистриран</th><th>Карти</th></tr></thead><tbody>';
+                    regs.forEach(function(u) {
+                        html += '<tr><td>' + escapeHtml(u.email) + '</td>' +
+                            '<td>' + fmtDate(u.created_at) + '</td>' +
+                            '<td class="num">' + (u.persons || 0) + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                }
+                html += '</div>';
+
+                html += '<div class="section"><h2>Активни потребители (24 ч)</h2>';
+                const au = act.active_users || [];
+                if (!au.length) {
+                    html += '<div class="empty">Никой не е влизал напоследък.</div>';
+                } else {
+                    html += '<div class="rows">';
+                    au.forEach(function(u) {
+                        html += '<div class="row-item"><div class="row-main">' + escapeHtml(u.email) + '</div>' +
+                            '<span class="row-meta">' + escapeHtml(String(u.last_seen || '').slice(0, 16).replace('T', ' ')) + '</span></div>';
+                    });
+                    html += '</div>';
+                }
+                html += '</div>';
+
+                html += '<div class="section"><h2>Най-гледани страници (7 дни)</h2>';
+                const tp = act.top_pages || [];
+                if (!tp.length) {
+                    html += '<div class="empty">Още няма прегледи.</div>';
+                } else {
+                    html += '<div class="rows">';
+                    tp.forEach(function(p) {
+                        html += '<div class="row-item"><span class="badge badge-plan">' + escapeHtml(p.c) + '</span>' +
+                            '<span class="row-meta">' + escapeHtml(p.path) + '</span></div>';
+                    });
+                    html += '</div>';
+                }
+                html += '</div>';
+
                 el.innerHTML = html;
             } catch (e) {
                 if (!forbidden) el.innerHTML = '<div class="section"><div class="error">' + escapeHtml(e.message) + '</div></div>';

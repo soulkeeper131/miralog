@@ -429,6 +429,7 @@ def init_db():
             ("is_blocked", "ALTER TABLE users ADD COLUMN is_blocked INTEGER NOT NULL DEFAULT 0"),
             ("note", "ALTER TABLE users ADD COLUMN note TEXT"),
             ("last_login", "ALTER TABLE users ADD COLUMN last_login TIMESTAMP"),
+            ("last_seen", "ALTER TABLE users ADD COLUMN last_seen TIMESTAMP"),
             ("display_name", "ALTER TABLE users ADD COLUMN display_name TEXT"),
             ("stripe_customer_id", "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT"),
             ("stripe_subscription_id", "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT"),
@@ -470,6 +471,19 @@ def init_db():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_log(event)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)")
+
+        # Леко проследяване на прегледите (без IP/UA) — за „активност" в админ
+        # дашборда. Само път + час + (опц.) user_id — обобщена анонимна статистика.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS page_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL,
+                user_id INTEGER,
+                viewed_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_time ON page_views(viewed_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path)")
 
         # The seeded admin predates the role column, so claim it here.
         conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
@@ -931,6 +945,56 @@ async def cache_static(request: Request, call_next):
     return response
 
 
+# --- Проследяване на прегледите (обобщена анонимна статистика) ---
+# Записваме само път + час + (опц.) user_id. Без IP, без User-Agent, без cookie
+# фингерпринт — GDPR-щадящо. Админ поддомейнът и ботовете се пропускат, за да
+# не раздуват числата.
+_BOT_UA = (
+    "bot", "crawl", "spider", "slurp", "baidu", "yandex", "ahrefs", "semrush",
+    "mj12", "petal", "bytespider", "amazonbot", "gptbot", "ccbot", "claudebot",
+    "perplexity", "meta-external", "headless", "python-requests", "curl", "wget",
+    "google-extended", "chatgpt", "openai", "facebookexternalhit",
+)
+
+
+@app.middleware("http")
+async def track_page_views(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+        if host == ADMIN_HOST:
+            return response
+        if request.method != "GET":
+            return response
+        if response.status_code != 200:
+            return response
+        path = request.url.path or "/"
+        if path.startswith(("/api/", "/static/", "/uploads/", "/admin", "/healthz")):
+            return response
+        if "text/html" not in (response.headers.get("content-type") or ""):
+            return response
+        ua = (request.headers.get("user-agent") or "").lower()
+        if any(b in ua for b in _BOT_UA):
+            return response
+        user_id = None
+        token = _token_from_request(request)
+        if token:
+            try:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                user_id = int(payload["sub"])
+            except Exception:
+                user_id = None
+        now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO page_views (path, user_id, viewed_at) VALUES (?, ?, ?)",
+                (path, user_id, now),
+            )
+    except Exception:
+        pass  # статистиката никога не трябва да чупи страница
+    return response
+
+
 async def _background_jobs_loop():
     """Hourly lifecycle + digest emails. Failures are logged, never crash the app."""
     await asyncio.sleep(15)
@@ -1053,6 +1117,20 @@ def totp_uri(secret: str, email: str, issuer: str) -> str:
         return ""
     return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=issuer)
 
+def _touch_last_seen(user_id: int) -> None:
+    """Обновява last_seen (най-много веднъж на 5 мин) — за „активни потребители"."""
+    now = datetime.datetime.utcnow()
+    cutoff = (now - datetime.timedelta(minutes=5)).isoformat(timespec="seconds")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "UPDATE users SET last_seen = ? WHERE id = ? AND (last_seen IS NULL OR last_seen < ?)",
+                (now.isoformat(timespec="seconds"), user_id, cutoff),
+            )
+    except Exception:
+        pass
+
+
 def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> Tuple[int, str]:
     """Dependency that returns (user_id, email) from valid JWT token."""
     if not token:
@@ -1061,6 +1139,7 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
         email = payload["email"]
+        _touch_last_seen(user_id)
         return user_id, email
     except JWTError:
         raise HTTPException(401, "Сесията изтече. Влез отново.")
@@ -1076,7 +1155,9 @@ def get_current_user_flex(request: Request) -> Tuple[int, str]:
         raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return int(payload["sub"]), payload["email"]
+        user_id = int(payload["sub"])
+        _touch_last_seen(user_id)
+        return user_id, payload["email"]
     except JWTError:
         raise HTTPException(401, "Сесията изтече. Влез отново.")
 
@@ -3068,11 +3149,47 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
             "FROM payments p JOIN users u ON u.id = p.user_id "
             "ORDER BY p.paid_at DESC LIMIT 10"
         )]
+
+        # Активност: прегледи на страници + скорошни регистрации + активни потребители.
+        now = datetime.datetime.utcnow()
+        day_ago = (now - datetime.timedelta(days=1)).isoformat(timespec="seconds")
+        week_ago = (now - datetime.timedelta(days=7)).isoformat(timespec="seconds")
+        views_24h = conn.execute(
+            "SELECT COUNT(*) c FROM page_views WHERE viewed_at >= ?", (day_ago,)
+        ).fetchone()["c"]
+        views_7d = conn.execute(
+            "SELECT COUNT(*) c FROM page_views WHERE viewed_at >= ?", (week_ago,)
+        ).fetchone()["c"]
+        views_total = conn.execute("SELECT COUNT(*) c FROM page_views").fetchone()["c"]
+        top_pages = [dict(r) for r in conn.execute(
+            "SELECT path, COUNT(*) c FROM page_views WHERE viewed_at >= ? "
+            "GROUP BY path ORDER BY c DESC LIMIT 10", (week_ago,)
+        )]
+        recent_registrations = [dict(r) for r in conn.execute(
+            "SELECT u.id, u.email, u.created_at, u.last_seen, "
+            "(SELECT COUNT(*) FROM persons p WHERE p.user_id = u.id) AS persons "
+            "FROM users u ORDER BY u.created_at DESC LIMIT 10"
+        )]
+        active_users = [dict(r) for r in conn.execute(
+            "SELECT id, email, last_seen FROM users "
+            "WHERE last_seen IS NOT NULL AND last_seen >= ? "
+            "ORDER BY last_seen DESC LIMIT 20", (day_ago,)
+        )]
+        active_users_7d = conn.execute(
+            "SELECT COUNT(*) c FROM users WHERE last_seen IS NOT NULL AND last_seen >= ?",
+            (week_ago,)
+        ).fetchone()["c"]
     return {
         "users": users, "blocked": blocked, "persons": persons,
         "by_plan": by_plan,
         "revenue_cents": revenue, "revenue_month_cents": revenue_month,
         "top_modules": top_modules, "recent_payments": recent,
+        "activity": {
+            "views_24h": views_24h, "views_7d": views_7d, "views_total": views_total,
+            "top_pages": top_pages,
+            "recent_registrations": recent_registrations,
+            "active_users": active_users, "active_users_7d": active_users_7d,
+        },
         # Checkout without a webhook secret takes money and unlocks nothing,
         # which is invisible from outside — so it is reported here.
         "payments_health": {
