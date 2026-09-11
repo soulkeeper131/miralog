@@ -65,6 +65,12 @@
 {% include "_analytics.html" %}
 </head>
 <body>
+    <nav class="site-nav" aria-label="Основна навигация">
+        <a href="/horoskop">Дневен хороскоп</a>
+        <a href="/natalna-karta">Натална карта</a>
+        <a href="/lyubovna-savmestimost">Любовна съвместимост</a>
+        <a href="/akashovi-zapisi">Акашови записи</a>
+    </nav>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
     <main>
@@ -124,9 +130,9 @@
 
             <div class="cta-row">
                 <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
-                <a class="btn btn-ghost" href="/login">Вече имам акаунт</a>
+                <a class="btn btn-ghost" href="/horoskop">Дневен хороскоп</a>
             </div>
-            <p class="cta-note">Нужни са само дата, час и място на раждане.</p>
+            <p class="cta-note">Нужни са само дата, час и място на раждане. · <a href="/login">Вече имам акаунт</a></p>
         </div>
     </header>
 
