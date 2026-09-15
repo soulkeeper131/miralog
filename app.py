@@ -7461,7 +7461,6 @@ def sitemap_xml(request: Request):
     entries = [
         ("/", "weekly", "1.0"),
         ("/register", "monthly", "0.6"),
-        ("/login", "monthly", "0.3"),
     ]
     # Every module gets its own landing page — the long-tail content that the
     # search engines actually find people through.
