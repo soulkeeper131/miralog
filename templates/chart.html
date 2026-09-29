@@ -2292,7 +2292,7 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = '{{ brand.slug }}-' + key.replace(/[:.]/g, '-') + '.pdf';
+                a.download = '{{ brand().slug }}-' + key.replace(/[:.]/g, '-') + '.pdf';
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
