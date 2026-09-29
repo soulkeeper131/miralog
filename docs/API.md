@@ -1,118 +1,190 @@
 # 📡 API Reference
 
 АстроКарта използва REST API с JSON отговори. Базов URL: `https://astrokarta.bg`
+(админ API-то е само на `https://admin.astrokarta.bg`).
+
+Интерактивна схема (FastAPI) има на `/docs` и `/openapi.json`.
 
 ---
 
-## Автентикация
+## Общи правила
 
-### POST /api/auth/login
+### Автентикация
 
-Вход с имейл и парола. Връща JWT токен.
+Повечето endpoint-и искат JWT токен (валиден 30 дни). Приема се от:
 
-```json
-// Request
-{
-  "email": "admin@astrokarta.bg",
-  "password": "admin123"
-}
-
-// Response 200
-{
-  "access_token": "eyJhbGci...",
-  "token_type": "bearer",
-  "user_id": 1,
-  "email": "admin@astrokarta.bg"
-}
-```
-
-**Използване на токена:**
 ```
 Authorization: Bearer eyJhbGci...
 ```
 
-### GET /api/auth/me
+HTML страниците и `reading-audio` приемат токена и от бисквитката
+`miralog_token` или от `?token=`, защото `<audio>` не може да праща заглавки.
 
-Информация за текущия логнат потребител.
+### Нива на достъп
+
+В таблиците по-долу колоната „Достъп“ означава:
+
+| Стойност | Значение |
+|----------|----------|
+| публичен | без токен |
+| вход | валиден токен |
+| модул `X` | токен + отключен модул `X`; иначе **402** с оферта |
+| админ | токен на акаунт с `role = admin` **и** хост `admin.<домейн>` |
+
+Модулите са `chart`, `planets`, `aspects`, `horoscope` (безплатни при
+регистрация), `profile`, `period`, `love`, `akashic`, `numerology`, `moon`
+(платени). Админът има достъп до всичко.
+
+### Грешки
+
+Всички грешки връщат JSON с `detail`:
 
 ```json
+{ "detail": "Описание на грешката" }
+```
+
+| Код | Описание |
+|-----|---------|
+| 400 | Невалидни входни данни |
+| 401 | Липсваща/изтекла сесия или грешна парола |
+| 402 | Модулът не е отключен. `detail` е обект: `{reason: "locked", feature, feature_name, message, offer, bundle}` |
+| 403 | Блокиран акаунт или липса на админ права |
+| 404 | Ресурсът не е намерен (включително `/api/admin/*` извън админ хоста) |
+| 409 | Имейлът вече е регистриран (`/api/onboard` връща `{reason: "account_exists", message}`) |
+| 429 | Твърде много неуспешни входа (5 опита → 15 мин блок) |
+| 503 | Stripe не е конфигуриран |
+
+### AI разчитания (асинхронни)
+
+Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните SEO API-та
+пускат генерирането във фонов процес. Докато текстът не е готов, те връщат
+`{"pending": true, ...}` и клиентът трябва да пита отново след няколко секунди.
+Готовият текст се кешира; `?refresh=true` генерира нов.
+
+---
+
+## Автентикация и акаунт
+
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| POST | `/api/auth/login` | публичен | Вход, връща токен |
+| POST | `/api/auth/register` | публичен | Регистрация с имейл и парола (≥6 знака) |
+| POST | `/api/onboard` | публичен | Регистрация + първа карта наведнъж (от началната страница) |
+| GET | `/api/auth/me` | вход | Текущ потребител, план, отключени модули, оферти |
+| GET | `/api/auth/{provider}/start` | публичен | Google/Facebook вход (`provider` = `google` \| `facebook`), `?next=` |
+| GET | `/api/auth/{provider}/callback` | публичен | OAuth callback |
+| POST | `/api/auth/forgot-password` | публичен | `{email}` → писмо с линк |
+| POST | `/api/auth/reset-password` | публичен | `{token, new_password}` |
+| GET | `/api/account` | вход | Профилът на потребителя |
+| POST | `/api/account` | вход | `{display_name?, email?}` |
+| POST | `/api/account/password` | вход | `{current_password, new_password}` |
+| POST | `/api/account/digest` | вход | `{digest_opt_in: bool}`, ежедневен имейл с хороскопа |
+| GET | `/api/account/export` | вход | Експорт на всички лични данни (GDPR) |
+| DELETE | `/api/account` | вход | Изтриване на акаунта и данните |
+
+### POST /api/auth/login
+
+```json
+// Request (totp_code само при включена 2FA)
+{ "email": "user@example.com", "password": "...", "totp_code": "123456" }
+
 // Response 200
 {
-  "user_id": 1,
-  "email": "admin@astrokarta.bg"
+  "token": "eyJhbGci...",
+  "user": { "id": 1, "email": "user@example.com", "role": "user" }
+}
+```
+
+### POST /api/onboard
+
+```json
+// Request (password е по желание: без него идва имейл за задаване на парола;
+// wanted = модули за незабавно плащане, "bundle" = пакетът)
+{
+  "email": "maria@example.com", "name": "Мария",
+  "year": 1988, "month": 10, "day": 3, "hour": 8, "minute": 15,
+  "lat": 42.6977, "lon": 23.3219, "timezone": "Europe/Sofia",
+  "password": "...", "wanted": ["love"]
+}
+
+// Response 200
+{
+  "ok": true, "person_id": 12, "token": "eyJhbGci...", "chose_password": true,
+  "chart_url": "/chart/12?token=...",
+  "checkout_url": "https://checkout.stripe.com/...",   // ако има wanted и Stripe
+  "checkout_error": "...",                              // ако плащането не може да се подготви
+  "wanted": ["love"], "bundle": false
+}
+```
+
+### GET /api/auth/me
+
+```json
+{
+  "id": 1, "email": "user@example.com", "role": "user",
+  "is_admin": false, "is_blocked": false,
+  "plan": { "key": "demo", "name": "Основен", "max_persons": 2, "features": ["planets", "aspects"] },
+  "features": ["chart", "horoscope", "planets", "aspects"],
+  "purchased": ["chart", "horoscope"],
+  "offers": [ { "key": "profile", "name": "...", "price_cents": 500, "currency": "EUR" } ]
 }
 ```
 
 ---
 
-## Хора
+## Публични помощни
 
-### GET /api/persons
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| GET | `/api/public/config` | публичен | `{mock_payments, stripe}` |
+| GET | `/api/public/catalogue` | публичен | Модули, цени и пакет за лендинга |
+| POST | `/api/guest/chart` | публичен | Карта без регистрация (нищо не се пази): `{chart, profile, svg}` |
+| GET | `/api/public/geocode?q=` | публичен | Търсене на място → координати и часова зона |
+| GET | `/api/geocode?q=` | вход | Същото, за вписани потребители |
+| GET | `/api/zodiac-signs` | вход | Списък със знаците (за любовния модул) |
+| GET | `/healthz` | публичен | `{"status": "ok"}` |
 
-Списък с всички хора на текущия потребител.
+---
 
-```json
-// Response 200
-[
-  {
-    "id": 1,
-    "name": "Иван Петров",
-    "year": 1990,
-    "month": 5,
-    "day": 15,
-    "hour": 14,
-    "minute": 30,
-    "lat": 42.6977,
-    "lon": 23.3219,
-    "timezone": "Europe/Sofia"
-  }
-]
-```
+## Хора (карти)
+
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| GET | `/api/persons` | вход | Картите на потребителя |
+| GET | `/api/persons/{id}` | вход | Една карта |
+| POST | `/api/persons` | вход | Нова карта (**form data**, не JSON) |
+| DELETE | `/api/persons/{id}` | вход | Изтриване → `{"deleted": id}` |
+| POST | `/api/persons/{id}/natal` | модул `chart` | Промяна на рождените данни (JSON), изчиства AI кеша |
 
 ### POST /api/persons
 
-Добавяне на нов човек.
+`application/x-www-form-urlencoded` или `multipart/form-data` с полета
+`name`, `year`, `month`, `day`, `hour` (0), `minute` (0), `lat`, `lon`,
+`timezone` (`Europe/Sofia`). Отговор: `{"id": 2, "name": "Мария", "user_id": 1}`.
 
-```json
-// Request
-{
-  "name": "Мария",
-  "year": 1988,
-  "month": 10,
-  "day": 3,
-  "hour": 8,
-  "minute": 15,
-  "lat": 42.6977,
-  "lon": 23.3219,
-  "timezone": "Europe/Sofia"
-}
-
-// Response 200
-{
-  "id": 2,
-  "name": "Мария",
-  "message": "Person added"
-}
-```
-
-### DELETE /api/persons/{id}
-
-Изтриване на човек.
-
-```json
-// Response 200
-{
-  "message": "Person deleted"
-}
-```
+Броят карти е ограничен от плана (по подразбиране 2), а модулът `love`
+дава +1. При достигнат лимит се връща грешка с обяснение.
 
 ---
 
-## Натална карта
+## Натална карта и профил
+
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| GET | `/api/persons/{id}/natal` | модул `chart` | Натална карта (JSON) |
+| GET | `/api/persons/{id}/natal.txt` | модул `chart` | Текстово представяне |
+| GET | `/api/persons/{id}/chart.svg` | модул `chart` | SVG колело |
+| GET | `/api/persons/{id}/teaser` | модул `chart` | Кратък безплатен откъс |
+| GET | `/api/persons/{id}/profile` | модул `chart` | Данните на астро портрета |
+| GET | `/api/persons/{id}/profile/interpretation` | модул `profile` | AI пълен профил |
+| GET | `/api/persons/{id}/akashic` | модул `akashic` | Кармични точки + нумерология |
+| GET | `/api/persons/{id}/akashic/interpretation` | модул `akashic` | AI акашови записи |
+| GET | `/api/persons/{id}/numerology` | модул `numerology` | Нумерологични числа |
+| GET | `/api/persons/{id}/numerology/interpretation` | модул `numerology` | AI нумерология |
 
 ### GET /api/persons/{id}/natal
 
-Пълна натална карта. **Публичен endpoint** (без токен).
+Пълна натална карта. Изисква модул `chart` (даден безплатно при регистрация).
 
 ```json
 {
@@ -181,207 +253,179 @@ Authorization: Bearer eyJhbGci...
 
 ### GET /api/persons/{id}/natal.txt
 
-Текстово представяне на наталната карта (plain text). Полезно за AI промптове.
+Текстово представяне на наталната карта (plain text). Ползва се за AI промптовете.
 
 ### GET /api/persons/{id}/chart.svg
 
-SVG изображение на наталната карта — зодиакално колело с планети, домове и аспектни линии.
+SVG изображение: зодиакално колело с планети, домове и аспектни линии.
 
 ---
 
-## Синастрия
+## Хороскопи и транзити
 
-### POST /api/synastry
-
-Сравнение между двама души.
-
-```json
-// Request
-{
-  "person1_id": 1,
-  "person2_id": 2
-}
-
-// Response 200
-{
-  "chart_type": "Composite (Synastry)",
-  "person1": { "name": "Иван", ... },
-  "person2": { "name": "Мария", ... },
-  "objects": { ... },
-  "aspects": [ ... ]
-}
-```
-
-### POST /api/synastry/interpretation
-
-AI-генерирано четене на съвместимостта.
-
-```json
-// Request
-{
-  "person1_id": 1,
-  "person2_id": 2
-}
-
-// Response 200
-{
-  "interpretation": "## Анализ на съвместимостта...",
-  "cached": false
-}
-```
-
----
-
-## Транзити
-
-### POST /api/transits
-
-Транзитни аспекти за конкретна дата.
-
-```json
-// Request
-{
-  "person_id": 1,
-  "target_date": "2026-08-15T12:00:00"
-}
-
-// Response 200
-{
-  "transit_objects": { ... },
-  "transit_aspects_to_natal": [
-    {
-      "active": "Jupiter",
-      "type": "Trine",
-      "passive": "Sun",
-      "orb": 1.2
-    }
-  ],
-  "moon_phase": "Full",
-  "shape": "Bundle"
-}
-```
-
-### POST /api/period-influence
-
-Проверка на транзитни промени в избран период (показва само дните с настъпващи или напускащи аспекти).
-
-```json
-// Request
-{
-  "person_id": 1,
-  "start_date": "2026-08-01",
-  "end_date": "2026-08-31"
-}
-```
-
----
-
-## Хороскоп
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| GET | `/api/persons/{id}/daily-horoscope` | модул `horoscope` | AI дневен хороскоп (асинхронно) |
+| POST | `/api/transits` | модул `horoscope` | Транзити за дата |
+| POST | `/api/period-influence` | модул `period` | Дни с настъпващи/напускащи аспекти (макс. 62 дни) |
+| POST | `/api/period-interpretation` | модул `period` | AI разчитане на периода |
+| GET | `/api/lunar-calendar?year=&month=` | модул `moon` | Лунен календар за месец |
 
 ### GET /api/persons/{id}/daily-horoscope
 
-AI-генериран дневен хороскоп на базата на днешните транзити.
-
 ```json
-// Response 200
-{
-  "interpretation": "## Общо усещане за деня...",
-  "date": "30.07.2026",
-  "cached": true
-}
+// Докато се генерира
+{ "pending": true, "date": "29.09.2026", "cache_key": "horoscope:2026-09-29" }
+
+// Готово
+{ "interpretation": "## Общо усещане за деня...", "summary": { ... }, "date": "29.09.2026", ... }
 ```
 
-Параметри:
-- `?refresh=true` — генерира нов хороскоп (игнорира кеша)
-
----
-
-## Нумерология
-
-### GET /api/persons/{id}/numerology
-
-Питагорови нумерологични числа.
-
-```json
-// Response 200
-{
-  "life_path": { "number": 7, "meaning": "..." },
-  "destiny": { "number": 5, "meaning": "..." },
-  "soul_urge": { "number": 3, "meaning": "..." },
-  "personality": { "number": 11, "meaning": "... (мастер число)" }
-}
-```
-
-### GET /api/persons/{id}/numerology/interpretation
-
-AI интерпретация на нумерологичните числа.
-
-```json
-// Response 200
-{
-  "interpretation": "## Твоят нумерологичен профил...",
-  "cached": false
-}
-```
-
----
-
-## AI Интерпретация
-
-### GET /api/persons/{id}/interpretation
-
-Пълна AI интерпретация на наталната карта. Комбинира всички планети, знаци, домове и аспекти в едно свързано четене.
-
-```json
-// Response 200
-{
-  "interpretation": "## Пълна интерпретация...",
-  "cached": false
-}
-```
-
-Параметри:
-- `?refresh=true` — игнорира кеша
-
----
-
-## Настройки
-
-### GET /api/settings
-
-```json
-// Response 200
-{
-  "ai_api_key_set": true,
-  "ai_provider": "anthropic"
-}
-```
-
-### POST /api/settings
+### POST /api/transits
 
 ```json
 // Request
-{
-  "ai_api_key": "sk-ant-...",
-  "ai_provider": "anthropic"
-}
+{ "person_id": 1, "target_date": "2026-08-15T12:00:00" }
+```
+
+### POST /api/period-influence / /api/period-interpretation
+
+```json
+// Request
+{ "person_id": 1, "start_date": "2026-08-01", "end_date": "2026-08-31" }
 ```
 
 ---
 
-## Грешки
+## Любов и синастрия
 
-Всички грешки връщат JSON:
+Всички искат модул `love`.
+
+| Метод | Път | Описание |
+|-------|-----|----------|
+| POST | `/api/love-match` | Съвместимост по зодия или по пълни данни на партньора |
+| POST | `/api/love-match/interpretation` | AI любовен хороскоп |
+| POST | `/api/synastry` | Синастрия между две карти от профила |
+| POST | `/api/synastry/interpretation` | AI разчитане на синастрията |
 
 ```json
+// /api/love-match: само по зодия
+{ "person_id": 1, "partner_sign": "Taurus" }
+
+// /api/love-match: по пълни рождени данни
 {
-  "detail": "Описание на грешката"
+  "person_id": 1, "partner_name": "Иван",
+  "partner_year": 1987, "partner_month": 4, "partner_day": 20,
+  "partner_hour": 12, "partner_minute": 0,
+  "partner_lat": 42.15, "partner_lon": 24.75, "partner_timezone": "Europe/Sofia"
 }
+
+// /api/synastry
+{ "person1_id": 1, "person2_id": 2 }
 ```
 
-| Код | Описание |
-|-----|---------|
-| 400 | Невалидни входни данни |
-| 401 | Липсваща или невалидна автентикация |
-| 404 | Ресурсът не е намерен |
-| 500 | Вътрешна грешка |
+---
+
+## Разчитания: PDF, аудио, имейл, споделяне
+
+`key` е ключът на кешираното разчитане (`ai_cache.cache_key`), напр. `profile`,
+`akashic`, `numerology:2026`, `love:Taurus`, `period:2026-08-01:2026-08-31`,
+`synastry:1:2`, `horoscope:2026-09-29`. Правото се проверява по частта преди
+първото `:` (`love-full` се брои към `love`).
+
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| GET | `/api/persons/{id}/reading.pdf?key=` | вход | PDF на разчитането |
+| GET | `/api/persons/{id}/reading-audio?key=` | вход (и бисквитка) | MP3, прочетено на български (edge-tts, кешира се в `data/audio/`) |
+| POST | `/api/persons/{id}/email-reading` | вход | `{key, to?}` → PDF по имейл |
+| POST | `/api/persons/{id}/share` | вход | `{cache_key}` → `{token, url}` |
+| GET | `/api/share/{token}` | публичен | Споделеното разчитане |
+
+---
+
+## Модули и плащания
+
+| Метод | Път | Достъп | Описание |
+|-------|-----|--------|----------|
+| GET | `/api/features` | вход | Каталог на модулите за този акаунт (отключени, цени, пакет) |
+| POST | `/api/features/{key}/request` | вход | Купуване на модул: Stripe Checkout, ако е включен, иначе имейл до админа |
+| POST | `/api/features/bundle/request` | вход | Същото за пакета „Всички модули“ |
+| GET | `/api/billing/status` | вход | `{stripe_enabled, plan_key, purchased, digest_opt_in}` |
+| POST | `/api/billing/checkout/feature/{key}` | вход | Stripe Checkout сесия → URL (`key` може да е `bundle`) |
+| GET | `/api/billing/session/{session_id}` | вход | Приключва плащането веднага след връщане от Stripe |
+| POST | `/api/stripe/webhook` | Stripe подпис | `checkout.session.completed` → отключва модулите |
+| POST | `/api/dev/mock-pay` | вход | `{keys: [...]}`. Тестово плащане, само при `MOCK_PAYMENTS=1` извън production |
+
+Плащането се приключва по два пътя (webhook и `billing/session`). Който
+пристигне пръв, отключва; вторият не прави нищо.
+
+---
+
+## Админ API
+
+Само на `admin.<домейн>` и само за админ. Всички пътища започват с `/api/admin`.
+
+| Метод | Път | Описание |
+|-------|-----|----------|
+| GET | `/overview` | Табло: приходи, потребители, активност, backups |
+| GET / POST | `/users` | Списък (`?q=`) / нов потребител |
+| PATCH / DELETE | `/users/{id}` | Промяна (план, роля, блокиране, парола) / изтриване |
+| GET | `/plans` | Планове |
+| PUT / DELETE | `/plans/{key}` | Запис / изтриване на план |
+| GET / POST | `/payments` | Дневник на плащанията (`?user_id=`) / ръчно плащане |
+| DELETE | `/payments/{id}` | Изтриване на плащане |
+| GET | `/feature-prices` | Цените на модулите |
+| PUT | `/feature-prices/{key}` | `{price_cents, currency, is_purchasable}` |
+| GET / POST | `/feature-purchases` | Покупки (`?user_id=`) / ръчно даване на модул |
+| DELETE | `/feature-purchases/{user_id}/{key}` | Отнемане на модул |
+| GET | `/audit` | Одит лог (`?event=&user_id=&limit=&offset=`) |
+| GET | `/saft?year=&month=` | SAF-T XML за НАП (windows-1251) |
+| GET | `/2fa/status` | Статус на 2FA |
+| POST | `/2fa/setup` · `/2fa/confirm` · `/2fa/disable` | Включване/изключване на TOTP |
+| GET / POST | `/settings` | AI, SMTP, шаблони, SEO, марка, OAuth, известия, юридически данни |
+| POST | `/settings/logo` | Качване на лого (form: `file`, `slot`) |
+| POST | `/settings/logo/reset` | Връщане на оригиналното лого |
+| POST | `/settings/test-email` | Тестов имейл |
+| POST | `/templates/preview` | Преглед на имейл шаблон |
+
+---
+
+## SEO страници (публични)
+
+HTML страниците и техните API-та за съдържание. Съдържанието се генерира от AI
+при първо отваряне и се кешира (дневният хороскоп по зодия се обновява всеки ден).
+`/warm` endpoint-ите пускат генерирането за всичко липсващо. Вика ги външен
+сутрешен cron.
+
+| Страница | API | Warm |
+|----------|-----|------|
+| `/horoskop`, `/horoskop/{знак}` | `/api/horoskop/{знак}` | `/api/horoskop/warm` |
+| `/{планета}-v-{знак}` (напр. `/luna-v-skorpion`) | `/api/planeta/{планета}-v-{знак}` | `/api/planeta/warm` |
+| `/{планета}-v-{N}-dom` (напр. `/luna-v-7-dom`) | `/api/dom/{планета}-v-{N}` | `/api/dom/warm` |
+| `/zodia/{знак}` | `/api/zodia/{знак}` | `/api/zodia/warm` |
+| `/savmestimost`, `/savmestimost/{знак}-{знак}` | `/api/savmestimost/{двойка}` | `/api/savmestimost/warm` |
+
+Лендинги на модулите (от `feature_pages.py`): `/natalna-karta`, `/planeti`,
+`/aspekti`, `/dneven-horoskop`, `/astrologicheski-profil`, `/horoskop-za-period`,
+`/lyubovna-savmestimost`, `/akashovi-zapisi`, `/numerologia`, `/lunen-kalendar`.
+
+Други: `/robots.txt`, `/sitemap.xml`, `/llms.txt`.
+
+---
+
+## HTML страници на приложението
+
+| Път | Описание |
+|-----|----------|
+| `/` | Начална (лендинг) |
+| `/start` | Безплатна карта за гости |
+| `/welcome` | След регистрация |
+| `/register`, `/login`, `/forgot-password`, `/reset-password` | Акаунт |
+| `/dashboard` | Табло с картите |
+| `/chart/{id}` | Натална карта и всички модули |
+| `/synastry` | Синастрия |
+| `/moon` | Лунен календар |
+| `/settings` | Настройки на акаунта |
+| `/share/{token}` | Споделено разчитане |
+| `/privacy`, `/terms` | Политика и общи условия |
+| `/admin` | Админ панел (само на админ хоста) |
