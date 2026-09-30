@@ -142,6 +142,25 @@ else:
 import logging
 log = logging.getLogger("miraskop")
 
+
+class _HideTokensInAccessLog(logging.Filter):
+    """Скрива токените от адресите в лога на uvicorn.
+
+    Картата след регистрация, админът на поддомейна и линкът за нова парола
+    носят токен в адреса. Uvicorn записва адреса целия, така че всеки с достъп
+    до логовете в Coolify би взел 30-дневен вход — включително админския.
+    """
+    _TOKEN = re.compile(r"((?:^|[?&])(?:token|access_token)=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self._TOKEN.sub(r"\1***", a) if isinstance(a, str) else a
+                                for a in record.args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_HideTokensInAccessLog())
+
 # A Windows console defaults to cp1251 and raises on Cyrillic. Reconfigure the
 # streams where possible so startup messages are readable instead of fatal.
 for _stream in (sys.stdout, sys.stderr):
@@ -852,7 +871,32 @@ templates.env.globals["admin_host"] = ADMIN_HOST
 # Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
 templates.env.globals["main_domain"] = BRAND_DOMAIN
 
-app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan)
+def api_docs_settings(production: bool) -> dict:
+    """/docs, /redoc и /openapi.json са карта на цялото API, админа включително.
+    Полезни са при разработка; в production не са нужни на никого отвън."""
+    if production:
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {}
+
+
+def package_versions() -> dict:
+    """Версиите, с които реално работи сървърът. requirements.txt не ги
+    заковава, а Docker кешира слоя с pip — отвън не личи какво е инсталирано."""
+    from importlib import metadata
+    out = {}
+    for name in ("fastapi", "starlette", "uvicorn", "pydantic", "jinja2", "stripe",
+                 "python-jose", "bcrypt", "immanuel", "pyswisseph", "reportlab",
+                 "edge-tts", "sentry-sdk", "pyotp", "python-multipart"):
+        try:
+            out[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            out[name] = None
+    out["python"] = sys.version.split()[0]
+    return out
+
+
+app = FastAPI(title=BRAND_DEFAULTS["brand_name"], lifespan=lifespan,
+              **api_docs_settings(IS_PRODUCTION))
 # .webp не е в mimetypes по подразбиране на някои среди → сервира се като
 # octet-stream и някои клиенти отказват да го рендерират. Регистрираме го.
 import mimetypes as _mimetypes
@@ -1063,6 +1107,16 @@ class AuthRequest(BaseModel):
     totp_code: Optional[str] = None
 
 # --- Auth Helpers ---
+MIN_PASSWORD_LEN = 8
+
+
+def check_new_password(password: str) -> None:
+    """Само за нови пароли. Входът нарочно не я вика: вече регистрираните с
+    по-къса парола трябва да могат да влязат, както досега."""
+    if len((password or "").strip()) < MIN_PASSWORD_LEN:
+        raise HTTPException(400, f"Паролата трябва да е поне {MIN_PASSWORD_LEN} символа.")
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
@@ -1097,6 +1151,80 @@ def _login_record_failure(key: str) -> None:
 
 def _login_clear(key: str) -> None:
     _LOGIN_FAILURES.pop(key, None)
+
+
+# --- Ограничения на опитите извън входа (in-memory) ---
+# (брой, прозорец в секунди). Щедри са нарочно: мобилните оператори пускат
+# много хора през един IP, а една спряна истинска регистрация струва повече
+# от няколко пропуснати спам акаунта.
+RATE_LIMITS = {
+    "signup": (20, 3600),        # регистрации от един IP на час
+    "guest_chart": (30, 600),    # безплатни карти от един IP за 10 мин
+    "reset_ip": (10, 3600),      # писма за нова парола от един IP на час
+    "reset_email": (3, 3600),    # писма за нова парола до един адрес на час
+}
+RATE_HITS: dict = {}
+_RATE_LOCK = threading.Lock()
+
+
+def client_ip(request: Request) -> str:
+    """IP на посетителя. Празно, когато не може да се установи със сигурност.
+
+    Coolify праща всяка заявка през своето прокси, затова прекият адрес е
+    вътрешен (10.x) и еднакъв за всички. Проксито добавя истинския IP най-
+    отдясно в X-Forwarded-For; всичко вляво може да е написано от клиента.
+    На заглавката се вярва само когато заявката идва от вътрешната мрежа.
+    """
+    import ipaddress
+    peer = request.client.host if request.client else ""
+    try:
+        behind_proxy = ipaddress.ip_address(peer).is_private
+    except ValueError:
+        behind_proxy = False
+    if not behind_proxy:
+        return peer
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[-1].strip()
+    try:
+        ipaddress.ip_address(forwarded)
+    except ValueError:
+        # Без заглавката всички посетители биха делили един брояч и биха се
+        # спрели взаимно — по-добре без ограничение по IP.
+        return ""
+    return forwarded
+
+
+def rate_allowed(bucket: str, key: str) -> bool:
+    """Отбелязва опит и казва дали е в лимита. Празен ключ никога не се спира."""
+    if not key:
+        return True
+    limit, window = RATE_LIMITS[bucket]
+    now = _time.monotonic()
+    with _RATE_LOCK:
+        hits = [t for t in RATE_HITS.get((bucket, key), []) if now - t < window]
+        if len(hits) >= limit:
+            RATE_HITS[(bucket, key)] = hits
+            return False
+        hits.append(now)
+        RATE_HITS[(bucket, key)] = hits
+        return True
+
+
+def rate_limit(bucket: str, key: str) -> None:
+    if not rate_allowed(bucket, key):
+        raise HTTPException(429, "Твърде много опити от този адрес. Опитай отново след малко.")
+
+
+def is_admin_request(request: Request) -> bool:
+    """Дали заявката идва от вписан админ. Никога не хвърля грешка."""
+    try:
+        token = _token_from_request(request)
+        if not token:
+            return False
+        user_id, _ = get_current_user(request=None, token=token)
+        row = get_user_by_id(user_id)
+        return bool(row and row.get("role") == "admin" and not row.get("is_blocked"))
+    except Exception:
+        return False
 
 # --- TOTP (2FA) ---
 def generate_totp_secret() -> str:
@@ -2098,7 +2226,7 @@ def api_public_catalogue():
     return {"catalogue": out, "bundle": public_bundle()}
 
 @app.post("/api/guest/chart")
-def api_guest_chart(data: GuestChartRequest):
+def api_guest_chart(data: GuestChartRequest, request: Request):
     """Compute a chart for somebody who has not signed up yet.
 
     Nothing is stored: the browser keeps the birth details and asks again on
@@ -2106,6 +2234,9 @@ def api_guest_chart(data: GuestChartRequest):
     where casual visitors leave, so the chart comes first and the account
     comes after they have seen it.
     """
+    # Изчислението е тежко и не иска вход — без таван един скрипт би заел
+    # процесора за всички останали.
+    rate_limit("guest_chart", client_ip(request))
     if not (data.name or "").strip():
         raise HTTPException(400, "Моля, въведи име.")
     try:
@@ -2167,6 +2298,8 @@ def api_onboard(data: OnboardRequest, request: Request):
     if not (data.name or "").strip():
         raise HTTPException(400, "Моля, въведи име.")
 
+    rate_limit("signup", client_ip(request))
+
     existing = get_user_by_email(email)
     if existing:
         # Never silently attach a chart to somebody else's account.
@@ -2176,8 +2309,8 @@ def api_onboard(data: OnboardRequest, request: Request):
         })
 
     chose_password = bool((data.password or "").strip())
-    if chose_password and len((data.password or "").strip()) < 6:
-        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    if chose_password:
+        check_new_password(data.password)
 
     # Without a typed password the account gets an unusable one: the visitor is
     # signed in by token now and sets a real one from the emailed link.
@@ -2297,8 +2430,8 @@ def api_register(data: AuthRequest, request: Request):
     email = (data.email or "").strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
-    if len(data.password or "") < 6:
-        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    check_new_password(data.password or "")
+    rate_limit("signup", client_ip(request))
     if get_user_by_email(email):
         raise HTTPException(409, "Вече съществува акаунт с този имейл.")
 
@@ -3203,6 +3336,7 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
         "backups": backup_status(),
         # Без SMTP не тръгват нито фактурите, нито възстановяването на парола.
         "email_ready": bool(smtp_setting("smtp_host")),
+        "versions": package_versions(),
     }
 
 @app.get("/api/admin/users")
@@ -3229,8 +3363,7 @@ def api_admin_create_user(data: AdminUserCreate, admin: dict = Depends(require_a
     email = (data.email or "").strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
-    if len((data.password or "").strip()) < 6:
-        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    check_new_password(data.password or "")
     if get_user_by_email(email):
         raise HTTPException(409, "Вече съществува акаунт с този имейл.")
     if data.role not in ("user", "admin"):
@@ -3292,8 +3425,7 @@ def api_admin_update_user(user_id: int, data: AdminUserUpdate, admin: dict = Dep
     if data.note is not None:
         sets.append("note = ?"); params.append(data.note.strip() or None)
     if data.password is not None and data.password.strip():
-        if len(data.password.strip()) < 6:
-            raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+        check_new_password(data.password)
         sets.append("password_hash = ?"); params.append(hash_password(data.password.strip()))
 
     if not sets:
@@ -5009,6 +5141,12 @@ def api_oauth_callback(provider: str, request: Request,
 def api_forgot_password(data: ForgotPasswordRequest, request: Request):
     """Always returns ok to avoid email enumeration. Sends a reset link when possible."""
     email = (data.email or "").strip().lower()
+    # Без ограничение някой може да засипе чужда пощенска кутия с писма от
+    # нашия домейн. Отговорът остава същият, за да не издава дали адресът
+    # съществува — просто писмото не тръгва.
+    if not (rate_allowed("reset_ip", client_ip(request))
+            and rate_allowed("reset_email", email)):
+        return {"ok": True}
     user = get_user_by_email(email) if email else None
     if user:
         token = create_password_reset(user["id"])
@@ -5020,8 +5158,7 @@ def api_forgot_password(data: ForgotPasswordRequest, request: Request):
 
 @app.post("/api/auth/reset-password")
 def api_reset_password(data: ResetPasswordRequest):
-    if len(data.new_password or "") < 6:
-        raise HTTPException(400, "Паролата трябва да е поне 6 символа.")
+    check_new_password(data.new_password or "")
     user_id = consume_password_reset((data.token or "").strip())
     if not user_id:
         raise HTTPException(400, "Линкът е невалиден или е изтекъл. Заяви нов.")
@@ -5144,7 +5281,9 @@ async def api_stripe_webhook(request: Request):
     try:
         event = billing.construct_webhook_event(payload, sig)
     except Exception as e:
-        raise HTTPException(400, f"Webhook грешка: {e}") from e
+        # Подробностите остават в лога — навън само, че е отказано.
+        log.warning("Stripe webhook отказан: %s", e)
+        raise HTTPException(400, "Невалиден webhook.") from e
 
     etype = event["type"]
     audit("webhook_received", f"Stripe event: {etype}", actor="stripe")
@@ -5311,8 +5450,7 @@ def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(ge
         raise HTTPException(401, "Невалиден акаунт.")
     if not verify_password(data.current_password or "", row["password_hash"]):
         raise HTTPException(403, "Текущата парола не е вярна.")
-    if len(data.new_password or "") < 6:
-        raise HTTPException(400, "Новата парола трябва да е поне 6 символа.")
+    check_new_password(data.new_password or "")
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
@@ -7856,8 +7994,11 @@ def api_horoskop_warm():
 
 
 @app.get("/api/horoskop/{sign_slug}")
-def api_horoskop(sign_slug: str, refresh: bool = False):
+def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
     """Generate (or return cached) today's horoscope for a sign. Polled by the page."""
+    # Страницата никога не праща refresh. Без тази проверка всеки би могъл да
+    # вика адреса в цикъл и да харчи AI кредитите — прегенериране е за админа.
+    refresh = refresh and is_admin_request(request)
     sign = ZODIAC_BY_SLUG.get(sign_slug)
     if not sign:
         raise HTTPException(404, "Няма такъв знак.")
@@ -7946,8 +8087,9 @@ def api_planet_house_warm():
 
 
 @app.get("/api/dom/{planet_slug}-v-{house_num:int}")
-def api_planet_house(planet_slug: str, house_num: int, refresh: bool = False):
+def api_planet_house(planet_slug: str, house_num: int, request: Request, refresh: bool = False):
     """Генерира (или връща кеширан) тизъра за „{планета} в {дом}"."""
+    refresh = refresh and is_admin_request(request)  # виж api_horoskop
     planet = PLANETS_BY_SLUG.get(planet_slug)
     house = HOUSES_BY_NUM.get(house_num)
     if not planet or not house:
@@ -8010,8 +8152,9 @@ async def planet_sign_page(request: Request, planet_slug: str, sign_slug: str):
 
 
 @app.get("/api/planeta/{planet_slug}-v-{sign_slug}")
-def api_planet_sign(planet_slug: str, sign_slug: str, refresh: bool = False):
+def api_planet_sign(planet_slug: str, sign_slug: str, request: Request, refresh: bool = False):
     """Generate (or return cached) the evergreen "planet in sign" teaser."""
+    refresh = refresh and is_admin_request(request)  # виж api_horoskop
     planet = PLANETS_BY_SLUG.get(planet_slug)
     sign = ZODIAC_BY_SLUG.get(sign_slug)
     if not planet or not sign:
@@ -8105,8 +8248,9 @@ def api_sign_profile_warm():
 
 
 @app.get("/api/zodia/{sign_slug}")
-def api_sign_profile(sign_slug: str, refresh: bool = False):
+def api_sign_profile(sign_slug: str, request: Request, refresh: bool = False):
     """Generate (or return cached) the evergreen sign profile."""
+    refresh = refresh and is_admin_request(request)  # виж api_horoskop
     sign = ZODIAC_BY_SLUG.get(sign_slug)
     if not sign:
         raise HTTPException(404, "Няма такава страница.")
@@ -8213,8 +8357,9 @@ def api_compatibility_warm():
 
 
 @app.get("/api/savmestimost/{pair_slug}")
-def api_compatibility(pair_slug: str, refresh: bool = False):
+def api_compatibility(pair_slug: str, request: Request, refresh: bool = False):
     """Генерира (или връща кеширан) тизъра за съвместимостта на една двойка."""
+    refresh = refresh and is_admin_request(request)  # виж api_horoskop
     pair = COMPAT_BY_SLUG.get(pair_slug)
     if not pair:
         raise HTTPException(404, "Няма такава страница.")

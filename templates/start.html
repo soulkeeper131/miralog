@@ -719,7 +719,7 @@
                         <input type="email" id="fEmail" placeholder="име@поща.bg" autocomplete="email">
 
                         <label class="save-label" for="fPassword">Парола <span class="opt">(по избор)</span></label>
-                        <input type="password" id="fPassword" placeholder="поне 6 символа"
+                        <input type="password" id="fPassword" placeholder="поне 8 символа"
                                autocomplete="new-password">
                         <p class="hint" id="saveHint">
                             Ако оставиш паролата празна, ти пращаме връзка да я зададеш по-късно.
@@ -1241,9 +1241,9 @@
                 uiAlert('Въведи валиден имейл адрес.', { title: 'Проверка' });
                 return;
             }
-            if (password && password.length < 6) {
+            if (password && password.length < 8) {
                 passEl.focus();
-                uiAlert('Паролата трябва да е поне 6 символа, или остави полето празно.',
+                uiAlert('Паролата трябва да е поне 8 символа, или остави полето празно.',
                         { title: 'Проверка' });
                 return;
             }

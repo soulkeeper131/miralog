@@ -27,6 +27,14 @@ import app as app_module                        # noqa: E402
 app_module.init_db()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Броячите на опитите живеят в паметта — всеки тест започва начисто."""
+    app_module.RATE_HITS.clear()
+    yield
+    app_module.RATE_HITS.clear()
+
+
 @pytest.fixture
 def db():
     """Празни таблиците между тестовете, за да не си влияят."""
