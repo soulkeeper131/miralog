@@ -808,14 +808,16 @@ async def lifespan(app: FastAPI):
         log.warning("Нишковият пул остана по подразбиране: %s", exc)
 
     job_task = asyncio.create_task(_background_jobs_loop())
+    warm_task = asyncio.create_task(_horoscope_warm_loop())
     try:
         yield
     finally:
-        job_task.cancel()
-        try:
-            await job_task
-        except asyncio.CancelledError:
-            pass
+        for task in (job_task, warm_task):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 # --- Brand ---
 # The app's name and logo live here, not scattered through the templates.
@@ -1484,6 +1486,11 @@ def purchased_features(user_id: int) -> list:
     with sqlite3.connect(DB_PATH) as conn:
         return [r[0] for r in conn.execute(
             "SELECT feature_key FROM feature_purchases WHERE user_id = ?", (user_id,))]
+
+
+def is_paying_customer(user_id: int) -> bool:
+    """Има ли поне един модул извън даденото на всички при регистрация."""
+    return any(k not in FREE_ON_SIGNUP for k in purchased_features(user_id))
 
 # Modules that need more than one chart to be usable carry their own allowance.
 # The love reading compares two people, so buying it while capped at two would
@@ -7070,6 +7077,13 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
+    row = get_user_by_id(user_id) or {}
+    # Бутонът „Разчети наново“ е махнат, но адресът приемаше refresh от всеки —
+    # от скрипт това е Pro генериране в цикъл. Остава за админа.
+    refresh = refresh and row.get("role") == "admin"
+    # Платилите поне един модул получават по-силния модел; дневният хороскоп е
+    # безплатен за всички, затова останалите — бързия (както е замислено в 01044d4).
+    model = PAID_MODEL if (row.get("role") == "admin" or is_paying_customer(user_id)) else None
 
     tz_name = p.get("timezone", "Europe/Sofia")
     try:
@@ -7077,14 +7091,16 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
     except Exception:
         tz = ZoneInfo("Europe/Sofia")
     now = datetime.datetime.now(tz)
-    cache_key = f"horoscope:{now.date().isoformat()}"
+    cache_key = f"horoscope:{now.date().isoformat()}"   # в ai_cache — вече е на човек
+    # Задачата трябва да е на човек: с общия ключ всеки чакаше чуждото
+    # генериране и получаваше чуждата грешка.
+    job_key = f"horoscope:{person_id}:{now.date().isoformat()}"
     date_bg = now.strftime("%d.%m.%Y")
 
     if not refresh:
-        # Ако генериране вече тече (напр. от „Разчети наново"), изчакай го,
-        # вместо да връщаш стария кеш.
+        # Ако генериране вече тече, изчакай го, вместо да връщаш стария кеш.
         with _AI_JOBS_LOCK:
-            running = _AI_JOBS.get(cache_key)
+            running = _AI_JOBS.get(job_key)
         if running and not running["done"].is_set():
             return {"pending": True, "date": date_bg, "cache_key": cache_key}
         cached = get_ai_cache(person_id, cache_key)
@@ -7155,10 +7171,10 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
         ai_key, provider = get_ai_config()
         if not ai_key:
             return  # няма ключ — кешът остава празен, следващият poll ще върне грешка
-        raw = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
+        raw = call_ai(ai_key, provider, prompt, max_tokens=6000, model=model)
         set_ai_cache(person_id, cache_key, raw)
 
-    job = ai_job(cache_key, _generate)
+    job = ai_job(job_key, _generate)
     if job["done"].is_set():
         # Генерирането е приключило още преди да се върне този отговор.
         cached = get_ai_cache(person_id, cache_key)
@@ -8376,10 +8392,13 @@ async def horoskop_sign(request: Request, sign_slug: str):
     return HTMLResponse(templates.get_template("horoscope_sign.html").render(ctx))
 
 
-@app.get("/api/horoskop/warm")
-def api_horoskop_warm():
-    """Start generation for every sign that has no cache for today. Called by the
-    morning cron so the pages are ready before search engines crawl them."""
+def sofia_today() -> datetime.date:
+    return datetime.datetime.now(ZoneInfo("Europe/Sofia")).date()
+
+
+def warm_sign_horoscopes() -> int:
+    """Пуска генерирането за всеки знак без текст за днес. Връща колко са пуснати.
+    Написаните и вече течащите се прескачат — повторното викане е безплатно."""
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
     date_iso = now.date().isoformat()
     date_bg = now.strftime("%d.%m.%Y")
@@ -8394,7 +8413,43 @@ def api_horoskop_warm():
             continue
         ai_job(cache_key, lambda s=sign: _generate_sign_horoscope(s, date_bg, date_iso))
         started += 1
-    return {"started": started, "date": date_bg}
+    return started
+
+
+def run_horoscope_warm() -> int:
+    """Както при посетител на /horoskop — разходът се води на SEO страниците."""
+    token = AI_ORIGIN.set(("/api/horoskop/warm", None))
+    try:
+        return warm_sign_horoscopes()
+    finally:
+        AI_ORIGIN.reset(token)
+
+
+HOROSCOPE_WARM_EVERY = 600   # секунди
+
+
+async def _horoscope_warm_loop():
+    """Хороскопите по зодия се пишат сами, до 10 минути след полунощ.
+
+    Досега чакаха първия посетител за деня: дотогава страницата показваше
+    „пише се…“, а Google — който няма право да вика /api/ — виждаше празно.
+    Външният cron от документацията не беше настроен никъде."""
+    await asyncio.sleep(20)
+    while True:
+        try:
+            started = await asyncio.to_thread(run_horoscope_warm)
+            if started:
+                log.info("Хороскопи по зодия: пуснати %d за днес", started)
+        except Exception:
+            log.exception("Генерирането на хороскопите по зодия не тръгна")
+        await asyncio.sleep(HOROSCOPE_WARM_EVERY)
+
+
+@app.get("/api/horoskop/warm")
+def api_horoskop_warm():
+    """Същото като сутрешния цикъл, при нужда на ръка."""
+    return {"started": warm_sign_horoscopes(),
+            "date": datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y")}
 
 
 @app.get("/api/horoskop/{sign_slug}")
