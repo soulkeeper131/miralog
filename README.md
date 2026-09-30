@@ -30,7 +30,9 @@
 ### Модули и цени
 
 Всичко е **еднократна покупка**, без абонамент. Цените се сменят от
-админ панела (таблица `feature_prices`); по подразбиране са:
+админ панела (таблица `feature_prices`), затова реалните в production може
+да се различават — текущите връща `GET /api/public/catalogue`. Стойностите,
+с които се създава нова база, са:
 
 | Модул | Ключ | Цена |
 |-------|------|------|
@@ -185,7 +187,7 @@ SMTP, SEO, марката, OAuth и юридическите данни мога
 | `SE_EPHE_PATH` | Swiss Ephemeris файлове | `./ephe` (`/app/ephe` в Docker) |
 | `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` | AI ключ, ако не е зададен в админ панела | — |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe; без **двата** плащанията са изключени | — |
-| `STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` | Къде се връща клиентът след плащане (`session_id` се добавя автоматично) | страницата, от която е купено |
+| `STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` | Къде се връща клиентът след плащане (`session_id` се добавя автоматично) | `/settings?paid=1` / `/settings?paid=0`; при покупка още при регистрацията — картата (`/chart/{id}?paid=1`) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` / `SMTP_USE_TLS` | Имейли; имат предимство пред админ панела | — |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `FACEBOOK_APP_ID` / `FACEBOOK_APP_SECRET` | Социален вход; имат предимство пред админ панела | — |
 | `SENTRY_DSN` | Следене на грешки (личните данни се чистят) | — |

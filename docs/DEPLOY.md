@@ -44,6 +44,16 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 Webhook endpoint в Stripe: `https://astrokarta.bg/api/stripe/webhook`,
 събитие `checkout.session.completed`.
 
+Endpoint-ът трябва да е създаден в **Live** режима на Stripe Dashboard, а
+`STRIPE_WEBHOOK_SECRET` да е неговият signing secret. Test и Live имат
+отделни endpoint-и и отделни `whsec_` ключове. Тестов ключ при истински
+плащания значи, че всяка доставка се отхвърля с 400.
+
+Плащането се отключва и когато клиентът се върне на сайта (приложението пита
+Stripe директно), затова счупен webhook не личи веднага. Проверка: в
+Админ → Активност всяко Stripe плащане трябва да има и `webhook_received`.
+Ако има `payment_succeeded` без `webhook_received`, webhook-ът не стига.
+
 **По желание:**
 
 | Група | Променливи |

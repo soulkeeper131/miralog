@@ -4,7 +4,7 @@
 
 ## Технологии
 
-- **FastAPI + Jinja2**, почти цялата логика е в един голям файл `app.py` (~8250 реда, ~115 рута)
+- **FastAPI + Jinja2**, почти цялата логика е в един голям файл `app.py` (~8250 реда, ~120 рута)
 - **immanuel + pyswisseph** за астрологичните изчисления; Swiss Ephemeris файлове в `ephe/` (теглят се при Docker build)
 - **SQLite** в `data/persons.db` (`DB_PATH`). Схемата и всички миграции са в `init_db()` и се пускат при всяко стартиране; админ акаунт се създава автоматично, ако няма потребители
 - **AI:** DeepSeek (по подразбиране `deepseek-v4-flash`, платените разчитания през `deepseek-v4-pro`), Anthropic (`claude-sonnet-4-5`) или OpenAI, виж `AI_MODELS` / `call_ai()`
@@ -70,7 +70,9 @@
 - Docker: порт 8000, volume `/app/data` (база, backups, uploads, audio кеш), healthcheck `/healthz`
 - Пълен списък на env променливите: `.env.example` и `docs/DEPLOY.md`. Задължителни в production: `ENVIRONMENT=production`, `SECRET_KEY` (≥32 знака), `ADMIN_PASSWORD`. Без тях приложението отказва да стартира
 - Препоръчителни лимити: 512MB RAM, 1 CPU, 256MB swap (`AI_THREAD_LIMIT=8`)
-- **Coolify UI адресът и API токенът не са записани никъде**, питай потребителя при нужда (Settings → API tokens)
+- **Coolify:** https://coolify.blv.bg, приложение AstroKarta (uuid `vxpms670hhym05mnm419p9xd`). На същия сървър има и други проекти, пипай само AstroKarta
+- Токен само за четене е в потребителската env променлива `COOLIFY_TOKEN` на Windows (в PowerShell: `[Environment]::GetEnvironmentVariable("COOLIFY_TOKEN","User")`). Никога не го показвай. API-то дава статус, деплои и логове, но **не може да чете базата**: за данни се ползва админ панелът
+- Production има платили клиенти: промени само с изрично съгласие, проверка преди и след деплой
 
 ## Git / GitHub
 
