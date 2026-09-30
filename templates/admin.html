@@ -1225,9 +1225,15 @@
                 const pwd = document.getElementById('euPassword').value;
                 if (pwd.trim()) payload.password = pwd;
                 try {
-                    await api('/api/admin/users/' + u.id, {
+                    const res = await api('/api/admin/users/' + u.id, {
                         method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(payload),
                     });
+                    // Нова парола на собствения акаунт прекъсва сесиите;
+                    // тази получава нов токен, за да не изхвърли админа.
+                    if (res && res.token) {
+                        localStorage.setItem('miralog_token', res.token);
+                        document.cookie = 'miralog_token=' + encodeURIComponent(res.token) + '; path=/; SameSite=Lax; max-age=2592000';
+                    }
                     closeModal();
                     notify('Промените са запазени.');
                     loadUsers();
@@ -2060,8 +2066,13 @@
                 });
             });
             document.getElementById('disable2faBtn').addEventListener('click', async function() {
+                const code = await uiPrompt('За да изключиш 2FA, въведи текущия 6-цифрен код от приложението.', {
+                    title: 'Изключване на 2FA', placeholder: '000000', ok: 'Изключи',
+                });
+                if (code === null) return;
                 try {
-                    await api('/api/admin/2fa/disable', { method: 'POST', headers: jsonHeaders() });
+                    await api('/api/admin/2fa/disable', { method: 'POST', headers: jsonHeaders(),
+                                                          body: JSON.stringify({ code: String(code).trim() }) });
                     notify('2FA е изключена.');
                     renderTwoFa();
                 } catch (e) { notifyError(e); }

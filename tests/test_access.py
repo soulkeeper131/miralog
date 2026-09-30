@@ -97,8 +97,8 @@ def test_same_google_identity_reuses_the_account(app, db):
     """Втори вход не бива да прави втори акаунт."""
     email = f"g-{secrets.token_hex(4)}@example.com"
     sub = "sub-" + secrets.token_hex(6)
-    first = app._oauth_link_or_create("google", sub, email, "Тест")
-    second = app._oauth_link_or_create("google", sub, email, "Тест")
+    first = app._oauth_link_or_create("google", sub, email, "Тест", email_verified=True)
+    second = app._oauth_link_or_create("google", sub, email, "Тест", email_verified=True)
     assert first["id"] == second["id"]
 
 
@@ -106,15 +106,15 @@ def test_google_links_to_an_existing_email_account(app, db):
     """Който има парола и после влезе с Google, остава един и същ човек."""
     email = f"m-{secrets.token_hex(4)}@example.com"
     existing = db.create_user(email, db.hash_password("parola123"))
-    linked = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "Тест")
+    linked = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "Тест", email_verified=True)
     assert linked["id"] == existing["id"], "направен е втори акаунт за същия имейл"
 
 
 def test_provider_without_email_is_refused(app, db):
     """Facebook може да скрие имейла. Акаунт без имейл е недостижим."""
-    with pytest.raises(HTTPException) as err:
+    with pytest.raises(app.OAuthRefused) as err:
         app._oauth_link_or_create("facebook", "fb-" + secrets.token_hex(6), "", "Без Имейл")
-    assert err.value.status_code == 400
+    assert err.value.reason == "noemail"
 
 
 def test_purchases_survive_linking_a_provider(app, db):
@@ -122,7 +122,7 @@ def test_purchases_survive_linking_a_provider(app, db):
     email = f"p-{secrets.token_hex(4)}@example.com"
     row = db.create_user(email, db.hash_password("parola123"))
     app.grant_feature_purchase(row["id"], "profile", 499, "EUR", None)
-    linked = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "")
+    linked = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "", email_verified=True)
     assert "profile" in app.unlocked_features(app.get_user_by_id(linked["id"]))
 
 

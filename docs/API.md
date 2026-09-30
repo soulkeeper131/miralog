@@ -73,7 +73,8 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
 
 | Метод | Път | Достъп | Описание |
 |-------|-----|--------|----------|
-| POST | `/api/auth/login` | публичен | Вход, връща токен |
+| POST | `/api/auth/login` | публичен | Вход, връща токен. Имейлът е без значение от главните букви |
+| POST | `/api/auth/totp` | публичен | Вторият фактор след вход през Google/Facebook: `{challenge, code}` → `{token, email, next}` |
 | POST | `/api/auth/register` | публичен | Регистрация с имейл и парола (≥8 знака) |
 | POST | `/api/onboard` | публичен | Регистрация + първа карта наведнъж (от началната страница) |
 | GET | `/api/auth/me` | вход | Текущ потребител, план, отключени модули, оферти |
@@ -82,8 +83,8 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
 | POST | `/api/auth/forgot-password` | публичен | `{email}` → писмо с линк |
 | POST | `/api/auth/reset-password` | публичен | `{token, new_password}` (≥8 знака) |
 | GET | `/api/account` | вход | Профилът на потребителя |
-| POST | `/api/account` | вход | `{display_name?, email?}` |
-| POST | `/api/account/password` | вход | `{current_password, new_password}` |
+| POST | `/api/account` | вход | `{display_name?, email?, current_password?}`. Смяна на имейла иска `current_password` (иначе 403 `password_required`), прекъсва другите сесии и връща нов `token` |
+| POST | `/api/account/password` | вход | `{current_password, new_password}` → `{ok, token}`. Другите сесии се прекъсват |
 | POST | `/api/account/digest` | вход | `{digest_opt_in: bool}`, ежедневен имейл с хороскопа |
 | GET | `/api/account/export` | вход | Експорт на всички лични данни (GDPR) |
 | DELETE | `/api/account` | вход | Изтриване на акаунта и данните |
@@ -99,7 +100,16 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
   "token": "eyJhbGci...",
   "user": { "id": 1, "email": "user@example.com", "role": "user" }
 }
+
+// 401 при включена 2FA — паролата е вярна, липсва/грешен код
+{ "detail": { "reason": "totp_required" | "totp_invalid", "message": "..." } }
+
+// 403 блокиран акаунт; 429 твърде много грешни опита
 ```
+
+Токенът носи версията на акаунта (`tv`). Смяна на паролата, нова парола по
+линк, блокиране или смяна на имейла я вдигат и всички стари токени получават
+401. Същата проверка важи за страниците и за бисквитката.
 
 ### POST /api/onboard
 
@@ -390,7 +400,7 @@ SVG изображение: зодиакално колело с планети,
 | GET | `/ai-usage?days=30` | AI разходи: токени и цена по източник, модул, модел, ден и клиент (`days=0` = всичко) |
 | GET | `/daily-summary` | Текстът на сутрешното обобщение за вчера (само показва, не праща) |
 | GET | `/2fa/status` | Статус на 2FA |
-| POST | `/2fa/setup` · `/2fa/confirm` · `/2fa/disable` | Включване/изключване на TOTP |
+| POST | `/2fa/setup` · `/2fa/confirm` · `/2fa/disable` | Включване/изключване на TOTP; `disable` иска `{code}` |
 | GET / POST | `/settings` | AI, SMTP, шаблони, SEO, марка, OAuth, известия, юридически данни |
 | POST | `/settings/logo` | Качване на лого (form: `file`, `slot`) |
 | POST | `/settings/logo/reset` | Връщане на оригиналното лого |

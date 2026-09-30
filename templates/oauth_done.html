@@ -44,21 +44,32 @@
     </style>
 </head>
 <body>
+    {% if totp_challenge %}
+    <form id="totpForm" style="max-width:320px;margin:0 auto;">
+        <h1>Двуфакторна защита</h1>
+        <p style="margin-bottom:14px;">Въведи 6-цифрения код от приложението за удостоверяване.</p>
+        <input type="text" id="totpCode" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="8" placeholder="000000" required autofocus
+               style="font-size:1.3rem;letter-spacing:.3em;text-align:center;width:100%;padding:10px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--text);">
+        <p id="totpError" style="color:#e57373;min-height:1.4em;margin:8px 0;"></p>
+        <button type="submit" id="totpBtn"
+                style="width:100%;padding:11px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:1rem;cursor:pointer;">Потвърди</button>
+        <p style="margin-top:14px;"><a href="/login">Откажи</a></p>
+    </form>
+    {% else %}
     <div>
         <div class="spinner" aria-hidden="true"></div>
         <h1>Влизаш в профила си…</h1>
         <p>Ако страницата не се смени, <a href="{{ next_url }}">продължи оттук</a>.</p>
     </div>
+    {% endif %}
 
     <script>
         /* The token arrives in the page body rather than the query string:
            a URL lands in browser history, in server logs and in the referrer
            header of the next request, and a session token has no business
            in any of those. */
-        (function () {
-            var token = {{ token | tojson }};
-            var email = {{ email | tojson }};
-            var next = {{ next_url | tojson }};
+        function finishLogin(token, email, next) {
             try {
                 localStorage.setItem('miralog_token', token);
                 localStorage.setItem('miralog_email', email);
@@ -69,7 +80,39 @@
                 + '; path=/; max-age=' + (60 * 60 * 24 * 30)
                 + '; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '');
             window.location.replace(next);
+        }
+        {% if totp_challenge %}
+        (function () {
+            var challenge = {{ totp_challenge | tojson }};
+            var form = document.getElementById('totpForm');
+            var errorEl = document.getElementById('totpError');
+            var btn = document.getElementById('totpBtn');
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                errorEl.textContent = '';
+                btn.disabled = true;
+                fetch('/api/auth/totp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ challenge: challenge,
+                                           code: document.getElementById('totpCode').value.trim() })
+                }).then(function (resp) {
+                    return resp.json().catch(function () { return {}; }).then(function (data) {
+                        if (!resp.ok) {
+                            var d = data && data.detail;
+                            throw new Error(typeof d === 'string' ? d : 'Невалиден код.');
+                        }
+                        finishLogin(data.token, data.email, data.next || '/dashboard');
+                    });
+                }).catch(function (err) {
+                    errorEl.textContent = err.message;
+                    btn.disabled = false;
+                });
+            });
         })();
+        {% else %}
+        finishLogin({{ token | tojson }}, {{ email | tojson }}, {{ next_url | tojson }});
+        {% endif %}
     </script>
     <noscript>
         <p>Нужен е JavaScript, за да завършим влизането.

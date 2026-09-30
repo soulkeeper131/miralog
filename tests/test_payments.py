@@ -50,7 +50,7 @@ def test_oauth_signup_gets_the_same_free_features(app, db):
     Точно това беше счупено: акаунт без достъп до собствената си карта.
     """
     email = f"g-{secrets.token_hex(4)}@example.com"
-    row = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "Тест")
+    row = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "Тест", email_verified=True)
     unlocked = app.unlocked_features(app.get_user_by_id(row["id"]))
     assert "chart" in unlocked
     assert "horoscope" in unlocked

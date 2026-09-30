@@ -378,6 +378,11 @@
                     <input type="password" id="password" name="password" required
                            placeholder="••••••••" autocomplete="current-password" minlength="6">
                 </div>
+                <div class="form-group" id="totpGroup" hidden>
+                    <label for="totpCode">Код за двуфакторна защита</label>
+                    <input type="text" id="totpCode" name="totp" inputmode="numeric"
+                           autocomplete="one-time-code" maxlength="8" placeholder="000000">
+                </div>
                 <button type="submit" class="btn" id="submitBtn">Вход</button>
             </form>
             </details>
@@ -409,6 +414,8 @@
                 noemail:   ['Профилът не сподели имейл адрес. Разреши достъпа до имейла или се регистрирай с имейл и парола.', true],
                 blocked:   ['Този акаунт е блокиран. Пиши ни, ако смяташ, че е грешка.', true],
                 disabled:  ['Този начин за вход е временно изключен. Влез с имейл и парола.', true],
+                unverified:['Имейлът в този профил не е потвърден при доставчика. Потвърди го там или влез с имейл и парола.', true],
+                exists:    ['Вече има акаунт с този имейл. Влез с имейл и парола (или с Google). Ако нямаш парола, използвай „Забравена парола“.', true],
             };
             const entry = MESSAGES[reason];
             if (!entry) return;
@@ -443,12 +450,26 @@
         const errorEl = document.getElementById('error');
         const submitBtn = document.getElementById('submitBtn');
 
-        // If already logged in, redirect to dashboard (админ → панел на поддомейна)
+        // If already logged in, redirect to dashboard (админ → панел на поддомейна).
+        // Токенът се проверява първо: отменен (нова парола, блокиране) или
+        // изтекъл токен пращаше към таблото, то — обратно тук, и така в кръг.
         const existingToken = localStorage.getItem('miralog_token');
         if (existingToken) {
-            const onAdminHost = window.location.hostname === '{{ admin_host }}';
-            window.location.replace(onAdminHost ? '/admin' : '/dashboard');
+            fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + existingToken } })
+                .then(function (resp) {
+                    if (resp.ok) {
+                        const onAdminHost = window.location.hostname === '{{ admin_host }}';
+                        window.location.replace(onAdminHost ? '/admin' : '/dashboard');
+                    } else if (resp.status === 401 || resp.status === 403) {
+                        localStorage.removeItem('miralog_token');
+                        localStorage.removeItem('miralog_email');
+                        document.cookie = 'miralog_token=; path=/; max-age=0';
+                    }
+                })
+                .catch(function () { /* офлайн — оставаме на формата */ });
         }
+        const totpGroup = document.getElementById('totpGroup');
+        const totpInput = document.getElementById('totpCode');
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -458,18 +479,30 @@
 
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
+            const payload = { email, password };
+            if (!totpGroup.hidden && totpInput.value.trim()) payload.totp_code = totpInput.value.trim();
 
             try {
                 const resp = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
+                    body: JSON.stringify(payload)
                 });
 
-                const data = await resp.json();
+                const data = await resp.json().catch(() => ({}));
 
                 if (!resp.ok) {
-                    throw new Error(data.detail || 'Грешка при вход');
+                    const detail = data.detail;
+                    if (detail && typeof detail === 'object') {
+                        // Паролата е вярна, но акаунтът е с 2FA: показваме полето за кода.
+                        if (detail.reason === 'totp_required' || detail.reason === 'totp_invalid') {
+                            totpGroup.hidden = false;
+                            totpInput.value = '';
+                            totpInput.focus();
+                        }
+                        throw new Error(detail.message || 'Грешка при вход');
+                    }
+                    throw new Error(detail || 'Грешка при вход');
                 }
 
                 // Store token and redirect (админ → отделен панел на поддомейна)

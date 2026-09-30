@@ -516,9 +516,15 @@ def init_db():
             ("lifecycle_expiring_for", "ALTER TABLE users ADD COLUMN lifecycle_expiring_for TEXT"),
             ("lifecycle_expired_for", "ALTER TABLE users ADD COLUMN lifecycle_expired_for TEXT"),
             ("last_digest_on", "ALTER TABLE users ADD COLUMN last_digest_on TEXT"),
+            # Вдига се при смяна на парола, блокиране, смяна на имейл — и
+            # всички издадени дотогава токени спират да важат. Токен без
+            # версия се чете като 0, затова деплоят не изхвърля никого.
+            ("token_version", "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
+        # Входът търси имейла без значение от главните букви.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(lower(email))")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS password_resets (
@@ -581,10 +587,6 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_at ON ai_usage(at)")
-
-        # The seeded admin predates the role column, so claim it here.
-        conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
-                     (ADMIN_EMAIL,))
 
         # Installations from before the brand became configurable have the old
         # name baked into their saved SEO title. Swap it for the {brand}
@@ -766,12 +768,13 @@ def init_db():
                 " VALUES ('demo', 'Основен', 0, 'EUR', 'once', 2, ?, 0)",
                 (json.dumps(["planets", "aspects"]),))
 
-        # The first account created is the administrator. Admins bypass every
-        # gate by role, so the plan they sit on does not matter.
-        conn.execute(
-            "UPDATE users SET role = 'admin' WHERE email = ?",
-            (ADMIN_EMAIL,)
-        )
+        # Първият администратор се назначава само докато няма нито един.
+        # Досега всеки старт правеше админ онзи, който държи ADMIN_EMAIL — а
+        # всеки потребител може да смени имейла си на свободен адрес и така
+        # да стане администратор при следващия деплой.
+        if not conn.execute("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1").fetchone():
+            conn.execute("UPDATE users SET role = 'admin' WHERE lower(email) = lower(?)",
+                         (ADMIN_EMAIL,))
         conn.commit()
 
 # Колко тежки заявки да вървят едновременно. Съобразено е с 1 CPU / 512MB;
@@ -992,6 +995,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 # освен админ + auth + static пътища е блокирано — чиста изолация без втори процес.
 _ADMIN_HOST_ALLOWED_EXACT = {
     "/", "/admin", "/login", "/healthz", "/api/auth/login", "/api/auth/me",
+    "/api/auth/totp",
 }
 _ADMIN_HOST_ALLOWED_PREFIXES = ("/api/admin/", "/static/", "/uploads/")
 
@@ -1278,22 +1282,94 @@ def check_new_password(password: str) -> None:
     по-къса парола трябва да могат да влязат, както досега."""
     if len((password or "").strip()) < MIN_PASSWORD_LEN:
         raise HTTPException(400, f"Паролата трябва да е поне {MIN_PASSWORD_LEN} символа.")
+    if len((password or "").encode()) > _BCRYPT_MAX_BYTES:
+        raise HTTPException(400, "Паролата е твърде дълга (до около 70 латински "
+                                 "или 35 букви на кирилица).")
+
+
+# bcrypt чете само първите 72 байта. До версия 5 отрязваше мълчаливо, а от 5
+# хвърля грешка — дълга парола (над ~36 букви на кирилица) даваше 500 при вход
+# и регистрация. Отрязваме сами, точно както са направени старите хешове.
+_BCRYPT_MAX_BYTES = 72
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw((password or "").encode()[:_BCRYPT_MAX_BYTES], bcrypt.gensalt()).decode()
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
+    try:
+        return bcrypt.checkpw((password or "").encode()[:_BCRYPT_MAX_BYTES],
+                              (password_hash or "").encode())
+    except ValueError:
+        return False
+
+
+_DUMMY_HASH: Optional[str] = None
+
+def _dummy_password_hash() -> str:
+    """Хеш за сравнение, когато имейлът не съществува (изравнява времето)."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
+    return _DUMMY_HASH
+
+def _token_version(user_id: int) -> int:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT token_version FROM users WHERE id = ?", (user_id,)).fetchone()
+    return int(row[0] or 0) if row else 0
+
 
 def create_token(user_id: int, email: str) -> str:
     expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
         "email": email,
-        "exp": expire
+        "exp": expire,
+        # Версията на акаунта в момента на издаване. Щом се вдигне (нова
+        # парола, блокиране, нов имейл), този токен спира да важи.
+        "tv": _token_version(user_id),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def bump_token_version(user_id: int, conn: Optional[sqlite3.Connection] = None) -> None:
+    """Отменя всички издадени досега токени на акаунта."""
+    sql = "UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = ?"
+    if conn is not None:
+        conn.execute(sql, (user_id,))
+        return
+    with sqlite3.connect(DB_PATH) as own:
+        own.execute(sql, (user_id,))
+        own.commit()
+
+
+def user_for_token(token: Optional[str]) -> dict:
+    """Акаунтът зад токена — или HTTPException, ако не може да се ползва.
+
+    Една проверка за всички пътища (API, страници, аудио): подписът и срокът,
+    дали акаунтът още съществува, дали токенът не е отменен и дали акаунтът
+    не е блокиран. Досега се гледаше само подписът — блокиран потребител и
+    стар токен след смяна на паролата продължаваха да работят 30 дни.
+    """
+    if not token:
+        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except (JWTError, KeyError, TypeError, ValueError):
+        raise HTTPException(401, "Сесията изтече. Влез отново.")
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    try:
+        token_ver = int(payload.get("tv", 0) or 0)
+    except (TypeError, ValueError):
+        token_ver = -1
+    if token_ver != int(row.get("token_version") or 0):
+        raise HTTPException(401, "Сесията изтече. Влез отново.")
+    if row.get("is_blocked"):
+        raise HTTPException(403, "Акаунтът е блокиран.")
+    return row
 
 # --- Rate limiting за login (brute-force защита, in-memory) ---
 import time as _time
@@ -1302,13 +1378,21 @@ _LOGIN_WINDOW = 900      # прозорец 15 мин
 _LOGIN_MAX_FAILS = 5     # max провалени опита
 _LOGIN_LOCKOUT = 900     # блокиране 15 мин
 
-def _login_blocked(key: str) -> bool:
+_LOGIN_IP_MAX_FAILS = 30  # грешни опита от един IP за всички имейли (15 мин)
+
+def _login_blocked(key: str, limit: int = _LOGIN_MAX_FAILS) -> bool:
     now = _time.monotonic()
     fails = [t for t in _LOGIN_FAILURES.get(key, []) if now - t < _LOGIN_WINDOW]
-    return len(fails) >= _LOGIN_MAX_FAILS
+    return len(fails) >= limit
 
 def _login_record_failure(key: str) -> None:
     now = _time.monotonic()
+    # Всеки случаен имейл отваря нов ключ; без чистене речникът расте
+    # безкрайно. Изхвърляме изтеклите, когато станат много.
+    if len(_LOGIN_FAILURES) > 5000:
+        for stale in [k for k, v in list(_LOGIN_FAILURES.items())
+                      if not v or now - v[-1] >= _LOGIN_WINDOW]:
+            _LOGIN_FAILURES.pop(stale, None)
     _LOGIN_FAILURES[key] = [t for t in _LOGIN_FAILURES.get(key, []) if now - t < _LOGIN_WINDOW]
     _LOGIN_FAILURES[key].append(now)
 
@@ -1424,16 +1508,9 @@ def _touch_last_seen(user_id: int) -> None:
 
 def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme)) -> Tuple[int, str]:
     """Dependency that returns (user_id, email) from valid JWT token."""
-    if not token:
-        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = int(payload["sub"])
-        email = payload["email"]
-        _touch_last_seen(user_id)
-        return user_id, email
-    except JWTError:
-        raise HTTPException(401, "Сесията изтече. Влез отново.")
+    row = user_for_token(token)
+    _touch_last_seen(row["id"])
+    return row["id"], row["email"]
 
 def get_current_user_flex(request: Request) -> Tuple[int, str]:
     """JWT от Authorization header, ?token= или miralog_token cookie.
@@ -1441,16 +1518,9 @@ def get_current_user_flex(request: Request) -> Tuple[int, str]:
     Нужен за <audio>/<img> тагове (напр. гласово четене), които не могат да
     слагат Authorization header — там токенът идва през cookie.
     """
-    token = _token_from_request(request)
-    if not token:
-        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = int(payload["sub"])
-        _touch_last_seen(user_id)
-        return user_id, payload["email"]
-    except JWTError:
-        raise HTTPException(401, "Сесията изтече. Влез отново.")
+    row = user_for_token(_token_from_request(request))
+    _touch_last_seen(row["id"])
+    return row["id"], row["email"]
 
 def get_user_by_id(user_id: int) -> Optional[dict]:
     with sqlite3.connect(DB_PATH) as conn:
@@ -1674,10 +1744,44 @@ def require_feature(feature: str):
 
 # --- DB Helpers ---
 def get_user_by_email(email: str) -> Optional[dict]:
+    """Акаунтът по имейл, без значение от главните букви.
+
+    Телефоните често пишат първата буква главна, а регистрацията пази имейла
+    с малки — „Ivan@…“ даваше „грешна парола“. Точното съвпадение печели,
+    ако случайно има два акаунта, различни само по регистъра.
+    """
+    email = (email or "").strip()
+    if not email:
+        return None
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if not row:
+            row = conn.execute(
+                "SELECT * FROM users WHERE lower(email) = lower(?) ORDER BY id LIMIT 1",
+                (email,)).fetchone()
         return dict(row) if row else None
+
+
+_EMAIL_BAD_CHARS = set(' \t\r\n,;:<>()[]\\"')
+
+def valid_email(email: str) -> bool:
+    """Строга, но не прекалена проверка на имейл за нови акаунти.
+
+    Старата пускаше „a@x.com,b@y.com“ — писмата после тръгваха към няколко
+    адреса наведнъж.
+    """
+    email = (email or "").strip()
+    if not email or len(email) > 254 or email.count("@") != 1:
+        return False
+    if any(ch in _EMAIL_BAD_CHARS for ch in email):
+        return False
+    local, domain = email.split("@")
+    if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+        return False
+    if ".." in domain or len(domain.rsplit(".", 1)[-1]) < 2:
+        return False
+    return True
 
 def create_user(email: str, password_hash: str) -> dict:
     with sqlite3.connect(DB_PATH) as conn:
@@ -2194,19 +2298,47 @@ def natal_to_text(person: dict, chart_data: dict) -> str:
 def api_login(data: AuthRequest, request: Request):
     """Login with email/password (+TOTP при активирана 2FA). Rate-limited."""
     email_key = (data.email or "").strip().lower()
-    ip = request.client.host if request.client else ""
+    # Истинският IP, а не адресът на проксито на Coolify: с него всички
+    # посетители деляха един брояч и всеки можеше да заключи чужд акаунт.
+    ip = client_ip(request)
     key = f"{email_key}|{ip}"
-    if _login_blocked(key):
+    ip_key = f"ip|{ip}" if ip else ""
+    if _login_blocked(key) or (ip_key and _login_blocked(ip_key, _LOGIN_IP_MAX_FAILS)):
         raise HTTPException(429, "Твърде много неуспешни опити. Опитай отново след 15 минути.")
 
-    user = get_user_by_email(data.email)
-    if not user or not verify_password(data.password, user["password_hash"]):
+    user = get_user_by_email(email_key)
+    if not user:
+        # Същото време като при грешна парола, за да не се познава по
+        # скоростта дали имейлът е регистриран.
+        verify_password(data.password or "", _dummy_password_hash())
+    if not user or not verify_password(data.password or "", user["password_hash"]):
         _login_record_failure(key)
+        if ip_key:
+            _login_record_failure(ip_key)
         raise HTTPException(401, "Грешен имейл или парола.")
 
+    if user.get("is_blocked"):
+        raise HTTPException(403, "Този акаунт е блокиран. Пиши ни, ако смяташ, че е грешка.")
+
     if user.get("totp_secret"):
-        if not data.totp_code or not verify_totp(user["totp_secret"], data.totp_code):
-            raise HTTPException(401, "Невалиден код за двуфакторна автентикация.")
+        # Паролата вече е вярна, затова лимитът е по акаунт, не по IP: иначе
+        # 6-цифреният код се налучква от много адреси без край.
+        totp_key = f"totp|{user['id']}"
+        if _login_blocked(totp_key):
+            raise HTTPException(429, "Твърде много грешни кодове. Опитай отново след 15 минути.")
+        code = (data.totp_code or "").strip()
+        if not code:
+            raise HTTPException(401, {
+                "reason": "totp_required",
+                "message": "Въведи 6-цифрения код от приложението за удостоверяване.",
+            })
+        if not verify_totp(user["totp_secret"], code):
+            _login_record_failure(totp_key)
+            raise HTTPException(401, {
+                "reason": "totp_invalid",
+                "message": "Невалиден код за двуфакторна автентикация.",
+            })
+        _login_clear(totp_key)
 
     _login_clear(key)
     token = create_token(user["id"], user["email"])
@@ -2461,7 +2593,7 @@ def api_onboard(data: OnboardRequest, request: Request):
     the chart page itself.
     """
     email = (data.email or "").strip().lower()
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not valid_email(email):
         raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
     if not (data.name or "").strip():
         raise HTTPException(400, "Моля, въведи име.")
@@ -2596,7 +2728,7 @@ def api_onboard(data: OnboardRequest, request: Request):
 def api_register(data: AuthRequest, request: Request):
     """Create an account. Each user only ever sees their own people."""
     email = (data.email or "").strip().lower()
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not valid_email(email):
         raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
     check_new_password(data.password or "")
     rate_limit("signup", client_ip(request))
@@ -3529,7 +3661,7 @@ def api_admin_users(q: Optional[str] = None, admin: dict = Depends(require_admin
 def api_admin_create_user(data: AdminUserCreate, admin: dict = Depends(require_admin)):
     """Create an account by hand, with its plan set straight away."""
     email = (data.email or "").strip().lower()
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not valid_email(email):
         raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
     check_new_password(data.password or "")
     if get_user_by_email(email):
@@ -3599,13 +3731,22 @@ def api_admin_update_user(user_id: int, data: AdminUserUpdate, admin: dict = Dep
     if not sets:
         return {"ok": True, "changed": False}
 
+    # Нова парола или блокиране прекъсват всички сесии на акаунта: иначе
+    # отключването по-късно би съживило стари (може би откраднати) токени.
+    revoke = bool((data.password or "").strip()) or bool(data.is_blocked)
+
     params.append(user_id)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params)
+        if revoke:
+            bump_token_version(user_id, conn)
         conn.commit()
     audit("user_updated", f"Променен потребител {target['email']} (id={user_id})",
           user_id=user_id, actor=admin["email"])
-    return {"ok": True, "changed": True}
+    result = {"ok": True, "changed": True}
+    if revoke and target["id"] == admin["id"]:
+        result["token"] = create_token(admin["id"], admin["email"])
+    return result
 
 @app.delete("/api/admin/users/{user_id}")
 def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
@@ -4063,7 +4204,9 @@ def api_admin_2fa_status(admin: dict = Depends(require_admin)):
 def api_admin_2fa_setup(admin: dict = Depends(require_admin)):
     """Генерира TOTP secret + otpauth URI (за сканиране). Активира се след confirm."""
     secret = generate_totp_secret()
-    set_setting("totp_pending_secret", secret)
+    # По един чакащ ключ на админ: с общ ключ двама админи, включващи 2FA
+    # едновременно, си пренаписваха ключа и единият активираше чуждия.
+    set_setting(f"totp_pending_secret:{admin['id']}", secret)
     uri = totp_uri(secret, admin["email"], brand_name())
     audit("2fa_setup", "Генериран secret за 2FA", user_id=admin["id"], actor=admin["email"])
     return {"secret": secret, "uri": uri}
@@ -4071,23 +4214,37 @@ def api_admin_2fa_setup(admin: dict = Depends(require_admin)):
 @app.post("/api/admin/2fa/confirm")
 def api_admin_2fa_confirm(data: dict, admin: dict = Depends(require_admin)):
     """Потвърждава с код от аппа и активира 2FA за админа."""
-    pending = get_setting("totp_pending_secret")
+    pending_key = f"totp_pending_secret:{admin['id']}"
+    pending = get_setting(pending_key)
     code = str(data.get("code") or "").strip()
     if not pending or not verify_totp(pending, code):
         raise HTTPException(400, "Невалиден код. Опитай отново.")
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET totp_secret = ? WHERE id = ?", (pending, admin["id"]))
         conn.commit()
-    set_setting("totp_pending_secret", "")
+    set_setting(pending_key, "")
     audit("2fa_enabled", "2FA активирана", user_id=admin["id"], actor=admin["email"])
     return {"ok": True}
 
 @app.post("/api/admin/2fa/disable")
-def api_admin_2fa_disable(admin: dict = Depends(require_admin)):
+def api_admin_2fa_disable(data: Optional[dict] = None, admin: dict = Depends(require_admin)):
+    """Изключването иска текущ код: само токен (напр. откраднат) не стига,
+    за да се махне втората защита."""
+    row = get_user_by_id(admin["id"]) or {}
+    secret = row.get("totp_secret")
+    if secret:
+        totp_key = f"totp|{admin['id']}"
+        if _login_blocked(totp_key):
+            raise HTTPException(429, "Твърде много грешни кодове. Опитай отново след 15 минути.")
+        code = str((data or {}).get("code") or "").strip()
+        if not verify_totp(secret, code):
+            _login_record_failure(totp_key)
+            raise HTTPException(400, "Въведи валиден 6-цифрен код от приложението, за да изключиш 2FA.")
+        _login_clear(totp_key)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET totp_secret = NULL WHERE id = ?", (admin["id"],))
         conn.commit()
-    set_setting("totp_pending_secret", "")
+    set_setting(f"totp_pending_secret:{admin['id']}", "")
     audit("2fa_disabled", "2FA деактивирана", user_id=admin["id"], actor=admin["email"])
     return {"ok": True}
 
@@ -4537,7 +4694,7 @@ def api_admin_reset_logo(payload: dict, admin: dict = Depends(require_admin)):
 def api_admin_test_email(payload: dict, admin: dict = Depends(require_admin)):
     """Send a test message through the configured SMTP server."""
     to = (payload.get("to") or "").strip()
-    if "@" not in to:
+    if not valid_email(to):
         raise HTTPException(400, "Въведи валиден имейл адрес.")
     body = "Това е тестово съобщение. Ако го получаваш, SMTP настройките работят."
     send_email(to, f"Тестов имейл от {brand_name()}", body, html=_email_html(body))
@@ -4564,7 +4721,7 @@ def _template_preview_data() -> list:
 def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_admin)):
     """Изпраща всички имейл темплейти (HTML) + касов документ/фактура (PDF)."""
     to = (payload.get("to") or "").strip()
-    if "@" not in to:
+    if not valid_email(to):
         raise HTTPException(400, "Въведи валиден имейл адрес.")
     if not smtp_setting("smtp_host"):
         raise HTTPException(400, "SMTP сървърът не е конфигуриран.")
@@ -5510,13 +5667,27 @@ def _oauth_get(url: str, token: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+class OAuthRefused(Exception):
+    """Входът през доставчика не може да продължи; `reason` отива в /login?oauth=."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 def _oauth_link_or_create(provider: str, provider_user_id: str,
-                          email: str, display_name: str) -> dict:
+                          email: str, display_name: str,
+                          email_verified: bool = False) -> dict:
     """Find the account this identity belongs to, creating one if needed.
 
     Three cases, in order: the identity is already linked; the email matches
     an existing account, so the identity is attached to it rather than making
     a second account for the same person; or nobody is known and we create.
+
+    Свързването по имейл се доверява само на потвърден от доставчика имейл
+    (Google връща email_verified). Иначе всеки, който си направи профил с
+    чужд адрес, влизаше в чуждия акаунт. Facebook не казва дали имейлът е
+    потвърден, затова там съществуващ акаунт не се свързва автоматично.
     """
     email = (email or "").strip().lower()
     with sqlite3.connect(DB_PATH) as conn:
@@ -5529,15 +5700,28 @@ def _oauth_link_or_create(provider: str, provider_user_id: str,
         if user:
             return user
 
+    if email and provider == "google" and not email_verified:
+        # Непотвърден имейл не бива нито да отваря чужд акаунт, нито да заема
+        # адреса за нов.
+        raise OAuthRefused("unverified")
+
     user = get_user_by_email(email) if email else None
+    if user:
+        if provider != "google":
+            raise OAuthRefused("exists")
+        # Първо свързване към заварен акаунт: доставчикът доказа, че имейлът
+        # е на този човек, затова всички стари сесии се прекъсват — ако някой
+        # е направил акаунта с чужд имейл преди собственика, губи достъпа.
+        bump_token_version(user["id"])
+        audit("oauth_linked", f"Свързан вход през {provider}: {email}",
+              user_id=user["id"], actor=email)
+        user = get_user_by_id(user["id"]) or user
     if not user:
         if not email:
             # Facebook can withhold the email; without one there is no way to
             # reach the person or to merge later, so we stop rather than make
             # an unreachable account.
-            raise HTTPException(400,
-                "Профилът не върна имейл адрес. Влез с имейл и парола или "
-                "разреши достъпа до имейла си.")
+            raise OAuthRefused("noemail")
         # No usable password: this account is reached through the provider,
         # and "forgot password" still works because the email is real.
         user = create_user(email, hash_password(secrets.token_urlsafe(32)))
@@ -5569,7 +5753,7 @@ def api_oauth_start(provider: str, request: Request, next: str = "/dashboard"):
     client_id = cfg["google_client_id"] if provider == "google" else cfg["facebook_app_id"]
 
     # Only our own paths, so the callback cannot be used as an open redirect.
-    safe_next = next if next.startswith("/") and not next.startswith("//") else "/dashboard"
+    safe_next = safe_next_path(next)
     state = _oauth_state_new(provider, safe_next)
     params = {
         "client_id": client_id,
@@ -5583,6 +5767,19 @@ def api_oauth_start(provider: str, request: Request, next: str = "/dashboard"):
         params["prompt"] = "select_account"
     url = OAUTH_ENDPOINTS[provider]["auth"] + "?" + urllib.parse.urlencode(params)
     return RedirectResponse(url, status_code=302)
+
+
+def safe_next_path(value: str, default: str = "/dashboard") -> str:
+    """Само пътища в нашия сайт. „/\\evil.com“ браузърът чете като
+    „//evil.com“ — чужд сайт — затова обратната наклонена черта не минава."""
+    value = (value or "").strip()
+    if (not value.startswith("/") or value.startswith("//") or "\\" in value
+            or any(ord(ch) < 32 for ch in value)):
+        return default
+    parts = urllib.parse.urlsplit(value)
+    if parts.scheme or parts.netloc:
+        return default
+    return value
 
 
 def _oauth_fail(reason: str):
@@ -5637,17 +5834,33 @@ def api_oauth_callback(provider: str, request: Request,
     if not provider_user_id:
         return _oauth_fail("failed")
 
+    # Google връща email_verified като булева стойност (понякога като низ).
+    verified = profile.get("email_verified")
+    email_verified = verified is True or str(verified).strip().lower() == "true"
     try:
         user = _oauth_link_or_create(
             provider, provider_user_id,
             profile.get("email") or "",
-            profile.get("name") or "")
-    except HTTPException:
-        # Липсващ имейл (Facebook може да го скрие) — казваме го на страницата.
-        return _oauth_fail("noemail")
+            profile.get("name") or "",
+            email_verified=email_verified)
+    except OAuthRefused as refused:
+        # Липсващ/непотвърден имейл или заварен акаунт — казваме го на страницата.
+        return _oauth_fail(refused.reason)
 
     if user.get("is_blocked"):
         return _oauth_fail("blocked")
+
+    if user.get("totp_secret"):
+        # Входът през доставчик не бива да заобикаля 2FA: първо кодът, после
+        # токенът. Предизвикателството е еднократно и живее 5 минути.
+        challenge = _totp_challenge_new(user["id"], saved["next"], provider)
+        return HTMLResponse(templates.get_template("oauth_done.html").render({
+            "request": request,
+            "token": None,
+            "email": user["email"],
+            "next_url": saved["next"],
+            "totp_challenge": challenge,
+        }))
 
     token = create_token(user["id"], user["email"])
     audit("login", f"Вход през {provider}: {user['email']}",
@@ -5660,7 +5873,62 @@ def api_oauth_callback(provider: str, request: Request,
         "token": token,
         "email": user["email"],
         "next_url": saved["next"],
+        "totp_challenge": None,
     }))
+
+
+# --- 2FA след вход през Google/Facebook ---
+_TOTP_CHALLENGES: dict = {}
+_TOTP_CHALLENGE_TTL = 300
+_TOTP_CHALLENGE_TRIES = 5
+_TOTP_CHALLENGE_LOCK = threading.Lock()
+
+
+def _totp_challenge_new(user_id: int, next_url: str, provider: str) -> str:
+    token = secrets.token_urlsafe(24)
+    now = time.time()
+    with _TOTP_CHALLENGE_LOCK:
+        for key, value in list(_TOTP_CHALLENGES.items()):
+            if now - value["at"] > _TOTP_CHALLENGE_TTL:
+                _TOTP_CHALLENGES.pop(key, None)
+        _TOTP_CHALLENGES[token] = {"user_id": user_id, "next": next_url,
+                                   "provider": provider, "at": now, "tries": 0}
+    return token
+
+
+class TotpChallengeRequest(BaseModel):
+    challenge: str
+    code: str
+
+
+@app.post("/api/auth/totp")
+def api_auth_totp(data: TotpChallengeRequest):
+    """Вторият фактор след вход през доставчик: код срещу токен."""
+    with _TOTP_CHALLENGE_LOCK:
+        entry = _TOTP_CHALLENGES.get((data.challenge or "").strip())
+        if not entry or time.time() - entry["at"] > _TOTP_CHALLENGE_TTL:
+            _TOTP_CHALLENGES.pop((data.challenge or "").strip(), None)
+            raise HTTPException(401, "Времето за кода изтече. Влез отново.")
+    user = get_user_by_id(entry["user_id"])
+    if not user or user.get("is_blocked") or not user.get("totp_secret"):
+        raise HTTPException(401, "Влез отново.")
+    totp_key = f"totp|{user['id']}"
+    if _login_blocked(totp_key):
+        raise HTTPException(429, "Твърде много грешни кодове. Опитай отново след 15 минути.")
+    if not verify_totp(user["totp_secret"], data.code):
+        _login_record_failure(totp_key)
+        with _TOTP_CHALLENGE_LOCK:
+            entry["tries"] += 1
+            if entry["tries"] >= _TOTP_CHALLENGE_TRIES:
+                _TOTP_CHALLENGES.pop(data.challenge.strip(), None)
+        raise HTTPException(401, "Невалиден код за двуфакторна автентикация.")
+    with _TOTP_CHALLENGE_LOCK:
+        _TOTP_CHALLENGES.pop(data.challenge.strip(), None)
+    _login_clear(totp_key)
+    token = create_token(user["id"], user["email"])
+    audit("login", f"Вход през {entry['provider']} с 2FA: {user['email']}",
+          user_id=user["id"], actor=user["email"])
+    return {"token": token, "email": user["email"], "next": entry["next"]}
 
 
 @app.post("/api/auth/forgot-password")
@@ -5691,7 +5959,11 @@ def api_reset_password(data: ResetPasswordRequest):
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                      (hash_password(data.new_password), user_id))
+        # Новата парола прекъсва всички стари сесии — включително на някой,
+        # който е направил акаунт с чужд имейл преди истинския собственик.
+        bump_token_version(user_id, conn)
         conn.commit()
+    audit("password_reset", "Паролата е зададена наново по линк от имейл.", user_id=user_id)
     return {"ok": True}
 
 @app.get("/api/billing/status")
@@ -5902,6 +6174,22 @@ def api_get_share(token: str):
 class AccountUpdate(BaseModel):
     display_name: Optional[str] = None
     email: Optional[str] = None
+    # Нужна само при смяна на имейла.
+    current_password: Optional[str] = None
+
+
+def _notify_email_changed(old_email: str, new_email: str) -> None:
+    """Писмо до стария адрес: ако смяната не е от собственика, той разбира веднага."""
+    try:
+        if not old_email or not smtp_setting("smtp_host"):
+            return
+        body = (f"Имейлът на профила ти в {brand_name()} беше сменен на {new_email}.\n\n"
+                "Ако това си ти, няма нужда да правиш нищо. Ако не си, пиши ни "
+                "веднага в отговор на това писмо.")
+        _in_background(send_email, old_email, f"{brand_name()}: сменен имейл на профила",
+                       body, html=_email_html(body))
+    except Exception:
+        log.warning("Писмото за сменен имейл не тръгна", exc_info=True)
 
 class PasswordChange(BaseModel):
     current_password: str
@@ -5948,11 +6236,27 @@ def api_update_account(data: AccountUpdate, user: Tuple[int, str] = Depends(get_
         fields.append("display_name = ?")
         values.append(data.display_name.strip()[:80])
 
+    current = get_user_by_id(user_id) or {}
+    old_email = current.get("email") or ""
     new_email = None
     if data.email is not None and data.email.strip():
-        new_email = data.email.strip().lower()
-        if "@" not in new_email or "." not in new_email.split("@")[-1]:
+        candidate = data.email.strip().lower()
+        # Формата праща имейла винаги; смяна е само когато наистина е друг.
+        if candidate != old_email.strip().lower():
+            new_email = candidate
+    if new_email:
+        if not valid_email(new_email):
             raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
+        # Имейлът е ключът към акаунта: с него се пише за нова парола. Без
+        # паролата откраднат токен ставаше постоянно превземане — смяна на
+        # имейла, после „забравена парола“.
+        if not verify_password(data.current_password or "", current.get("password_hash") or ""):
+            raise HTTPException(403, {
+                "reason": "password_required",
+                "message": ("За смяна на имейла въведи текущата си парола. Ако "
+                            "влизаш с Google/Facebook или по линк и нямаш парола, "
+                            "задай си такава от „Забравена парола“."),
+            })
         existing = get_user_by_email(new_email)
         if existing and existing["id"] != user_id:
             raise HTTPException(409, "Вече съществува акаунт с този имейл.")
@@ -5960,17 +6264,23 @@ def api_update_account(data: AccountUpdate, user: Tuple[int, str] = Depends(get_
         values.append(new_email)
 
     if not fields:
-        return {"ok": True}
+        return {"ok": True, "email": old_email,
+                "display_name": current.get("display_name") or ""}
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", (*values, user_id))
+        if new_email:
+            bump_token_version(user_id, conn)
         conn.commit()
 
-    # Changing the email invalidates the old token's claim, so issue a fresh one.
     row = get_user_by_id(user_id)
     result = {"ok": True, "email": row.get("email"), "display_name": row.get("display_name") or ""}
     if new_email:
+        # Старите сесии (и на други устройства) спират; тази получава нов токен.
         result["token"] = create_token(user_id, row["email"])
+        audit("email_changed", f"Имейлът е сменен от {old_email} на {new_email}",
+              user_id=user_id, actor=new_email)
+        _notify_email_changed(old_email, new_email)
     return result
 
 @app.post("/api/account/password")
@@ -5987,9 +6297,14 @@ def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(ge
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                      (hash_password(data.new_password), user_id))
+        # Сменената парола трябва да изхвърли всеки, който е влязъл със
+        # старата — иначе откраднат токен работи още 30 дни.
+        bump_token_version(user_id, conn)
         conn.commit()
-    # The old token stays valid; it carries no password claim.
-    return {"ok": True}
+    audit("password_changed", "Паролата е сменена от профила.", user_id=user_id,
+          actor=row.get("email"))
+    # Това устройство остава вписано с нов токен.
+    return {"ok": True, "token": create_token(user_id, row["email"])}
 
 @app.get("/api/account/export")
 def api_export_account(user: Tuple[int, str] = Depends(get_current_user)):
@@ -6054,6 +6369,9 @@ def api_delete_account(user: Tuple[int, str] = Depends(get_current_user)):
         conn.execute("DELETE FROM feature_purchases WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+        # Връзките към Google/Facebook пазят имейла — лични данни, които
+        # трябва да си отидат заедно с акаунта.
+        conn.execute("DELETE FROM oauth_accounts WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM audit_log WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
@@ -8231,7 +8549,7 @@ def api_email_reading(person_id: int, data: EmailReadingRequest,
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
     to = (data.to or email or "").strip()
-    if "@" not in to:
+    if not valid_email(to):
         raise HTTPException(400, "Въведи валиден имейл адрес.")
     require_reading_access(user_id, data.key)
 
@@ -8435,9 +8753,10 @@ async def view_chart(request: Request, person_id: int):
     token = _token_from_request(request)
     if token:
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            user_id = int(payload["sub"])
-        except JWTError:
+            # Същата проверка като в API-то: отменен токен или блокиран
+            # акаунт не бива да виждат картата през страницата.
+            user_id = user_for_token(token)["id"]
+        except HTTPException:
             pass
     if not user_id:
         # Fallback: redirect to login (chart page needs auth)

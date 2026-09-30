@@ -108,7 +108,7 @@ def test_email_is_matched_case_insensitively(app, db):
     """Иначе Google връща Ivan@ и се прави втори акаунт до ivan@."""
     email = f"MiXeD-{secrets.token_hex(3)}@Example.COM"
     created = db.create_user(email.lower(), db.hash_password("x"))
-    linked = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "")
+    linked = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "", email_verified=True)
     assert linked["id"] == created["id"]
 
 

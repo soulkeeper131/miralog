@@ -491,6 +491,15 @@
             document.getElementById('digestOptIn').checked = !!acc.digest_opt_in;
         }
 
+        let loadedEmail = '';
+        // Нов токен (след смяна на имейл или парола) — в паметта и в бисквитката,
+        // иначе страниците, които четат бисквитката, биха ползвали стария.
+        function storeToken(token) {
+            if (!token) return;
+            localStorage.setItem('miralog_token', token);
+            document.cookie = 'miralog_token=' + encodeURIComponent(token) + '; path=/; SameSite=Lax; max-age=2592000';
+        }
+
         async function loadAccount() {
             try {
                 const resp = await fetch('/api/account', { headers: authHeaders() });
@@ -498,6 +507,7 @@
                 const acc = await resp.json();
                 document.getElementById('displayName').value = acc.display_name || '';
                 document.getElementById('accountEmail').value = acc.email || '';
+                loadedEmail = (acc.email || '').trim().toLowerCase();
                 renderPlan(acc);
                 if (acc.is_admin) {
                     document.getElementById('adminSection').hidden = false;
@@ -547,22 +557,36 @@
         document.getElementById('profileForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('profileBtn');
+            const newEmail = document.getElementById('accountEmail').value.trim();
+            const body = {
+                display_name: document.getElementById('displayName').value,
+                email: newEmail,
+            };
+            // Смяната на имейла иска текущата парола — само тя пази акаунта,
+            // ако някой е взел отворена сесия.
+            if (newEmail.toLowerCase() !== loadedEmail) {
+                const pwd = await uiPrompt('За смяна на имейла въведи текущата си парола.', {
+                    title: 'Потвърди смяната', type: 'password', ok: 'Смени имейла',
+                });
+                if (pwd === null) return;
+                body.current_password = pwd;
+            }
             btn.disabled = true;
             btn.textContent = 'Запазване...';
             try {
                 const resp = await fetch('/api/account', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        display_name: document.getElementById('displayName').value,
-                        email: document.getElementById('accountEmail').value.trim(),
-                    })
+                    body: JSON.stringify(body)
                 });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка при запазване');
-                // A new email invalidates the old token's claim; keep the session alive.
-                if (data.token) localStorage.setItem('miralog_token', data.token);
+                if (!resp.ok) {
+                    const d = data.detail;
+                    throw new Error((d && typeof d === 'object') ? (d.message || 'Грешка при запазване') : (d || 'Грешка при запазване'));
+                }
+                // Новият имейл прекъсва старите сесии; тази продължава с нов токен.
+                storeToken(data.token);
                 showBanner('Профилът е запазен.', 'success');
                 loadAccount();
             } catch (err) {
@@ -594,6 +618,8 @@
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(data.detail || 'Грешка при смяна на паролата');
+                // Новата парола прекъсва другите сесии; тази остава с нов токен.
+                storeToken(data.token);
                 document.getElementById('passwordForm').reset();
                 showBanner('Паролата е сменена.', 'success');
             } catch (err) {
