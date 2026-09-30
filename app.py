@@ -170,6 +170,62 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 
+# --- Логове за поддръжка ---
+# Всяка заявка получава кратък код (X-Request-ID). Клиентът го вижда при
+# грешка, а в лога стои пред всеки ред от тази заявка — включително от
+# фоновото AI генериране. Досега info съобщенията изобщо не стигаха до лога
+# (логерът нямаше handler), а логовете в Coolify изчезват при всеки деплой —
+# затова се пишат и във файл в тома с данните.
+import contextvars
+from logging.handlers import TimedRotatingFileHandler
+
+REQUEST_ID: contextvars.ContextVar = contextvars.ContextVar("request_id", default="-")
+LOG_DIR = Path(os.environ.get("LOG_DIR", DB_PATH.parent / "logs"))
+LOG_KEEP_DAYS = int(os.environ.get("LOG_KEEP_DAYS", "14"))
+
+
+class _RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = REQUEST_ID.get()
+        return True
+
+
+def _sofia_time(seconds, *_):
+    return datetime.datetime.fromtimestamp(seconds, ZoneInfo("Europe/Sofia")).timetuple()
+
+
+def setup_logging() -> None:
+    """Stdout (за Coolify) и дневен файл в data/logs (пази се LOG_KEEP_DAYS).
+    Може да се вика повторно — не добавя handler-и втори път."""
+    if getattr(log, "_astro_configured", False):
+        return
+    fmt = logging.Formatter("%(asctime)s %(levelname)-7s [%(request_id)s] %(message)s",
+                            "%Y-%m-%d %H:%M:%S")
+    fmt.converter = _sofia_time
+    handlers = [logging.StreamHandler(sys.stdout)]
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        handlers.append(TimedRotatingFileHandler(
+            LOG_DIR / "app.log", when="midnight", backupCount=LOG_KEEP_DAYS,
+            encoding="utf-8"))
+    except OSError as exc:  # без файл — поне stdout
+        print(f"Логовете няма да се пазят във файл: {exc}", file=sys.stderr)
+    for h in handlers:
+        h.setFormatter(fmt)
+        h.addFilter(_RequestIdFilter())
+        log.addHandler(h)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    log._astro_configured = True
+
+
+setup_logging()
+
+# Редът на uvicorn за всяка заявка се заменя с нашия (с код, потребител и
+# време). Иначе всяка заявка би стояла два пъти, а неговият е без код.
+logging.getLogger("uvicorn.access").disabled = True
+
+
 class ConfigError(RuntimeError):
     """Raised when the deployment is configured in a way that is not safe to run."""
 
@@ -1037,6 +1093,84 @@ async def track_page_views(request: Request, call_next):
     except Exception:
         pass  # статистиката никога не трябва да чупи страница
     return response
+
+
+# --- Код на заявката, ред в лога и приличен отговор при срив ---
+# Регистриран последен, значи е най-външният: обхваща и останалите middleware.
+_QUIET_PATHS = ("/healthz", "/static/", "/uploads/", "/favicon")
+
+
+def _user_id_for_log(request: Request) -> Optional[int]:
+    try:
+        token = _token_from_request(request)
+        if token:
+            return int(jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])["sub"])
+    except Exception:
+        pass
+    return None
+
+
+def _crash_response(request: Request, code: str) -> Response:
+    message = (f"Нещо се обърка от наша страна. Опитай отново след малко; ако се "
+               f"повтаря, пиши ни и посочи код {code}.")
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": message}, status_code=500)
+    page = ("<!doctype html><html lang='bg'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Нещо се обърка</title></head>"
+            "<body style='font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;"
+            "padding:0 1rem;line-height:1.6;color:#222'>"
+            "<h1 style='font-size:1.4rem'>Нещо се обърка</h1>"
+            f"<p>{message}</p><p><a href='/'>Към началната страница</a></p></body></html>")
+    return HTMLResponse(page, status_code=500)
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    code = secrets.token_hex(3).upper()
+    ctx_token = REQUEST_ID.set(code)
+    started = time.monotonic()
+    status = 500
+    try:
+        try:
+            response = await call_next(request)
+        except Exception:
+            log.exception("Срив при %s %s", request.method, request.url.path)
+            response = _crash_response(request, code)
+        status = response.status_code
+        response.headers["X-Request-ID"] = code
+        return response
+    finally:
+        try:
+            path = request.url.path or "/"
+            if status >= 500 or not path.startswith(_QUIET_PATHS):
+                query = request.url.query
+                if query:
+                    query = "?" + _HideTokensInAccessLog._TOKEN.sub(r"\1***", query)
+                uid = _user_id_for_log(request)
+                log.log(logging.WARNING if status >= 500 else logging.INFO,
+                        "%s %s%s → %d за %dms%s", request.method, path, query, status,
+                        (time.monotonic() - started) * 1000,
+                        f" user={uid}" if uid else "")
+        finally:
+            REQUEST_ID.reset(ctx_token)
+
+
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_error_with_code(request: Request, exc: _StarletteHTTPException):
+    """5xx от нас (Stripe не отговаря, AI е долу…) носят кода на заявката, за
+    да може клиентът да ни го прати. 4xx остават непокътнати — 402 носи
+    офертата като обект и страницата разчита на нея."""
+    if exc.status_code >= 500 and isinstance(exc.detail, str):
+        code = REQUEST_ID.get()
+        log.warning("%d: %s", exc.status_code, exc.detail)
+        return JSONResponse({"detail": f"{exc.detail} (код {code})"},
+                            status_code=exc.status_code, headers=getattr(exc, "headers", None))
+    return await _default_http_handler(request, exc)
 
 
 async def _background_jobs_loop():
@@ -3720,6 +3854,54 @@ def _parse_payment_note(note: str):
         keys = [head[len("feature:"):].strip()]
     return keys, session_id.strip()
 
+ADMIN_LOG_MAX_LINES = 2000
+_LOG_ENTRY_START = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ")
+
+
+@app.get("/api/admin/logs")
+def api_admin_logs(q: Optional[str] = None, level: Optional[str] = None,
+                   limit: int = 300, admin: dict = Depends(require_admin)):
+    """Търсене в логовете от data/logs — най-новото първо.
+
+    `q` е код на заявка (от съобщението, което клиентът вижда), `user=42` или
+    произволен текст. `level=warning` оставя само проблемите. Един запис е
+    редът с часа плюс продълженията му (traceback), затова се връщат цели.
+    """
+    limit = max(1, min(int(limit or 300), ADMIN_LOG_MAX_LINES))
+    needle = (q or "").strip().lower()
+    problems_only = (level or "").strip().lower() in ("warning", "error", "problems")
+    files = sorted(LOG_DIR.glob("app.log*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    picked, count = [], 0
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        entries, cur = [], []
+        for line in text.splitlines():
+            if _LOG_ENTRY_START.match(line) and cur:
+                entries.append(cur)
+                cur = [line]
+            else:
+                cur.append(line)
+        if cur:
+            entries.append(cur)
+        for entry in reversed(entries):
+            head = entry[0]
+            if problems_only and not (" WARNING " in head or " ERROR " in head):
+                continue
+            if needle and needle not in "\n".join(entry).lower():
+                continue
+            picked.append(entry)
+            count += len(entry)
+            if count >= limit:
+                break
+        if count >= limit:
+            break
+    lines = [line for entry in picked for line in entry][:limit]
+    return {"lines": lines, "files": len(files), "keep_days": LOG_KEEP_DAYS}
+
+
 @app.get("/api/admin/saft")
 def api_admin_saft(year: int, month: int, admin: dict = Depends(require_admin)):
     """Генерира Стандартизиран одиторски файл (SAF-T) за даден месец.
@@ -4199,7 +4381,9 @@ def send_email(to: str, subject: str, body: str, attachment: Optional[tuple] = N
     except HTTPException:
         raise
     except Exception as e:
+        log.warning("Имейл „%s“ до %s не тръгна: %s", subject, to, e)
         raise HTTPException(502, f"Изпращането се провали: {e}")
+    log.info("Имейл „%s“ изпратен до %s", subject, to)
 
 # Logos are written to UPLOAD_DIR rather than over the bundled files, so a bad
 # upload never destroys the originals and reverting is a matter of clearing the
@@ -4395,6 +4579,8 @@ def try_send_template(to: str, kind: str, **fields) -> bool:
 def audit(event: str, detail: str = "", *, user_id: Optional[int] = None,
           actor: str = "system") -> None:
     """Append a row to the admin audit log. Never raises."""
+    # Същото и в лога — там стои до останалото от заявката, под нейния код.
+    log.info("[%s] %s%s", event, detail, f" user={user_id}" if user_id else "")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -6792,11 +6978,23 @@ def ai_job(cache_key: str, fn):
             return job
         job = {"done": threading.Event(), "error": None}
         _AI_JOBS[cache_key] = job
-    def _run():
+    # Нишката не наследява кода на заявката сама — копираме контекста, за да
+    # стоят редовете от генерирането под кода, който клиентът ни праща.
+    ctx = contextvars.copy_context()
+
+    def _work():
+        started = time.monotonic()
         try:
             fn()
+            log.info("AI задача %s готова за %.1fs", cache_key, time.monotonic() - started)
         except Exception as e:
             job["error"] = str(e)
+            log.exception("AI задача %s се провали след %.1fs", cache_key,
+                          time.monotonic() - started)
+
+    def _run():
+        try:
+            ctx.run(_work)
         finally:
             job["done"].set()
     threading.Thread(target=_run, daemon=True).start()
@@ -7183,6 +7381,26 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
         raise AIError(f"{provider} отне прекалено дълго да отговори (над 3 минути). Опитайте отново — генерирането на дълъг текст понякога отнема повече време.")
     except urllib.error.URLError as e:
         raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
+
+
+_call_ai_unlogged = call_ai
+
+
+def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
+            model: Optional[str] = None) -> str:
+    """call_ai с ред в лога: доставчик, модел, време, дължина или грешка.
+    Подканата не се записва — в нея са рождените данни на клиента."""
+    used = model or resolve_ai_model(provider)
+    started = time.monotonic()
+    try:
+        text = _call_ai_unlogged(api_key, provider, prompt, max_tokens, model)
+    except Exception as e:
+        log.warning("AI %s/%s се провали след %.1fs: %s", provider, used,
+                    time.monotonic() - started, e)
+        raise
+    log.info("AI %s/%s: %d знака за %.1fs", provider, used, len(text or ""),
+             time.monotonic() - started)
+    return text
 
 # --- PDF export and email delivery ---
 

@@ -472,6 +472,7 @@
                 <div class="tab" role="tab" tabindex="0" data-tab="payments">Плащания</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="settings">Настройки</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="audit">Активност</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="logs">Логове</div>
             </div>
 
             <div class="tab-content active" id="tab-overview">
@@ -552,6 +553,19 @@
                         <button class="btn btn-ghost btn-sm" id="auditNextBtn">По-стари ›</button>
                     </div>
                     <div id="auditBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-logs">
+                <div class="section">
+                    <h2>Логове</h2>
+                    <p class="hint">Когато клиент съобщи за проблем, той вижда код от 6 знака (напр. 7F3A2C) — въведи го тук. Може и <code>user=42</code> или произволен текст. Пазят се последните 14 дни.</p>
+                    <div class="toolbar">
+                        <input type="search" id="logsQuery" placeholder="Код, user=ID или текст" style="max-width:260px;">
+                        <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="logsProblems"> само проблеми</label>
+                        <button class="btn btn-sm" id="logsSearchBtn">Търси</button>
+                    </div>
+                    <div id="logsBody"></div>
                 </div>
             </div>
         </div>
@@ -678,6 +692,7 @@
             payments: loadPayments,
             settings: loadSettings,
             audit: loadAudit,
+            logs: loadLogs,
         };
         const loaded = {};
         function showTab(name, tabEl) {
@@ -696,6 +711,38 @@
             tabEl.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTab(tabEl.dataset.tab, tabEl); }
             });
+        });
+
+        /* ---------- server logs ---------- */
+        const logsBody = document.getElementById('logsBody');
+        async function loadLogs() {
+            logsBody.innerHTML = '<div class="hint">Зареждане…</div>';
+            try {
+                const q = new URLSearchParams({ limit: '400' });
+                const text = document.getElementById('logsQuery').value.trim();
+                if (text) q.set('q', text);
+                if (document.getElementById('logsProblems').checked) q.set('level', 'warning');
+                const d = await api('/api/admin/logs?' + q.toString());
+                const lines = d.lines || [];
+                if (!lines.length) {
+                    logsBody.innerHTML = '<div class="hint">Няма записи' + (text ? ' за „' + escapeHtml(text) + '“' : '') + '.</div>';
+                    return;
+                }
+                logsBody.innerHTML =
+                    '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.5;max-height:70vh;overflow:auto;padding:12px;border-radius:8px;background:var(--bg-2, rgba(127,127,127,.08));">' +
+                    lines.map(function(l) {
+                        const bad = / (WARNING|ERROR) /.test(l) || /^(Traceback|\s)/.test(l);
+                        return bad ? '<span style="color:#d9534f;">' + escapeHtml(l) + '</span>' : escapeHtml(l);
+                    }).join('\n') + '</pre>' +
+                    '<div class="hint">Показани ' + lines.length + ' реда, най-новите отгоре.</div>';
+            } catch (e) {
+                logsBody.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+        document.getElementById('logsSearchBtn').addEventListener('click', loadLogs);
+        document.getElementById('logsProblems').addEventListener('change', loadLogs);
+        document.getElementById('logsQuery').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); loadLogs(); }
         });
 
         /* ---------- audit log ---------- */

@@ -43,6 +43,8 @@
 - **Auth:** JWT (30 дни) в `Authorization: Bearer`, в `?token=` или в бисквитката `miralog_token`; bcrypt пароли, rate-limit на входа (5 грешни опита → 15 мин блок), TOTP 2FA, Google/Facebook OAuth.
 - **AI кеш:** разчитанията се пазят в `ai_cache` (per person + `cache_key`, напр. `horoscope:2026-09-29`). SEO текстовете са в отделни `*_cache` таблици. Генерирането върви във фонови нишки (`ai_job`), а страницата пита докато не е готово (`pending`).
 - **Фонови задачи** (`_background_jobs_loop`, веднъж на час): дневен backup в `data/backups/` (пази `BACKUP_KEEP_DAYS`) и digest имейли. Сутрешното „затопляне“ на SEO страниците (`/api/*/warm`) се вика от **външен cron**, не от приложението.
+- **Логове:** логерът `miraskop` пише в stdout и в `data/logs/app.log` (14 дни). Всяка заявка има код (`REQUEST_ID`, заглавка `X-Request-ID`), който клиентът вижда при 5xx; middleware-ът `request_context` пише реда за заявката (uvicorn access log е изключен). `ai_job` пренася кода във фоновата нишка, `call_ai` записва време и грешки без подканата, `audit()` се дублира в лога. Търсене: Админ → Логове (`/api/admin/logs`)
+- **Защити:** публичните SEO API приемат `?refresh=true` само от админ (`is_admin_request`); лимити по IP в `RATE_LIMITS` (истинският IP е най-десният в X-Forwarded-For, `client_ip`); `/docs` е изключен в production; новите пароли са ≥8 знака (`check_new_password`), входът не проверява дължина
 - **Настройки в базата** (таблица `settings`, през Админ → Настройки): AI ключ/провайдър/модел, SMTP (env `SMTP_*` има предимство), имейл шаблони, SEO/GA4/FB pixel, марка и лога, OAuth, юридически данни (`legal_*` за /privacy, /terms, фактури, SAF-T).
 
 ## Брандинг (ребранд МираСкоп → АстроКарта, 2026-08-14)
