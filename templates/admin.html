@@ -472,6 +472,7 @@
                 <div class="tab" role="tab" tabindex="0" data-tab="payments">Плащания</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="settings">Настройки</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="audit">Активност</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="ai">AI разходи</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="logs">Логове</div>
             </div>
 
@@ -553,6 +554,22 @@
                         <button class="btn btn-ghost btn-sm" id="auditNextBtn">По-стари ›</button>
                     </div>
                     <div id="auditBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-ai">
+                <div class="section">
+                    <h2>AI разходи</h2>
+                    <p class="hint">Всяко AI извикване — токени и цена по тарифата на доставчика в този час (DeepSeek е наполовина нощем и през уикенда). Сумите са в USD, както таксуват доставчиците. Броенето тече от пускането на тази функция.</p>
+                    <div class="toolbar">
+                        <select id="aiDays" style="max-width:200px;">
+                            <option value="1">Последното денонощие</option>
+                            <option value="7">Последните 7 дни</option>
+                            <option value="30" selected>Последните 30 дни</option>
+                            <option value="0">Целият период</option>
+                        </select>
+                    </div>
+                    <div id="aiBody"></div>
                 </div>
             </div>
 
@@ -693,6 +710,7 @@
             settings: loadSettings,
             audit: loadAudit,
             logs: loadLogs,
+            ai: loadAiUsage,
         };
         const loaded = {};
         function showTab(name, tabEl) {
@@ -712,6 +730,65 @@
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTab(tabEl.dataset.tab, tabEl); }
             });
         });
+
+        /* ---------- AI usage ---------- */
+        const AI_SOURCES = { client: 'Клиентски разчитания', seo: 'SEO страници (системни)',
+                             background: 'Фонови задачи (системни)', admin: 'Админ' };
+        const AI_FEATURES = { profile: 'Пълен профил', akashic: 'Акашови записи', numerology: 'Нумерология',
+                              horoscope: 'Дневен хороскоп', period: 'Хороскоп за период', love: 'Любовен хороскоп',
+                              synastry: 'Синастрия', sign_horoscope: 'Хороскоп по зодия', planet_sign: 'Планета в знак',
+                              planet_house: 'Планета в дом', sign_profile: 'Профил на зодия', compatibility: 'Съвместимост',
+                              background: 'Фонови', admin: 'Админ', other: 'Друго' };
+        const aiBody = document.getElementById('aiBody');
+        function usd(v) { const n = Number(v) || 0; return '$' + (n > 0 && n < 0.01 ? n.toFixed(4) : n.toFixed(2)); }
+        function num(v) { return (Number(v) || 0).toLocaleString('bg-BG'); }
+        function aiTable(head, rows, cells) {
+            if (!rows.length) return '<div class="empty">Няма данни за периода.</div>';
+            return '<div class="table-wrap"><table><thead><tr>' +
+                head.map(function(h) { return '<th>' + escapeHtml(h) + '</th>'; }).join('') +
+                '</tr></thead><tbody>' +
+                rows.map(function(r) {
+                    return '<tr>' + cells(r).map(function(c, i) {
+                        return '<td' + (i ? ' class="num"' : '') + '>' + escapeHtml(String(c)) + '</td>';
+                    }).join('') + '</tr>';
+                }).join('') + '</tbody></table></div>';
+        }
+        async function loadAiUsage() {
+            aiBody.innerHTML = '<div class="hint">Зареждане…</div>';
+            try {
+                const d = await api('/api/admin/ai-usage?days=' + document.getElementById('aiDays').value);
+                const t = d.totals || {};
+                const calls = Number(t.calls) || 0;
+                let html = '<div class="stats">';
+                html += statCard('Разход', usd(t.cost_usd), calls ? 'Средно ' + usd((t.cost_usd || 0) / calls) + ' на извикване' : 'Още няма извиквания');
+                html += statCard('Извиквания', num(calls), (Number(t.failed) || 0) + ' неуспешни');
+                html += statCard('Токени вход', num((Number(t.input_tokens) || 0) + (Number(t.cached_tokens) || 0)), num(t.cached_tokens) + ' от кеша');
+                html += statCard('Токени изход', num(t.output_tokens), 'Средно ' + Math.round((Number(t.avg_ms) || 0) / 1000) + ' s на извикване');
+                html += '</div>';
+
+                const cols = function(r) { return [num(r.calls), num((Number(r.input_tokens) || 0) + (Number(r.cached_tokens) || 0)), num(r.output_tokens), usd(r.cost_usd), usd(r.calls ? r.cost_usd / r.calls : 0)]; };
+                const head = ['Извиквания', 'Токени вход', 'Токени изход', 'Разход', 'Средно'];
+
+                html += '<h3 style="margin:18px 0 8px;">Клиенти или системни</h3>' +
+                    aiTable(['Източник'].concat(head), d.by_source || [], function(r) { return [AI_SOURCES[r.source] || r.source].concat(cols(r)); });
+                html += '<h3 style="margin:18px 0 8px;">По модул</h3>' +
+                    aiTable(['Модул'].concat(head), d.by_feature || [], function(r) { return [(AI_FEATURES[r.feature] || r.feature) + (r.source === 'client' ? '' : ' · системно')].concat(cols(r)); });
+                html += '<h3 style="margin:18px 0 8px;">По модел</h3>' +
+                    aiTable(['Модел'].concat(head), d.by_model || [], function(r) { return [r.provider + ' / ' + r.model].concat(cols(r)); });
+                html += '<h3 style="margin:18px 0 8px;">Клиенти с най-голям разход</h3>' +
+                    aiTable(['Клиент', 'Извиквания', 'Токени', 'Разход'], d.top_users || [], function(r) { return [r.email || ('#' + r.user_id), num(r.calls), num(r.tokens), usd(r.cost_usd)]; });
+                html += '<h3 style="margin:18px 0 8px;">По дни</h3>' +
+                    aiTable(['Ден'].concat(head), d.by_day || [], function(r) { return [r.day].concat(cols(r)); });
+
+                const prices = d.prices || {};
+                html += '<div class="hint" style="margin-top:14px;">Цени (USD за 1 млн. токена, вход / от кеша / изход): ' +
+                    Object.keys(prices).map(function(m) { const p = prices[m]; return escapeHtml(m) + ' ' + p.input + ' / ' + p.cached + ' / ' + p.output; }).join(' · ') + '</div>';
+                aiBody.innerHTML = html;
+            } catch (e) {
+                aiBody.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+        document.getElementById('aiDays').addEventListener('change', loadAiUsage);
 
         /* ---------- server logs ---------- */
         const logsBody = document.getElementById('logsBody');

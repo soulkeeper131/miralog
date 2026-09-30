@@ -180,6 +180,9 @@ import contextvars
 from logging.handlers import TimedRotatingFileHandler
 
 REQUEST_ID: contextvars.ContextVar = contextvars.ContextVar("request_id", default="-")
+# (адрес, user_id) на заявката — по него AI разходът се води на клиент, SEO
+# страница или админ. Извън заявка (фоновият цикъл) е None.
+AI_ORIGIN: contextvars.ContextVar = contextvars.ContextVar("ai_origin", default=None)
 LOG_DIR = Path(os.environ.get("LOG_DIR", DB_PATH.parent / "logs"))
 LOG_KEEP_DAYS = int(os.environ.get("LOG_KEEP_DAYS", "14"))
 
@@ -559,6 +562,25 @@ def init_db():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_time ON page_views(viewed_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path)")
+        # Един ред на AI извикване: токени, цена по тарифата в този час, и за
+        # какво е било — клиентско разчитане, SEO страница, фоново, админ.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at TEXT NOT NULL,
+                provider TEXT, model TEXT,
+                source TEXT, feature TEXT, user_id INTEGER,
+                input_tokens INTEGER DEFAULT 0,
+                cached_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cost_usd REAL,
+                ok INTEGER DEFAULT 1,
+                attempts INTEGER DEFAULT 1,
+                duration_ms INTEGER,
+                request_id TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_at ON ai_usage(at)")
 
         # The seeded admin predates the role column, so claim it here.
         conn.execute("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'",
@@ -1129,6 +1151,8 @@ def _crash_response(request: Request, code: str) -> Response:
 async def request_context(request: Request, call_next):
     code = secrets.token_hex(3).upper()
     ctx_token = REQUEST_ID.set(code)
+    uid = _user_id_for_log(request)
+    origin_token = AI_ORIGIN.set((request.url.path or "/", uid))
     started = time.monotonic()
     status = 500
     try:
@@ -1147,12 +1171,12 @@ async def request_context(request: Request, call_next):
                 query = request.url.query
                 if query:
                     query = "?" + _HideTokensInAccessLog._TOKEN.sub(r"\1***", query)
-                uid = _user_id_for_log(request)
                 log.log(logging.WARNING if status >= 500 else logging.INFO,
                         "%s %s%s → %d за %dms%s", request.method, path, query, status,
                         (time.monotonic() - started) * 1000,
                         f" user={uid}" if uid else "")
         finally:
+            AI_ORIGIN.reset(origin_token)
             REQUEST_ID.reset(ctx_token)
 
 
@@ -3900,6 +3924,44 @@ def api_admin_logs(q: Optional[str] = None, level: Optional[str] = None,
             break
     lines = [line for entry in picked for line in entry][:limit]
     return {"lines": lines, "files": len(files), "keep_days": LOG_KEEP_DAYS}
+
+
+@app.get("/api/admin/ai-usage")
+def api_admin_ai_usage(days: int = 30, admin: dict = Depends(require_admin)):
+    """Колко токена и пари отиват за AI — общо, по източник, модул, модел,
+    ден и клиент. `days=0` е за целия период."""
+    where, params = "", []
+    if days and days > 0:
+        since = (datetime.datetime.utcnow() - datetime.timedelta(days=int(days)))
+        where, params = " WHERE at >= ?", [since.isoformat(timespec="seconds")]
+    agg = ("COUNT(*) calls, SUM(1 - ok) failed, COALESCE(SUM(input_tokens),0) input_tokens,"
+           " COALESCE(SUM(cached_tokens),0) cached_tokens, COALESCE(SUM(output_tokens),0) output_tokens,"
+           " COALESCE(SUM(cost_usd),0) cost_usd, COALESCE(AVG(duration_ms),0) avg_ms")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+
+        def rows(sql):
+            return [dict(r) for r in conn.execute(sql, params)]
+
+        totals = dict(conn.execute(f"SELECT {agg}, MIN(at) since FROM ai_usage{where}", params).fetchone())
+        by_source = rows(f"SELECT source, {agg} FROM ai_usage{where} GROUP BY source ORDER BY cost_usd DESC")
+        by_feature = rows(f"SELECT source, feature, {agg} FROM ai_usage{where}"
+                          " GROUP BY source, feature ORDER BY cost_usd DESC")
+        by_model = rows(f"SELECT provider, model, {agg} FROM ai_usage{where}"
+                        " GROUP BY provider, model ORDER BY cost_usd DESC")
+        by_day = rows(f"SELECT substr(at, 1, 10) day, {agg} FROM ai_usage{where}"
+                      " GROUP BY day ORDER BY day DESC LIMIT 60")
+        top_cond = "a.user_id IS NOT NULL AND a.source = 'client'" + (" AND a.at >= ?" if where else "")
+        top_users = [dict(r) for r in conn.execute(
+            "SELECT a.user_id, u.email, COUNT(*) calls, COALESCE(SUM(a.cost_usd),0) cost_usd,"
+            " COALESCE(SUM(a.input_tokens + a.cached_tokens + a.output_tokens),0) tokens"
+            " FROM ai_usage a LEFT JOIN users u ON u.id = a.user_id"
+            f" WHERE {top_cond} GROUP BY a.user_id ORDER BY cost_usd DESC LIMIT 20", params)]
+    return {
+        "days": days, "totals": totals, "by_source": by_source, "by_feature": by_feature,
+        "by_model": by_model, "by_day": by_day, "top_users": top_users,
+        "prices": {m: {"input": p[0], "cached": p[1], "output": p[2]} for m, p in AI_PRICES.items()},
+    }
 
 
 @app.get("/api/admin/saft")
@@ -7318,6 +7380,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             )
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
+                _note_ai_usage(provider, result)
                 return clean_bg(result["content"][0]["text"])
 
         if provider == "deepseek":
@@ -7354,6 +7417,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             )
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
+            _note_ai_usage(provider, result)   # всеки опит се плаща, и отрязаният
             msg = result["choices"][0]["message"]
             content = msg.get("content") or ""
             # Fallback: ако все пак моделът е мислил и content е празен, вземи
@@ -7385,21 +7449,143 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
 
 _call_ai_unlogged = call_ai
 
+# --- Разход на AI ---
+# USD за 1 милион токена: (вход, вход от кеша, изход). Сверени на 2026-09-30 с
+# официалните страници: api-docs.deepseek.com/quick_start/pricing,
+# platform.claude.com/docs/en/about-claude/pricing, developers.openai.com/api/docs/pricing.
+# DeepSeek е по дневната тарифа; извън нея е наполовина (виж _deepseek_off_peak).
+AI_PRICES = {
+    "deepseek-v4-flash": (0.30, 0.006, 1.20),   # старо име, таксува се като Flash
+    "deepseek-flash": (0.30, 0.006, 1.20),
+    "deepseek-v4-pro": (1.32, 0.044, 3.96),
+    "claude-sonnet-4-5": (3.00, 0.30, 15.00),
+    "gpt-4o": (2.50, 1.25, 10.00),
+    "gpt-4o-mini": (0.15, 0.075, 0.60),
+}
+
+_AI_USAGE_SINK: contextvars.ContextVar = contextvars.ContextVar("ai_usage_sink", default=None)
+
+
+def _note_ai_usage(provider: str, result: dict) -> None:
+    """Отбелязва токените от един отговор на доставчика. Никога не хвърля."""
+    sink = _AI_USAGE_SINK.get()
+    if sink is None:
+        return
+    try:
+        u = result.get("usage") or {}
+        if provider == "anthropic":
+            inp = int(u.get("input_tokens") or 0)
+            cached = int(u.get("cache_read_input_tokens") or 0)
+            out = int(u.get("output_tokens") or 0)
+        else:
+            prompt_total = int(u.get("prompt_tokens") or 0)
+            cached = int(u.get("prompt_cache_hit_tokens")
+                         or (u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+            inp = max(prompt_total - cached, 0)
+            out = int(u.get("completion_tokens") or 0)
+        sink.append((inp, cached, out))
+    except Exception:
+        log.warning("Неразпознат usage от %s", provider)
+
+
+def _deepseek_off_peak(when: datetime.datetime) -> bool:
+    """Дневна тарифа: 01–04 и 06–10 UTC, понеделник–петък. Китайските
+    празници (също наполовина) не се отчитат — там сумата е леко завишена."""
+    when = when.astimezone(datetime.timezone.utc)
+    peak = when.weekday() < 5 and (1 <= when.hour < 4 or 6 <= when.hour < 10)
+    return not peak
+
+
+def ai_cost_usd(provider: str, model: str, input_tokens: int, cached_tokens: int,
+                output_tokens: int, when: datetime.datetime) -> Optional[float]:
+    """Цената в USD. None за модел без известна цена — по-добре празно, отколкото измислено."""
+    price = AI_PRICES.get(model)
+    if not price:
+        return None
+    p_in, p_cached, p_out = price
+    cost = (input_tokens * p_in + cached_tokens * p_cached + output_tokens * p_out) / 1_000_000
+    if provider == "deepseek" and _deepseek_off_peak(when):
+        cost /= 2
+    return cost
+
+
+_SEO_AI_PATHS = {
+    "/api/horoskop/": "sign_horoscope", "/api/planeta/": "planet_sign",
+    "/api/dom/": "planet_house", "/api/zodia/": "sign_profile",
+    "/api/savmestimost/": "compatibility",
+}
+_CLIENT_AI_PATHS = (
+    ("/profile/interpretation", "profile"), ("/akashic/interpretation", "akashic"),
+    ("/numerology/interpretation", "numerology"), ("/daily-horoscope", "horoscope"),
+    ("/api/period-interpretation", "period"), ("/api/love-match/interpretation", "love"),
+    ("/api/synastry/interpretation", "synastry"),
+)
+
+
+def _ai_source(origin) -> Tuple[str, str, Optional[int]]:
+    """(източник, модул, user_id) според заявката, която е поискала текста."""
+    if not origin:
+        return "background", "background", None
+    path, user_id = origin
+    for prefix, feature in _SEO_AI_PATHS.items():
+        if path.startswith(prefix):
+            return "seo", feature, None
+    if path.startswith("/api/admin/"):
+        return "admin", "admin", user_id
+    for suffix, feature in _CLIENT_AI_PATHS:
+        if path.endswith(suffix):
+            return "client", feature, user_id
+    return "client", "other", user_id
+
+
+def _record_ai_usage(provider: str, model: str, parts: list, ok: bool,
+                     duration_ms: int) -> Optional[float]:
+    """Един ред в ai_usage. Никога не хвърля — разчитането е по-важно от отчета."""
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        inp = sum(p[0] for p in parts)
+        cached = sum(p[1] for p in parts)
+        out = sum(p[2] for p in parts)
+        cost = ai_cost_usd(provider, model, inp, cached, out, now)
+        source, feature, user_id = _ai_source(AI_ORIGIN.get())
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO ai_usage (at, provider, model, source, feature, user_id,"
+                " input_tokens, cached_tokens, output_tokens, cost_usd, ok, attempts,"
+                " duration_ms, request_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (now.replace(tzinfo=None).isoformat(timespec="seconds"), provider, model,
+                 source, feature, user_id, inp, cached, out, cost, 1 if ok else 0,
+                 max(len(parts), 1), duration_ms, REQUEST_ID.get()))
+            conn.commit()
+        return cost
+    except Exception as e:
+        log.warning("AI разходът не се записа: %s", e)
+        return None
+
 
 def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             model: Optional[str] = None) -> str:
-    """call_ai с ред в лога: доставчик, модел, време, дължина или грешка.
+    """call_ai с отчет: токени и цена в ai_usage, ред в лога с времето.
     Подканата не се записва — в нея са рождените данни на клиента."""
     used = model or resolve_ai_model(provider)
     started = time.monotonic()
+    parts: list = []
+    sink_token = _AI_USAGE_SINK.set(parts)
+    ok = False
     try:
         text = _call_ai_unlogged(api_key, provider, prompt, max_tokens, model)
+        ok = True
     except Exception as e:
         log.warning("AI %s/%s се провали след %.1fs: %s", provider, used,
                     time.monotonic() - started, e)
         raise
-    log.info("AI %s/%s: %d знака за %.1fs", provider, used, len(text or ""),
-             time.monotonic() - started)
+    finally:
+        _AI_USAGE_SINK.reset(sink_token)
+        cost = _record_ai_usage(provider, used, parts, ok,
+                                int((time.monotonic() - started) * 1000))
+    log.info("AI %s/%s: %d знака, %d→%d токена, $%.4f за %.1fs", provider, used,
+             len(text or ""), sum(p[0] + p[1] for p in parts), sum(p[2] for p in parts),
+             cost or 0, time.monotonic() - started)
     return text
 
 # --- PDF export and email delivery ---
