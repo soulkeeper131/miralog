@@ -25,6 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import app as app_module                        # noqa: E402
 
 app_module.init_db()
+# Известията тръгват във фонова нишка; в тестовете — веднага, за да се видят.
+app_module.NOTIFY_ASYNC = False
 
 
 @pytest.fixture(autouse=True)

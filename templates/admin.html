@@ -1831,11 +1831,20 @@
                 const nt = d.notify || {};
                 html += '<div class="section"><h2>Известия</h2>' +
                     '<div class="hint" style="margin-bottom:14px;">' +
-                        'Писмо при всяка нова регистрация — с имейла на човека, ' +
-                        'начина на влизане и общия брой потребители.</div>' +
+                        'Писма до теб. Проблемите идват най-много по едно на 30 минути ' +
+                        'за вид, за да не засипят пощата; обобщението — всяка сутрин между 8 и 9 ч.</div>' +
                     '<label class="check"><input type="checkbox" id="ntNew"' +
                         (nt.new_users !== false ? ' checked' : '') +
-                        '> Пиши ми при нов потребител</label>' +
+                        '> Нов потребител — имейл, начин на влизане, общ брой</label>' +
+                    '<label class="check"><input type="checkbox" id="ntPay"' +
+                        (nt.payments !== false ? ' checked' : '') +
+                        '> Ново плащане — сума, модули, клиент, потвърдено ли е от Stripe</label>' +
+                    '<label class="check"><input type="checkbox" id="ntProblems"' +
+                        (nt.problems !== false ? ' checked' : '') +
+                        '> Проблем — срив на сайта, отказан Stripe webhook, AI не отговаря</label>' +
+                    '<label class="check"><input type="checkbox" id="ntDaily"' +
+                        (nt.daily !== false ? ' checked' : '') +
+                        '> Сутрешно обобщение — регистрации, плащания, AI разход, грешки</label>' +
                     '<div class="form-grid" style="margin-top:12px;">' +
                         '<div class="form-group"><label for="ntEmail">Адрес за известия</label>' +
                             '<input type="email" id="ntEmail" value="' +
@@ -1844,7 +1853,9 @@
                             '<div class="hint">Празно поле праща към подателя на SMTP' +
                             (nt.fallback ? ' (' + escapeHtml(nt.fallback) + ')' : '') + '.</div></div>' +
                     '</div>' +
-                    '<div class="btn-row"><button class="btn" id="saveNotifyBtn">Запази</button></div></div>';
+                    '<div class="btn-row"><button class="btn" id="saveNotifyBtn">Запази</button>' +
+                        '<button class="btn btn-ghost" id="previewSummaryBtn">Покажи обобщението за вчера</button></div>' +
+                    '<pre id="summaryPreview" hidden style="white-space:pre-wrap;font-size:13px;line-height:1.55;margin-top:14px;padding:14px;border-radius:8px;background:rgba(127,127,127,.08);"></pre></div>';
 
                 const oa = d.oauth || {};
                 const envG = (oa.from_env || {}).google;
@@ -2124,8 +2135,22 @@
                     notify: {
                         email: document.getElementById('ntEmail').value.trim(),
                         new_users: document.getElementById('ntNew').checked,
+                        payments: document.getElementById('ntPay').checked,
+                        problems: document.getElementById('ntProblems').checked,
+                        daily: document.getElementById('ntDaily').checked,
                     },
                 }, 'Настройките за известия са запазени.');
+            });
+
+            document.getElementById('previewSummaryBtn').addEventListener('click', async function() {
+                const box = document.getElementById('summaryPreview');
+                box.hidden = false;
+                box.textContent = 'Зареждане…';
+                try {
+                    const d = await api('/api/admin/daily-summary');
+                    box.textContent = d.text + '\n\n— Ще се праща до: ' + (d.to || 'няма адрес') +
+                        (d.enabled ? '' : ' (изключено)');
+                } catch (e) { box.textContent = e.message; }
             });
 
             document.getElementById('saveOauthBtn').addEventListener('click', async function() {

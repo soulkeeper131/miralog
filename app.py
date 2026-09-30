@@ -1160,8 +1160,11 @@ async def request_context(request: Request, call_next):
     try:
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             log.exception("Срив при %s %s", request.method, request.url.path)
+            report_problem("crash", "Срив на сайта",
+                           f"{request.method} {request.url.path}\n{type(exc).__name__}: {exc}",
+                           code=code)
             response = _crash_response(request, code)
         status = response.status_code
         response.headers["X-Request-ID"] = code
@@ -3933,6 +3936,14 @@ def api_admin_logs(q: Optional[str] = None, level: Optional[str] = None,
     return {"lines": lines, "files": len(files), "keep_days": LOG_KEEP_DAYS}
 
 
+@app.get("/api/admin/daily-summary")
+def api_admin_daily_summary(admin: dict = Depends(require_admin)):
+    """Текстът на сутрешното писмо за вчера — само показва, нищо не праща."""
+    yesterday = datetime.datetime.now(ZoneInfo("Europe/Sofia")).date() - datetime.timedelta(days=1)
+    return {"text": build_daily_summary(yesterday),
+            "to": notify_address(), "enabled": notify_enabled("daily")}
+
+
 @app.get("/api/admin/ai-usage")
 def api_admin_ai_usage(days: int = 30, admin: dict = Depends(require_admin)):
     """Колко токена и пари отиват за AI — общо, по източник, модул, модел,
@@ -4266,7 +4277,10 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
         # Известия при нова регистрация: адрес и превключвател.
         "notify": {
             "email": get_setting("notify_email") or "",
-            "new_users": (get_setting("notify_new_users") or "1") not in ("0", "false", "False"),
+            "new_users": notify_enabled("new_users"),
+            "payments": notify_enabled("payments"),
+            "problems": notify_enabled("problems"),
+            "daily": notify_enabled("daily"),
             "fallback": (smtp_setting("smtp_from") or smtp_setting("smtp_user") or ""),
         },
         "legal": {key: (get_setting(f"legal_{key}") or default)
@@ -4334,8 +4348,9 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     if isinstance(notify, dict):
         if "email" in notify:
             set_setting("notify_email", str(notify.get("email") or "").strip())
-        if "new_users" in notify:
-            set_setting("notify_new_users", "1" if notify.get("new_users") else "0")
+        for kind in ("new_users", "payments", "problems", "daily"):
+            if kind in notify:
+                set_setting(f"notify_{kind}", "1" if notify.get(kind) else "0")
 
     for key, value in (payload.get("legal") or {}).items():
         if key in LEGAL_DEFAULTS:
@@ -4616,21 +4631,271 @@ def notify_new_user(user_id: int, email: str, method: str) -> None:
     защото известието не е тръгнало.
     """
     try:
-        to = (get_setting("notify_email") or "").strip()
-        if not to:
-            to = (smtp_setting("smtp_from") or smtp_setting("smtp_user") or "").strip()
-        if not to or "@" not in to:
+        to = notify_address()
+        if not to or not notify_enabled("new_users"):
             return
-        if (get_setting("notify_new_users") or "1").strip() in ("0", "false", "False"):
-            return
-
         with sqlite3.connect(DB_PATH) as conn:
             total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         when = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M")
-        try_send_template(to, "new_user", brand=brand_name(), email=email,
-                          method=method, when=when, total=total)
+        # Във фона: SMTP може да чака до 30 s, а човекът се регистрира точно сега.
+        _in_background(try_send_template, to, "new_user", brand=brand_name(), email=email,
+                       method=method, when=when, total=total)
     except Exception:
         log.warning("Известието за нов потребител не тръгна", exc_info=True)
+
+
+# --- Известия до собственика по имейл ---
+# Четири вида, всеки се изключва от Админ → Настройки → Известия:
+#   new_users — нова регистрация; payments — ново плащане;
+#   problems  — срив, отказан webhook, AI не отговаря (по едно писмо на 30 мин за вид);
+#   daily     — сутрешно обобщение за вчерашния ден.
+NOTIFY_ASYNC = True
+PROBLEM_COOLDOWN = 1800
+AI_FAILURE_ALERT = (3, 1800)          # толкова грешки за толкова секунди
+_PROBLEM_LAST: dict = {}              # вид → (кога е пратено, колко са пропуснати)
+_PROBLEM_LOCK = threading.Lock()
+_AI_FAILURES: list = []
+
+
+def _now_monotonic() -> float:
+    return time.monotonic()
+
+
+def notify_enabled(kind: str) -> bool:
+    return (get_setting(f"notify_{kind}") or "1").strip() not in ("0", "false", "False")
+
+
+def notify_address() -> str:
+    """Адресът от настройките, иначе подателят на SMTP. Празно, ако няма валиден."""
+    raw = (get_setting("notify_email") or "").strip() or \
+          (smtp_setting("smtp_from") or smtp_setting("smtp_user") or "").strip()
+    m = re.search(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", raw or "")
+    return m.group(0) if m else ""
+
+
+def _in_background(fn, *args, **kwargs) -> None:
+    """Пуска fn във фонова нишка, с кода на заявката. Грешките само се логват."""
+    def run():
+        try:
+            fn(*args, **kwargs)
+        except Exception:
+            log.warning("Фоновото изпращане се провали", exc_info=True)
+    if not NOTIFY_ASYNC:
+        run()
+        return
+    ctx = contextvars.copy_context()
+    threading.Thread(target=lambda: ctx.run(run), daemon=True).start()
+
+
+def _send_owner_mail(to: str, subject: str, body: str) -> bool:
+    if not smtp_setting("smtp_host"):
+        return False
+    try:
+        send_email(to, f"{brand_name()}: {subject}", body, html=_email_html(body))
+        return True
+    except Exception as e:
+        log.warning("Известието „%s“ не тръгна: %s", subject, e)
+        return False
+
+
+def notify_owner(kind: str, subject: str, body: str) -> bool:
+    """Писмо до собственика, във фона. Никога не хвърля."""
+    try:
+        if not notify_enabled(kind):
+            return False
+        to = notify_address()
+        if not to or not smtp_setting("smtp_host"):
+            return False
+        _in_background(_send_owner_mail, to, subject, body)
+        return True
+    except Exception:
+        log.warning("Известието „%s“ не тръгна", subject, exc_info=True)
+        return False
+
+
+def report_problem(key: str, title: str, detail: str, *, code: Optional[str] = None) -> bool:
+    """Писмо за проблем — най-много едно на PROBLEM_COOLDOWN за един вид, за да не
+    засипе пощата, ако един бъг гърми на всяка заявка. Пропуснатите се броят."""
+    try:
+        with _PROBLEM_LOCK:
+            last, skipped = _PROBLEM_LAST.get(key, (None, 0))
+            now = _now_monotonic()
+            if last is not None and now - last < PROBLEM_COOLDOWN:
+                _PROBLEM_LAST[key] = (last, skipped + 1)
+                return False
+            _PROBLEM_LAST[key] = (now, 0)
+        when = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M")
+        body = f"{title}\n\n{detail}\n"
+        if code:
+            body += f"\nКод на заявката: {code}\nНамери я в Админ → Логове по този код.\n"
+        body += f"\nЧас: {when}\nАдмин: https://{ADMIN_HOST}/admin"
+        if skipped:
+            body += f"\n\nОт предното писмо е имало още {skipped} подобни — без отделно писмо."
+        return notify_owner("problems", title, body)
+    except Exception:
+        log.warning("Докладът за проблем не тръгна", exc_info=True)
+        return False
+
+
+def _note_ai_failure(provider: str, model: str, error: Exception) -> None:
+    """Една грешка може да е случайност; няколко за кратко значи, че доставчикът е долу."""
+    count, window = AI_FAILURE_ALERT
+    now = _now_monotonic()
+    with _PROBLEM_LOCK:
+        _AI_FAILURES[:] = [t for t in _AI_FAILURES if now - t < window] + [now]
+        failures = len(_AI_FAILURES)
+    if failures >= count:
+        report_problem("ai", "AI доставчикът не отговаря",
+                       f"{failures} неуспешни AI извиквания за последните {window // 60} минути.\n"
+                       f"Последна грешка ({provider}/{model}): {error}\n\n"
+                       "Клиентите виждат „не се получи“ вместо разчитане.")
+
+
+def notify_payment(user_id: int, amount_cents: int, currency: str, keys: list,
+                   session_id: Optional[str]) -> None:
+    try:
+        row = get_user_by_id(user_id) or {}
+        names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+        origin = AI_ORIGIN.get()
+        via = ("Stripe webhook" if origin and origin[0] == "/api/stripe/webhook"
+               else "при връщането на клиента на сайта")
+        money = f"{amount_cents / 100:.2f} {currency}"
+        body = (f"Ново плащане: {money}\n\n"
+                f"Клиент: {row.get('email') or '#' + str(user_id)}\n"
+                f"Модули: {', '.join(names.get(k, k) for k in keys)}\n"
+                f"Потвърдено: {via}\n"
+                f"Stripe сесия: {session_id or '—'}\n\n"
+                f"Админ: https://{ADMIN_HOST}/admin")
+        notify_owner("payments", f"Ново плащане {money}", body)
+    except Exception:
+        log.warning("Известието за плащане не тръгна", exc_info=True)
+
+
+def _log_problem_counts(day: datetime.date) -> Tuple[int, int]:
+    """(грешки, предупреждения) в лога за деня — часът в лога е по София."""
+    prefix = day.isoformat()
+    errors = warnings = 0
+    for f in LOG_DIR.glob("app.log*"):
+        try:
+            for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+                if not line.startswith(prefix):
+                    continue
+                if " ERROR " in line:
+                    errors += 1
+                elif " WARNING " in line:
+                    warnings += 1
+        except OSError:
+            continue
+    return errors, warnings
+
+
+def _usd(v: float) -> str:
+    v = v or 0
+    return f"${v:.2f}" if v >= 0.01 or v == 0 else f"${v:.4f}"
+
+
+def build_daily_summary(day: datetime.date) -> str:
+    """Текстът на сутрешното писмо за деня `day` (по София)."""
+    tz = ZoneInfo("Europe/Sofia")
+    start = datetime.datetime.combine(day, datetime.time(0), tz).astimezone(datetime.timezone.utc)
+    end = start + datetime.timedelta(days=1)
+    rng = (start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S"))
+    month_start = datetime.datetime.combine(day.replace(day=1), datetime.time(0), tz) \
+        .astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    in_day = "datetime({col}) >= datetime(?) AND datetime({col}) < datetime(?)"
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+    today = day + datetime.timedelta(days=1)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        regs = [r[0] for r in conn.execute(
+            f"SELECT email FROM users WHERE {in_day.format(col='created_at')} ORDER BY created_at", rng)]
+        total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        views = conn.execute(
+            f"SELECT COUNT(*) FROM page_views WHERE {in_day.format(col='viewed_at')}", rng).fetchone()[0]
+        pays = conn.execute(
+            "SELECT p.amount_cents, p.currency, p.note, u.email FROM payments p"
+            " JOIN users u ON u.id = p.user_id WHERE p.method = 'stripe' AND "
+            + in_day.format(col="p.paid_at") + " ORDER BY p.paid_at", rng).fetchall()
+        month = conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM payments WHERE method = 'stripe'"
+            " AND datetime(paid_at) >= datetime(?) AND datetime(paid_at) < datetime(?)",
+            (month_start, rng[1])).fetchone()[0]
+        webhooks = conn.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE event = 'webhook_received'"
+            " AND detail LIKE '%checkout.session.completed%' AND "
+            + in_day.format(col="created_at"), rng).fetchone()[0]
+        ai = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0), COALESCE(SUM(1 - ok), 0) FROM ai_usage"
+            " WHERE " + in_day.format(col="at"), rng).fetchone()
+        ai_by = conn.execute(
+            "SELECT source, COALESCE(SUM(cost_usd), 0) FROM ai_usage WHERE "
+            + in_day.format(col="at") + " GROUP BY source ORDER BY 2 DESC", rng).fetchall()
+        signs_ready = conn.execute(
+            "SELECT COUNT(*) FROM sign_horoscope WHERE date = ?", (today.isoformat(),)).fetchone()[0]
+    errors, warnings = _log_problem_counts(day)
+
+    lines = [f"Обобщение за {day:%d.%m.%Y}", ""]
+    lines.append("Потребители")
+    lines.append(f"- Нови регистрации: {len(regs)}" + (f" ({', '.join(regs[:10])}"
+                 + (f" и още {len(regs) - 10}" if len(regs) > 10 else "") + ")" if regs else ""))
+    lines.append(f"- Общо потребители: {total_users}")
+    lines.append(f"- Прегледи на страници: {views}")
+    lines.append("")
+    lines.append("Плащания (Stripe)")
+    if pays:
+        day_total = sum(p[0] for p in pays)
+        lines.append(f"- {len(pays)} плащания, {day_total / 100:.2f} EUR")
+        for amount, currency, note, email in pays:
+            keys = ((note or "").split(" ")[0].split(":", 1) + [""])[1].split(",")
+            mods = ", ".join(names.get(k, k) for k in keys if k)
+            lines.append(f"  · {amount / 100:.2f} {currency} — {email}" + (f" — {mods}" if mods else ""))
+        if webhooks < len(pays):
+            lines.append(f"- ⚠ Stripe webhook е потвърдил {webhooks} от {len(pays)}. Останалите са "
+                         "отключени само при връщането на клиента — провери webhook-а в Stripe (Live).")
+        else:
+            lines.append(f"- Потвърдени от Stripe webhook: {webhooks} от {len(pays)} ✓")
+    else:
+        lines.append("- Няма плащания")
+    lines.append(f"- От началото на месеца: {month / 100:.2f} EUR")
+    lines.append("")
+    lines.append("AI")
+    labels = {"client": "клиенти", "seo": "SEO", "background": "фонови", "admin": "админ"}
+    split = " · ".join(f"{labels.get(s, s)} {_usd(c)}" for s, c in ai_by)
+    lines.append(f"- {ai[0]} извиквания, {_usd(ai[1])}" + (f" ({split})" if split else "")
+                 + (f", {ai[2]} неуспешни" if ai[2] else ""))
+    lines.append(f"- Хороскопи по зодия за {today:%d.%m}: {signs_ready}/12 готови"
+                 + ("" if signs_ready >= 12 else " ⚠"))
+    lines.append("")
+    lines.append("Проблеми")
+    lines.append(f"- Грешки: {errors} · Предупреждения: {warnings}"
+                 + (" — виж Админ → Логове, „само проблеми“" if errors or warnings else ""))
+    lines.append("")
+    lines.append(f"Админ: https://{ADMIN_HOST}/admin")
+    return "\n".join(lines)
+
+
+DAILY_SUMMARY_HOUR = 8
+
+
+def maybe_send_daily_summary(now: Optional[datetime.datetime] = None) -> bool:
+    """Праща обобщението за вчера веднъж на ден, след 8:00 по София.
+    Денят се отбелязва само при успешно изпращане — иначе следващият час пак опитва."""
+    now = now or datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    if now.hour < DAILY_SUMMARY_HOUR:
+        return False
+    today = now.date().isoformat()
+    if (get_setting("daily_summary_sent") or "") == today:
+        return False
+    if not notify_enabled("daily"):
+        return False
+    to = notify_address()
+    if not to or not smtp_setting("smtp_host"):
+        return False
+    yesterday = now.date() - datetime.timedelta(days=1)
+    if _send_owner_mail(to, f"Обобщение за {yesterday:%d.%m.%Y}", build_daily_summary(yesterday)):
+        set_setting("daily_summary_sent", today)
+        return True
+    return False
 
 
 def try_send_template(to: str, kind: str, **fields) -> bool:
@@ -4830,6 +5095,7 @@ def fulfill_checkout_session(session: dict) -> None:
         audit("payment_succeeded", f"Stripe {amount} {currency} за модули {', '.join(keys)} ({session.get('id')})",
               user_id=user_id, actor="stripe")
         audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}", user_id=user_id, actor="stripe")
+        notify_payment(user_id, amount, currency, keys, session.get("id"))
         # Електронен документ (Н-18) — изпраща се на купувача по имейл.
         email = _session_email(session)
         if email:
@@ -4866,6 +5132,7 @@ def fulfill_checkout_session(session: dict) -> None:
         audit("payment_succeeded", f"Stripe {amount} {currency} за {feature_key} ({session.get('id')})",
               user_id=user_id, actor="stripe")
         audit("feature_unlocked", f"Модул отключен: {feature_key}", user_id=user_id, actor="stripe")
+        notify_payment(user_id, amount, currency, [feature_key], session.get("id"))
         # Електронен документ (Н-18) — изпраща се на купувача по имейл.
         email = _session_email(session)
         if email:
@@ -5156,6 +5423,10 @@ def backup_status() -> dict:
 def run_scheduled_jobs() -> None:
     run_db_backup()
     run_digest_emails()
+    try:
+        maybe_send_daily_summary()   # веднъж на ден, между 8 и 9 ч.
+    except Exception:
+        log.exception("Сутрешното обобщение не тръгна")
 
 class ForgotPasswordRequest(BaseModel):
     email: str
@@ -5538,6 +5809,12 @@ async def api_stripe_webhook(request: Request):
     except Exception as e:
         # Подробностите остават в лога — навън само, че е отказано.
         log.warning("Stripe webhook отказан: %s", e)
+        # Само ако изглежда като от Stripe: боклук без подпис не заслужава писмо.
+        if sig:
+            report_problem("webhook", "Stripe webhook е отказан",
+                           f"{e}\n\nПлащанията пак се отключват, когато клиентът се върне на "
+                           "сайта, но ако затвори страницата преди това — няма да се отключат.\n"
+                           "Провери endpoint-а в Stripe (Live) и STRIPE_WEBHOOK_SECRET в Coolify.")
         raise HTTPException(400, "Невалиден webhook.") from e
 
     etype = event["type"]
@@ -7594,6 +7871,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
     except Exception as e:
         log.warning("AI %s/%s се провали след %.1fs: %s", provider, used,
                     time.monotonic() - started, e)
+        _note_ai_failure(provider, used, e)
         raise
     finally:
         _AI_USAGE_SINK.reset(sink_token)
