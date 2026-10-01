@@ -1196,6 +1196,13 @@ _BOT_UA = (
 )
 
 
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+
+# Една нишка само за статистиката: не взима от нишките на заявките и пише
+# поред, без да се бори сама със себе си за базата.
+PAGE_VIEW_WRITER = _ThreadPoolExecutor(max_workers=1, thread_name_prefix="page-views")
+
+
 @app.middleware("http")
 async def track_page_views(request: Request, call_next):
     response = await call_next(request)
@@ -1224,14 +1231,24 @@ async def track_page_views(request: Request, call_next):
             except Exception:
                 user_id = None
         now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+        # Записът е в собствена нишка и страницата не го чака: досега всяка
+        # HTML заявка пишеше в SQLite направо в event loop-а и при заета база
+        # (AI запис, backup) целият сайт спираше до 5 секунди.
+        PAGE_VIEW_WRITER.submit(_record_page_view, path, user_id, now)
+    except Exception:
+        pass  # статистиката никога не трябва да чупи страница
+    return response
+
+
+def _record_page_view(path: str, user_id: Optional[int], now: str) -> None:
+    try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO page_views (path, user_id, viewed_at) VALUES (?, ?, ?)",
                 (path, user_id, now),
             )
     except Exception:
-        pass  # статистиката никога не трябва да чупи страница
-    return response
+        pass
 
 
 # --- Код на заявката, ред в лога и приличен отговор при срив ---
@@ -1337,6 +1354,38 @@ class BirthDataUpdate(BaseModel):
     lat: float
     lon: float
     timezone: str = "Europe/Sofia"
+
+def validate_birth(year, month, day, hour, minute, lat, lon, timezone) -> None:
+    """Отказва невъзможни рождени данни още при въвеждане.
+
+    Досега 31.02 се записваше; после картата даваше 500, а негодният човек
+    заемаше място в лимита и се показваше в списъците.
+    """
+    import math
+    try:
+        datetime.date(int(year), int(month), int(day))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Невалидна дата на раждане — провери деня и месеца.")
+    if not 1800 <= int(year) <= 2200:
+        raise HTTPException(400, "Годината на раждане трябва да е между 1800 и 2200.")
+    try:
+        hour_i, minute_i = int(hour or 0), int(minute or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Невалиден час на раждане.")
+    if not (0 <= hour_i <= 23 and 0 <= minute_i <= 59):
+        raise HTTPException(400, "Невалиден час на раждане (00:00 – 23:59).")
+    try:
+        lat_f, lon_f = float(lat), float(lon)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Невалидни координати на мястото.")
+    if not (math.isfinite(lat_f) and math.isfinite(lon_f)
+            and -90 <= lat_f <= 90 and -180 <= lon_f <= 180):
+        raise HTTPException(400, "Невалидни координати на мястото.")
+    try:
+        ZoneInfo(timezone or "Europe/Sofia")
+    except Exception:
+        raise HTTPException(400, "Невалидна часова зона.")
+
 
 class SynastryRequest(BaseModel):
     person1_id: int
@@ -1520,6 +1569,7 @@ RATE_LIMITS = {
     "guest_chart": (30, 600),    # безплатни карти от един IP за 10 мин
     "reset_ip": (10, 3600),      # писма за нова парола от един IP на час
     "reset_email": (3, 3600),    # писма за нова парола до един адрес на час
+    "geocode": (60, 600),        # търсения на място без вход от един IP за 10 мин
 }
 RATE_HITS: dict = {}
 _RATE_LOCK = threading.Lock()
@@ -1997,9 +2047,16 @@ def set_ai_cache(person_id: int, cache_key: str, content: str) -> None:
         conn.commit()
 
 def clear_ai_cache(person_id: int) -> None:
-    """Invalidate all cached AI interpretations for a person (e.g. after birth data changes)."""
+    """Invalidate all cached AI interpretations for a person (e.g. after birth data changes).
+
+    Синастрията се пази под единия от двамата — при промяна на данните на
+    другия също трябва да отпадне (ключът е synastry:<по-малкия>:<по-големия>).
+    """
+    pid = int(person_id)
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (person_id,))
+        conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (pid,))
+        conn.execute("DELETE FROM ai_cache WHERE cache_key LIKE ? OR cache_key LIKE ?",
+                     (f"synastry:{pid}:%", f"synastry:%:{pid}"))
         conn.commit()
 
 # Shown when the AI service is not configured or fails. Customers cannot fix
@@ -2048,6 +2105,22 @@ def resolve_ai_model(provider: str) -> str:
     if saved in allowed:
         return saved
     return options[0][0]
+
+class AINotConfigured(RuntimeError):
+    """Няма AI ключ — разчитането не може да се генерира."""
+
+
+def ai_config_or_raise() -> Tuple[str, str]:
+    """(ключ, доставчик) — или грешка, вместо тихо „нищо“.
+
+    Тихото връщане оставяше фоновата задача „успешна“ без текст: всяко
+    запитване пускаше нова и страницата показваше „пише се…“ с минути.
+    """
+    key, provider = get_ai_config()
+    if not key:
+        raise AINotConfigured("AI ключът не е зададен (Админ → Настройки → AI).")
+    return key, provider
+
 
 def get_ai_config() -> Tuple[Optional[str], str]:
     """Returns (api_key, provider) where provider is 'deepseek', 'openai' or 'anthropic'.
@@ -2655,6 +2728,8 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
     rate_limit("guest_chart", client_ip(request))
     if not (data.name or "").strip():
         raise HTTPException(400, "Моля, въведи име.")
+    validate_birth(data.year, data.month, data.day, data.hour, data.minute,
+                   data.lat, data.lon, data.timezone)
     try:
         person = {
             "name": data.name.strip(),
@@ -2713,6 +2788,9 @@ def api_onboard(data: OnboardRequest, request: Request):
         raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
     if not (data.name or "").strip():
         raise HTTPException(400, "Моля, въведи име.")
+    # Преди акаунтът да се създаде — иначе грешната дата оставя акаунт без карта.
+    validate_birth(data.year, data.month, data.day, data.hour, data.minute,
+                   data.lat, data.lon, data.timezone)
 
     rate_limit("signup", client_ip(request))
 
@@ -3351,9 +3429,7 @@ def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Op
 - Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
 - Основавай се единствено на изброените данни, без да добавяш измислени детайли."""
 
-    ai_key, provider = get_ai_config()
-    if not ai_key:
-        return None
+    ai_key, provider = ai_config_or_raise()
     raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
     set_sign_horoscope(sign_data["sign"], date_iso, raw)
     return raw
@@ -3406,9 +3482,7 @@ def _generate_planet_sign(planet_data: dict, sign_data: dict) -> Optional[str]:
 
 Пиши на български, ясно и практично, без жаргон. Общо ~250-350 думи. НЕ използвай маркери SUMMARY и НЕ изброявай с тирета."""
 
-    ai_key, provider = get_ai_config()
-    if not ai_key:
-        return None
+    ai_key, provider = ai_config_or_raise()
     raw = call_ai(ai_key, provider, prompt, max_tokens=1200)
     set_planet_sign(planet_key, sign_data["sign"], raw)
     return raw
@@ -3457,9 +3531,7 @@ def _generate_sign_profile(sign_data: dict) -> Optional[str]:
 
 Пиши на български, ясно и практично, без жаргон. Общо ~400-500 думи. НЕ използвай маркери SUMMARY."""
 
-    ai_key, provider = get_ai_config()
-    if not ai_key:
-        return None
+    ai_key, provider = ai_config_or_raise()
     raw = call_ai(ai_key, provider, prompt, max_tokens=1500)
     set_sign_profile(sign_data["sign"], raw)
     return raw
@@ -3521,9 +3593,7 @@ def _generate_compatibility(sign_a: dict, sign_b: dict) -> Optional[str]:
 
 Пиши на български, ясно и практично, без жаргон. Общо ~300-400 думи. НЕ използвай маркери SUMMARY."""
 
-    ai_key, provider = get_ai_config()
-    if not ai_key:
-        return None
+    ai_key, provider = ai_config_or_raise()
     raw = call_ai(ai_key, provider, prompt, max_tokens=1500)
     set_compatibility(sign_a["sign"], sign_b["sign"], raw)
     return raw
@@ -3575,9 +3645,7 @@ def _generate_planet_house(planet_data: dict, house_data: dict) -> Optional[str]
 
 Пиши на български, ясно и практично, без жаргон. Общо ~250-350 думи. НЕ използвай маркери SUMMARY и НЕ изброявай с тирета."""
 
-    ai_key, provider = get_ai_config()
-    if not ai_key:
-        return None
+    ai_key, provider = ai_config_or_raise()
     raw = call_ai(ai_key, provider, prompt, max_tokens=1200)
     set_planet_house(planet_data["key"], house_data["key"], raw)
     return raw
@@ -4762,6 +4830,33 @@ def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
         "pending": take_pending_purchase(user_id),
     }
 
+class PendingPurchase(BaseModel):
+    keys: list = []
+    bundle: bool = False
+
+
+@app.post("/api/features/pending")
+def api_remember_pending(data: PendingPurchase, user: Tuple[int, str] = Depends(get_current_user)):
+    """Запомня избраните преди вход през Google/Facebook модули.
+
+    Изборът се правеше на началната страница, но след връщането от
+    доставчика се губеше: човекът стигаше до заключена карта, без да го
+    питаме за плащане. Картата отваря избора с тези модули отметнати.
+    """
+    user_id, _ = user
+    row = get_user_by_id(user_id) or {}
+    if data.bundle:
+        offer = bundle_offer(row)
+        keys = offer["keys"] if offer else []
+    else:
+        unlocked = set(unlocked_features(row))
+        keys = [k for k in (data.keys or []) if isinstance(k, str)
+                and feature_offer(k) and k not in unlocked]
+    if keys:
+        remember_pending_purchase(user_id, keys, bool(data.bundle))
+    return {"ok": True, "keys": keys, "bundle": bool(data.bundle and keys)}
+
+
 @app.post("/api/features/bundle/request")
 def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_current_user)):
     """Buy every remaining module in one payment, at the bundle price.
@@ -5248,9 +5343,19 @@ def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_adm
 # --- Site URL, lifecycle emails, billing fulfillment, password reset, share ---
 
 def site_base_url(request: Optional[Request] = None) -> str:
+    """Адресът за линковете в имейлите и към Stripe.
+
+    В продукция никога от заявката: зад проксито на Coolify тя е http://, а
+    Host заглавката идва от клиента — линк за нова парола с чужд домейн би
+    пратил токена другаде. Фоновите задачи (без заявка) получаваха
+    http://127.0.0.1:8000 и линковете в писмата не водеха никъде.
+    """
     configured = (seo_settings().get("seo_site_url") or "").rstrip("/")
     if configured:
         return configured
+    if IS_PRODUCTION:
+        domain = (brand().get("domain") or BRAND_DOMAIN).strip().strip("/")
+        return f"https://{domain}"
     if request is not None:
         return str(request.base_url).rstrip("/")
     return "http://127.0.0.1:8000"
@@ -6333,9 +6438,16 @@ def consume_password_reset(token: str) -> Optional[int]:
             return None
         return int(user_id)
 
-def run_digest_emails() -> None:
-    """Opt-in daily nudge. Uses cached horoscope text when available; never calls AI."""
-    today = datetime.date.today().isoformat()
+def run_digest_emails(now: Optional[datetime.datetime] = None) -> None:
+    """Opt-in daily nudge. Uses cached horoscope text when available; never calls AI.
+
+    По българско време и след 8:00 — досега датата беше по UTC и писмото
+    тръгваше около 2–3 ч. през нощта, когато хороскопът за деня още го няма.
+    """
+    now = now or datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    if now.hour < 8:
+        return
+    today = now.date().isoformat()
     base = site_base_url()
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -6351,7 +6463,13 @@ def run_digest_emails() -> None:
         if not persons:
             continue
         person = persons[0]
-        cache_key = f"horoscope:{today}"
+        # Ключът на хороскопа е по часовата зона на човека.
+        try:
+            person_today = datetime.datetime.now(
+                ZoneInfo(person.get("timezone") or "Europe/Sofia")).date().isoformat()
+        except Exception:
+            person_today = today
+        cache_key = f"horoscope:{person_today}"
         cached = get_ai_cache(person["id"], cache_key)
         name = u.get("display_name") or (u.get("email") or "").split("@")[0]
         chart_link = f"{base}/chart/{person['id']}"
@@ -6368,8 +6486,13 @@ def run_digest_emails() -> None:
         if not smtp_setting("smtp_host"):
             return
         try:
-            try_send_template(u["email"], "digest", name=name, reading=reading,
-                              date=today)
+            # try_send_template не хвърля, а връща False — досега грешката се
+            # пропускаше и неизпратеното се отбелязваше като изпратено.
+            if not try_send_template(u["email"], "digest", name=name, reading=reading,
+                                     date=today):
+                log.warning("Digest до %s не тръгна — ще се опита пак в следващия час",
+                            u["email"])
+                continue
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?",
                              (today, u["id"]))
@@ -7045,12 +7168,16 @@ def api_get_share(token: str):
     summary, prose = split_summary(cached["content"])
     title_key = row["cache_key"].split(":")[0]
     title = READING_TITLES.get(title_key, READING_TITLES.get(row["cache_key"], "Разчитане"))
+    text = prose or cached["content"]
     return {
         "person_name": row["person_name"],
         "title": title,
         "cache_key": row["cache_key"],
         "summary": summary,
-        "content": prose or cached["content"],
+        "content": text,
+        # Готов HTML (текстът е escape-нат преди форматирането) — без него
+        # споделеното разчитане се виждаше със сурови ** и ##.
+        "content_html": _md_to_html(text),
         "generated_at": cached.get("generated_at"),
     }
 
@@ -7309,8 +7436,33 @@ def api_delete_account(user: Tuple[int, str] = Depends(get_current_user)):
     return {"ok": True, "deleted": user_id}
 
 # --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
-_geocode_cache: dict = {}
+from collections import OrderedDict as _OrderedDict
+
+_GEOCODE_CACHE_MAX = 2000
+_GEOCODE_MAX_QUERY = 120
+_geocode_cache: "_OrderedDict[str, list]" = _OrderedDict()
 _geocode_last_call: list = [0.0]  # mutable holder so the helper can update it
+# Заявките към Nominatim вървят една по една: без ключалка едновременните
+# търсения тръгваха наведнъж и нарушаваха правилото „1 заявка в секунда“ —
+# рискът е бан на сървъра от OpenStreetMap.
+_GEOCODE_LOCK = threading.Lock()
+_GEOCODE_CACHE_LOCK = threading.Lock()   # бърза — само за речника
+_TZ_FINDER = None
+_TZ_FINDER_LOCK = threading.Lock()
+
+
+def _timezone_finder():
+    """Един TimezoneFinder за процеса — създаването му е бавно и тежко."""
+    global _TZ_FINDER
+    if _TZ_FINDER is None:
+        with _TZ_FINDER_LOCK:
+            if _TZ_FINDER is None:
+                try:
+                    from timezonefinder import TimezoneFinder
+                    _TZ_FINDER = TimezoneFinder()
+                except Exception:
+                    _TZ_FINDER = False
+    return _TZ_FINDER or None
 
 def geocode_place(query: str, limit: int = 6) -> list:
     """Look up a place name and return candidate locations with coordinates.
@@ -7322,11 +7474,37 @@ def geocode_place(query: str, limit: int = 6) -> list:
     import urllib.parse
     import urllib.request
 
-    key = query.strip().lower()
+    query = query.strip()[:_GEOCODE_MAX_QUERY]
+    key = query.lower()
     if not key:
         return []
-    if key in _geocode_cache:
-        return _geocode_cache[key]
+    with _GEOCODE_CACHE_LOCK:
+        if key in _geocode_cache:
+            _geocode_cache.move_to_end(key)
+            return _geocode_cache[key]
+    # Чакаме реда си най-много няколко секунди: ако Nominatim е бавен, по-добре
+    # кратък отказ, отколкото всички нишки на сайта да висят в опашката.
+    if not _GEOCODE_LOCK.acquire(timeout=6):
+        raise HTTPException(503, "Търсенето на място е заето. Опитай пак след малко.")
+    try:
+        with _GEOCODE_CACHE_LOCK:
+            if key in _geocode_cache:          # някой друг току-що го е потърсил
+                return _geocode_cache[key]
+        results = _geocode_fetch(query, limit)
+    finally:
+        _GEOCODE_LOCK.release()
+    with _GEOCODE_CACHE_LOCK:
+        _geocode_cache[key] = results
+        while len(_geocode_cache) > _GEOCODE_CACHE_MAX:
+            _geocode_cache.popitem(last=False)
+    return results
+
+
+def _geocode_fetch(query: str, limit: int) -> list:
+    """Една заявка към Nominatim — вика се само под _GEOCODE_LOCK."""
+    import time
+    import urllib.parse
+    import urllib.request
 
     # Respect Nominatim's 1 request/second limit.
     elapsed = time.monotonic() - _geocode_last_call[0]
@@ -7345,18 +7523,15 @@ def geocode_place(query: str, limit: int = 6) -> list:
         headers={"User-Agent": "AstroKarta/1.0 (astrology chart app)"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=8) as resp:
             raw = json.loads(resp.read())
     except Exception as e:
-        raise HTTPException(502, f"Грешка при търсене на място: {e}")
+        log.warning("Търсенето на място „%s“ се провали: %s", query, e)
+        raise HTTPException(502, "Търсенето на място не се получи. Опитай пак след малко.")
     finally:
         _geocode_last_call[0] = time.monotonic()
 
-    try:
-        from timezonefinder import TimezoneFinder
-        tf = TimezoneFinder()
-    except Exception:
-        tf = None
+    tf = _timezone_finder()
 
     results = []
     for item in raw:
@@ -7380,7 +7555,6 @@ def geocode_place(query: str, limit: int = 6) -> list:
             "timezone": tz or "Europe/Sofia",
         })
 
-    _geocode_cache[key] = results
     return results
 
 @app.get("/api/geocode")
@@ -7391,14 +7565,16 @@ def api_geocode(q: str, user: Tuple[int, str] = Depends(get_current_user)):
     return {"results": geocode_place(q)}
 
 @app.get("/api/public/geocode")
-def api_public_geocode(q: str):
+def api_public_geocode(q: str, request: Request):
     """Same lookup for the pre-signup chart form, which has no token yet.
 
     Results are cached and rate-limited inside geocode_place, and a place name
-    reveals nothing about anyone, so this is safe to leave open.
+    reveals nothing about anyone, so this is safe to leave open — with a limit
+    per IP, otherwise a flood of unique names ties up the worker threads.
     """
     if len(q.strip()) < 2:
         return {"results": []}
+    rate_limit("geocode", client_ip(request))
     return {"results": geocode_place(q)}
 
 # --- API Routes (AUTH REQUIRED) ---
@@ -7445,6 +7621,10 @@ def api_create_person(
         raise HTTPException(401, "Невалиден акаунт.")
     if row.get("is_blocked"):
         raise HTTPException(403, "Акаунтът е блокиран.")
+    name = (name or "").strip()[:80]
+    if not name:
+        raise HTTPException(400, "Моля, въведи име.")
+    validate_birth(year, month, day, hour, minute, lat, lon, timezone)
 
     # Plans cap how many people an account may keep; admins are exempt.
     if row.get("role") != "admin":
@@ -7484,9 +7664,19 @@ def api_delete_person(person_id: int, user: Tuple[int, str] = Depends(get_curren
             "DELETE FROM persons WHERE id = ? AND user_id = ?",
             (person_id, user_id)
         )
-        conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(404, "Този човек не е намерен в профила ти.")
+        # Разчитанията, линковете за споделяне и аудиото са лични данни на
+        # този човек — изтриват се с него, а не остават в базата и на диска.
+        conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (person_id,))
+        conn.execute("DELETE FROM share_links WHERE person_id = ?", (person_id,))
+        conn.commit()
+    audio_dir = DB_PATH.parent / "audio"
+    for f in audio_dir.glob(f"{person_id}_*.mp3") if audio_dir.exists() else []:
+        try:
+            f.unlink()
+        except OSError:
+            pass
     return {"deleted": person_id}
 
 @app.get("/api/persons/{person_id}/natal")
@@ -7509,6 +7699,8 @@ def api_natal_chart_update(
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
+    validate_birth(data.year, data.month, data.day, data.hour, data.minute,
+                   data.lat, data.lon, data.timezone)
     if not update_person(person_id, user_id, data):
         raise HTTPException(500, "Данните не можаха да се запазят. Опитай пак.")
     clear_ai_cache(person_id)
@@ -8324,7 +8516,10 @@ def build_love_match_full(person: dict, partner: dict) -> dict:
 def resolve_love_match(data: "LoveMatchRequest", person: dict) -> dict:
     """Pick full-chart or sign-only compatibility based on what was supplied."""
     if data.has_full_chart():
-        return build_love_match_full(person, data.as_person())
+        partner = data.as_person()
+        validate_birth(partner["year"], partner["month"], partner["day"], partner["hour"],
+                       partner["minute"], partner["lat"], partner["lon"], partner["timezone"])
+        return build_love_match_full(person, partner)
     if data.partner_sign not in ZODIAC_ORDER:
         raise HTTPException(400, "Изберете зодия или въведете пълни данни за партньора.")
     m = build_love_match(person, data.partner_sign)
@@ -8483,10 +8678,20 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
 
     # Cache key: sort IDs to be order-independent
     cache_key = f"synastry:{min(data.person1_id, data.person2_id)}:{max(data.person1_id, data.person2_id)}"
-    person_id = data.person1_id  # arbitrary, for cache table FK
+    # Пази се под човека, от чиято страница е поискано (PDF, аудио и
+    # споделяне търсят под него).
+    person_id = data.person1_id
 
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
+        if not cached:
+            # Същата двойка, поискана от страницата на другия: досега това
+            # беше ново (платено) генериране. Взимаме готовото и го копираме
+            # тук, за да работят PDF-ът и споделянето и от тази страница.
+            other = get_ai_cache(data.person2_id, cache_key)
+            if other:
+                set_ai_cache(person_id, cache_key, other["content"])
+                cached = other
         if cached:
             return {"interpretation": cached["content"], "cached": True}
 
@@ -8578,9 +8783,29 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(require_
 _AI_JOBS = {}          # cache_key -> {"done": threading.Event, "error": str|None}
 _AI_JOBS_LOCK = threading.Lock()
 
+AI_RETRY_AFTER = 60      # сек.: след неуспех нов опит се разрешава след толкова
+AI_JOB_KEEP = 3600       # сек.: приключилите задачи се пазят толкова, после се чистят
+
+
+def ai_job_failed_recently(job: Optional[dict]) -> bool:
+    """Приключила с грешка преди по-малко от AI_RETRY_AFTER секунди.
+
+    Досега една временна грешка (таймаут, 429) оставаше до рестарт: всяко
+    следващо отваряне показваше „не се получи“, без нов опит.
+    """
+    return bool(job and job["done"].is_set() and job.get("error")
+                and time.monotonic() - job.get("finished_at", 0) < AI_RETRY_AFTER)
+
+
 def ai_job(cache_key: str, fn):
     """Стартира fn() в background нишка (ако вече не тече). Връща job dict."""
+    now = time.monotonic()
     with _AI_JOBS_LOCK:
+        # Ключовете са по човек и ден — без чистене речникът расте до рестарт.
+        if len(_AI_JOBS) > 200:
+            for key, old in list(_AI_JOBS.items()):
+                if old["done"].is_set() and now - old.get("finished_at", now) > AI_JOB_KEEP:
+                    _AI_JOBS.pop(key, None)
         job = _AI_JOBS.get(cache_key)
         if job and not job["done"].is_set():
             return job
@@ -8595,6 +8820,9 @@ def ai_job(cache_key: str, fn):
         try:
             fn()
             log.info("AI задача %s готова за %.1fs", cache_key, time.monotonic() - started)
+        except AINotConfigured as e:
+            job["error"] = str(e)
+            log.warning("AI задача %s: %s", cache_key, e)
         except Exception as e:
             job["error"] = str(e)
             log.exception("AI задача %s се провали след %.1fs", cache_key,
@@ -8604,6 +8832,7 @@ def ai_job(cache_key: str, fn):
         try:
             ctx.run(_work)
         finally:
+            job["finished_at"] = time.monotonic()
             job["done"].set()
     threading.Thread(target=_run, daemon=True).start()
     return job
@@ -8648,7 +8877,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
             return {"interpretation": body, "summary": summary,
                     "date": date_bg, "cached": True, "cache_key": cache_key}
         # Няма кеш, а предишен опит е завършил с грешка — покажи я, не рестартирай.
-        if running and running["done"].is_set() and running["error"]:
+        if ai_job_failed_recently(running):
             return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
 
     def _generate():
@@ -8707,9 +8936,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
 - Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
 - Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли."""
 
-        ai_key, provider = get_ai_config()
-        if not ai_key:
-            return  # няма ключ — кешът остава празен, следващият poll ще върне грешка
+        ai_key, provider = ai_config_or_raise()
         raw = call_ai(ai_key, provider, prompt, max_tokens=6000, model=model)
         set_ai_cache(person_id, cache_key, raw)
 
@@ -8919,6 +9146,11 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
     # Граматичните правила се добавят към всяко разчитане, без значение от модела.
     prompt = BG_GRAMMAR_RULES + "\n\n" + prompt
 
+    if model == PAID_MODEL and provider != "deepseek":
+        # Pro моделът е на DeepSeek. При друг доставчик („anthropic“, „openai“)
+        # името му водеше до 404 за всяко платено разчитане — ползваме
+        # избрания в настройките модел на доставчика.
+        model = None
     model = model or resolve_ai_model(provider)
     try:
         if provider == "anthropic":
@@ -9414,10 +9646,6 @@ def _text_to_audio(text: str, path: str) -> None:
     chunks = _split_for_tts(text, TTS_CHUNKS)
 
     async def _gen():
-        if len(chunks) == 1:
-            await edge_tts.Communicate(text, "bg-BG-KalinaNeural").save(path)
-            return
-
         async def one(idx: int, part: str) -> bytes:
             buf = bytearray()
             async for item in edge_tts.Communicate(part, "bg-BG-KalinaNeural").stream():
@@ -9426,14 +9654,33 @@ def _text_to_audio(text: str, path: str) -> None:
             return bytes(buf)
 
         blobs = await asyncio.gather(*(one(i, c) for i, c in enumerate(chunks)))
-        # Записва се наведнъж, за да не остане половин файл, ако нещо гръмне.
-        tmp = path + ".part"
-        with open(tmp, "wb") as fh:
-            for b in blobs:
-                fh.write(b)
-        os.replace(tmp, path)
+        if not any(blobs):
+            raise RuntimeError("TTS не върна звук")
+        # Записва се наведнъж, през временен файл, за да не остане половин или
+        # празен mp3, ако нещо гръмне. Досега кратките текстове (една част) се
+        # пишеха направо в крайния файл: прекъснат синтез оставяше празен mp3,
+        # който после се сервираше завинаги.
+        tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.part"
+        try:
+            with open(tmp, "wb") as fh:
+                for b in blobs:
+                    fh.write(b)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
 
     asyncio.run(_gen())
+
+
+_AUDIO_LOCKS: dict = {}
+_AUDIO_LOCKS_GUARD = threading.Lock()
+
+
+def _audio_lock(person_id: int) -> threading.Lock:
+    """Една ключалка на човек (броят им е ограничен от броя на хората)."""
+    with _AUDIO_LOCKS_GUARD:
+        return _AUDIO_LOCKS.setdefault(int(person_id), threading.Lock())
 
 
 @app.get("/api/persons/{person_id}/reading-audio")
@@ -9464,14 +9711,18 @@ def api_reading_audio(person_id: int, key: str,
     digest = hashlib.sha1(speech.encode("utf-8")).hexdigest()[:10]
     mp3_path = audio_dir / f"{person_id}_{safe}_{digest}.mp3"
 
-    if not mp3_path.exists():
-        # Старите версии на същото разчитане вече не трябват на никого.
-        for stale in audio_dir.glob(f"{person_id}_{safe}_*.mp3"):
-            try:
-                stale.unlink()
-            except OSError:
-                pass
-        _text_to_audio(speech, str(mp3_path))
+    # Една ключалка на файл: браузърът праща втора заявка (Range), докато
+    # първата още синтезира — без ключалка тя или четеше половин файл, или
+    # пускаше втори синтез върху същия временен файл.
+    with _audio_lock(person_id):
+        if not mp3_path.exists() or mp3_path.stat().st_size == 0:
+            # Старите версии на същото разчитане вече не трябват на никого.
+            for stale in audio_dir.glob(f"{person_id}_{safe}_*.mp3"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+            _text_to_audio(speech, str(mp3_path))
 
     # FileResponse стриймва файла и поддържа Range — превъртането в плейъра не
     # тегли всичко отначало, а и mp3-то не минава цялото през паметта.
@@ -9665,10 +9916,13 @@ async def reset_password_page(request: Request):
 
 @app.get("/share/{token}", response_class=HTMLResponse)
 async def share_page(request: Request, token: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        exists = conn.execute("SELECT 1 FROM share_links WHERE token = ?", (token,)).fetchone()
+    # Невалиден линк е 404 и за търсачките, не страница „200 OK“ с грешка.
     return HTMLResponse(templates.get_template("share.html").render({
         "request": request,
         "token": token,
-    }))
+    }), status_code=200 if exists else 404)
 
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy_page(request: Request):
@@ -10019,7 +10273,7 @@ def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
         if cached:
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": True}
-        if running and running["done"].is_set() and running["error"]:
+        if ai_job_failed_recently(running):
             return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_sign_horoscope(sign, date_bg, date_iso))
@@ -10388,7 +10642,10 @@ def api_compatibility(pair_slug: str, request: Request, refresh: bool = False):
 
 
 @app.get("/healthz")
-def health():
+async def health():
+    # async: върви в event loop-а, не в нишките. Когато 8 души чакат AI
+    # разчитане, нишките са заети — синхронният /healthz чакаше с тях, Coolify
+    # го броеше за срив и рестартираше контейнера насред генерирането.
     return {"status": "ok"}
 
 if __name__ == "__main__":

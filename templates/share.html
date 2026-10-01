@@ -36,6 +36,9 @@
         h1 { font-family: var(--font-display); color: var(--text-heading); font-size: 2rem; margin-bottom: 6px; }
         .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px; }
         .content { line-height: 1.75; white-space: pre-wrap; font-size: 1rem; }
+        .content-html { white-space: normal; }
+        .content-html h3 { font-size: 1.1rem; margin: 1.4em 0 .4em; }
+        .content-html ul { padding-left: 1.3em; }
         .cta { margin-top: 28px; }
         .cta a { color: #fff; background: var(--accent); text-decoration: none; padding: 12px 18px; border-radius: 10px; display: inline-block; }
         .err { color: var(--text-muted); padding: 40px 0; }
@@ -61,7 +64,9 @@
                     '<div class="meta">за ' + escapeHtml(data.person_name || '') +
                     (data.generated_at ? ' · ' + escapeHtml(String(data.generated_at).slice(0, 10)) : '') +
                     '</div>' +
-                    '<div class="content">' + escapeHtml(data.content || '') + '</div>' +
+                    (data.content_html
+                        ? '<div class="content content-html">' + data.content_html + '</div>'
+                        : '<div class="content">' + escapeHtml(data.content || '') + '</div>') +
                     '<div class="cta"><a href="/register">Създай своята карта</a></div>';
             } catch (e) {
                 root.innerHTML = '<p class="err">' + escapeHtml(e.message) + '</p>';

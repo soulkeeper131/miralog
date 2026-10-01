@@ -686,6 +686,12 @@
                 const resp = await fetch('/api/auth/me', { headers: authHeaders() });
                 if (!resp.ok) return;
                 const me = await resp.json();
+                // Влезлите през началната страница нямат запазен имейл в
+                // браузъра — поздравът оставаше „Здравей, ...!“.
+                if (me.email) {
+                    document.getElementById('userEmail').textContent = me.email;
+                    try { localStorage.setItem('miralog_email', me.email); } catch (e) {}
+                }
                 if (me.is_admin) {
                     // Админ панелът е на отделен поддомейн, а localStorage е per-origin,
                     // затова токенът се подава през ?token= (admin.html го чете от URL).

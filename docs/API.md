@@ -157,7 +157,7 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
 | GET | `/api/public/config` | публичен | `{mock_payments, stripe}` |
 | GET | `/api/public/catalogue` | публичен | Модули, цени и пакет за лендинга |
 | POST | `/api/guest/chart` | публичен | Карта без регистрация (нищо не се пази): `{chart, profile, svg}` |
-| GET | `/api/public/geocode?q=` | публичен | Търсене на място → координати и часова зона |
+| GET | `/api/public/geocode?q=` | публичен | Търсене на място → координати и часова зона (до 60 търсения за 10 мин от IP; 503, ако услугата е заета) |
 | GET | `/api/geocode?q=` | вход | Същото, за вписани потребители |
 | GET | `/api/zodiac-signs` | вход | Списък със знаците (за любовния модул) |
 | GET | `/healthz` | публичен | `{"status": "ok"}` |
@@ -179,6 +179,11 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
 `application/x-www-form-urlencoded` или `multipart/form-data` с полета
 `name`, `year`, `month`, `day`, `hour` (0), `minute` (0), `lat`, `lon`,
 `timezone` (`Europe/Sofia`). Отговор: `{"id": 2, "name": "Мария", "user_id": 1}`.
+
+Рождените данни се проверяват навсякъде (`validate_birth`): съществуваща
+дата (не 31.02), година 1800–2200, час 00:00–23:59, координати и часова
+зона — иначе 400. Изтриването на човек трие и разчитанията, линковете за
+споделяне и аудиото му.
 
 Броят карти е ограничен от плана (по подразбиране 2), а модулът `love`
 дава +1. При достигнат лимит се връща грешка с обяснение.
@@ -368,6 +373,7 @@ SVG изображение: зодиакално колело с планети,
 | GET | `/api/features` | вход | Каталог на модулите за този акаунт (отключени, цени, пакет) |
 | POST | `/api/features/{key}/request` | вход | Купуване на модул: Stripe Checkout, ако е включен, иначе имейл до админа |
 | POST | `/api/features/bundle/request` | вход | Същото за пакета „Всички модули“ |
+| POST | `/api/features/pending` | вход | `{keys?, bundle?}` — запомня избраните преди вход през Google/Facebook модули; картата отваря избора с тях |
 | GET | `/api/billing/status` | вход | `{stripe_enabled, plan_key, purchased, digest_opt_in}` |
 | POST | `/api/billing/checkout/feature/{key}` | вход | Stripe Checkout сесия → URL (`key` може да е `bundle`) |
 | GET | `/api/billing/session/{session_id}` | вход | Приключва плащането веднага след връщане от Stripe |

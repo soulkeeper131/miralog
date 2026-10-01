@@ -2279,6 +2279,14 @@
             };
         }
 
+        // detail е низ или обект (402 при отнет модул: {reason, message, …}) —
+        // обект в new Error() се показваше като „[object Object]“.
+        function detailText(detail, fallback) {
+            if (typeof detail === 'string' && detail) return detail;
+            if (detail && typeof detail === 'object' && detail.message) return detail.message;
+            return fallback;
+        }
+
         async function downloadReadingPdf(key) {
             try {
                 const resp = await fetch(
@@ -2286,7 +2294,7 @@
                     { headers: authHeaders() });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
-                    throw new Error(err.detail || ('Грешка ' + resp.status));
+                    throw new Error(detailText(err.detail, 'Грешка ' + resp.status));
                 }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
@@ -2327,7 +2335,7 @@
                     body: JSON.stringify({ key: key, to: to }),
                 });
                 const data = await resp.json();
-                if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
+                if (!resp.ok) throw new Error(detailText(data.detail, 'Грешка ' + resp.status));
                 uiToast('Разчитането е изпратено на ' + data.to, 'ok');
             } catch (e) {
                 uiAlert('Имейлът не можа да се изпрати: ' + e.message,
@@ -2343,7 +2351,7 @@
                     body: JSON.stringify({ cache_key: key }),
                 });
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
+                if (!resp.ok) throw new Error(detailText(data.detail, 'Грешка ' + resp.status));
                 const url = data.url;
                 if (navigator.clipboard && navigator.clipboard.writeText) {
                     await navigator.clipboard.writeText(url);

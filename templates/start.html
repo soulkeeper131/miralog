@@ -1051,6 +1051,21 @@
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(data.detail || 'Грешка при запис.');
                 if (typeof track === 'function') track('sign_up', { method: 'oauth' });
+                // Избраните модули не бива да се губят по пътя през Google:
+                // картата ще отвори избора с тях отметнати.
+                const wantedKeys = (pending.wanted || []).filter(Boolean);
+                if (wantedKeys.length) {
+                    try {
+                        await fetch('/api/features/pending', {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                bundle: wantedKeys.indexOf('bundle') !== -1,
+                                keys: wantedKeys.filter(function (k) { return k !== 'bundle'; }),
+                            }),
+                        });
+                    } catch (e) { /* изборът не е критичен — картата е готова */ }
+                }
                 window.location.href = '/chart/' + data.id + '?token=' + encodeURIComponent(token);
             } catch (e) {
                 uiAlert(e.message, { title: 'Картата не се запази', tone: 'danger' });
@@ -1281,7 +1296,7 @@
                 if (!resp.ok) {
                     const msg = typeof data.detail === 'string' ? data.detail
                               : (data.detail && data.detail.message) || 'Нещо се обърка.';
-                    uiAlert(escapeHtml(msg), { title: 'Нещо се обърка', tone: 'danger' });
+                    uiAlert(msg, { title: 'Нещо се обърка', tone: 'danger' });  // uiAlert сам escape-ва
                     return;
                 }
 
@@ -1296,7 +1311,7 @@
                 // Плащането не е тръгнало: казваме го, вместо човекът да се
                 // озове на картата и да не разбере защо не е платил.
                 if (data.checkout_error) {
-                    await uiAlert(escapeHtml(data.checkout_error),
+                    await uiAlert(data.checkout_error,
                                   { title: 'Профилът е готов' });
                 }
 

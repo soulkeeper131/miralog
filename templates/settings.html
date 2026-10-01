@@ -524,15 +524,10 @@
                 const paid = new URLSearchParams(location.search).get('paid');
                 if (paid === '1') {
                     showBanner('Плащането е прието. Ако достъпът още не е обновен, изчакай няколко секунди и презареди.', 'success');
-                    const q = new URLSearchParams(location.search);
-                    const cents = parseInt(q.get('amount_cents') || '0', 10);
-                    const cur = q.get('currency') || '';
-                    const sid = q.get('session_id') || '';
-                    const p = {};
-                    if (cents > 0) p.value = cents / 100;
-                    if (cur) p.currency = cur;
-                    if (sid) p.transaction_id = sid;
-                    window.track('purchase', p);
+                    // Покупката се отчита от modules.js, след като сървърът я
+                    // потвърди при Stripe — с реалната сума. Тук window.track
+                    // гърмеше (consent.js не беше зареден) и вместо „прието“
+                    // клиентът виждаше грешка при зареждане на профила.
                 }
                 if (paid === '0') showBanner('Плащането беше отказано.', 'error');
                 if (new URLSearchParams(location.search).get('subscribe') === '1' && acc.stripe_enabled && (acc.plan || {}).key !== 'full') {
@@ -717,5 +712,6 @@
         }
         loadDocuments();
     </script>
+    <script src="/static/consent.js"></script>
 </body>
 </html>
