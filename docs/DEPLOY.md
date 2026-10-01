@@ -198,9 +198,10 @@ Expected: 200
 # платилите клиенти виждат ли каквото са купили (само чете)
 python scripts_check_paid_access.py
 
-# платени Stripe сесии, които не са отключили нищо
+# платени Stripe сесии, които не са отключили нищо, и връщания от Stripe,
+# които липсват в базата (записват се с датата на връщането — Н-18)
 python scripts_reconcile_stripe.py            # показва
-python scripts_reconcile_stripe.py --apply    # и отключва
+python scripts_reconcile_stripe.py --apply    # и поправя
 ```
 
 Пускат се в контейнера (Coolify → app → Terminal) от `/app`.

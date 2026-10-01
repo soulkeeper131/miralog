@@ -27,12 +27,12 @@
 | `feature_pages.py` | Лендинг страниците на модулите (`/natalna-karta`, `/akashovi-zapisi`…) |
 | `horoscope_signs.py`, `planet_pages.py`, `house_pages.py` | Данни за SEO страниците (зодии, планети, домове) |
 | `scripts_check_paid_access.py` | Само чете: сверява плащания ↔ `feature_purchases` ↔ `unlocked_features()` |
-| `scripts_reconcile_stripe.py` | Сверява платени Stripe сесии с базата; `--apply` отключва липсващото |
+| `scripts_reconcile_stripe.py` | Сверява Stripe с базата: платени сесии без отключване и връщания без запис; `--apply` поправя |
 | `scripts/gen_og_image.py` | Генерира `static/og-image.jpg` (иска Pillow, не е в requirements) |
 | `tests/` | pytest: `test_access`, `test_payments`, `test_security`, `test_edge_cases` |
 | `templates/` | Jinja2 шаблони, всеки е самостоятелен (няма общ `base.html`); общи парчета: `_analytics.html`, `_critical.html` |
 | `static/` | CSS/JS (`ui`, `landing`, `modules`, `locked`, `consent`), лога, favicon, og-image |
-| `docs/` | `API.md`, `DEPLOY.md`, `PLAN-*.md`, `TODO.md`, `n18/`, `superpowers/{specs,plans}` |
+| `docs/` | `API.md`, `DEPLOY.md`, `PLAN-*.md` (вкл. `PLAN-deploy-n18.md` — стъпките за деплоя на Н-18), `TODO.md`, `n18/`, `superpowers/{specs,plans}` |
 
 Ориентири в `app.py` (търси по име, редовете се менят): `init_db`, `lifespan`, `admin_host_guard`, `FEATURE_CATALOGUE`, `require_feature`, `unlocked_features`, `bundle_offer`, `call_ai`, `fulfill_checkout_session`, `run_scheduled_jobs`, `build_person_pdf`.
 

@@ -10,7 +10,9 @@ python-jose
 tzdata
 timezonefinder
 reportlab
-stripe
+# Плащанията (webhook, сверка) са проверени със stripe 15 и 16. Нова голяма
+# версия се приема след проверка, а не сама при поредния деплой.
+stripe<17
 pyotp
 edge-tts
 sentry-sdk[fastapi]
