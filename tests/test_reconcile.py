@@ -146,3 +146,35 @@ def test_refund_already_recorded_by_the_webhook_is_not_doubled(app, user, fake):
     fake([s], [_refund(intent, 299, _ts(2026, 9, 20, 12))])
     R.main(True)
     assert app.refunded_cents(pid) == 299
+
+
+def test_checkout_accepts_cards_only(monkeypatch):
+    """Документът по Н-18, чл. 52о е за картови плащания — Checkout не бива
+    да предлага банков превод/SEPA, включени случайно в Stripe Dashboard."""
+    import billing
+    seen = []
+
+    class _S:
+        url = "https://checkout.stripe.test/x"
+
+    class _Session:
+        @staticmethod
+        def create(**params):
+            seen.append(params)
+            return _S()
+
+    class _Checkout:
+        Session = _Session
+
+    class _Stripe:
+        checkout = _Checkout
+    monkeypatch.setattr(billing, "get_stripe", lambda: _Stripe)
+    billing.create_feature_checkout(customer_email="a@example.com", customer_id=None, user_id=1,
+                                    feature_key="moon", feature_name="Луна", amount_cents=299,
+                                    currency="EUR", success_url="https://x/s", cancel_url="https://x/c")
+    billing.create_features_checkout(customer_email="a@example.com", customer_id=None, user_id=1,
+                                     items=[{"key": "moon", "name": "Луна", "amount_cents": 299,
+                                             "currency": "EUR"}],
+                                     success_url="https://x/s", cancel_url="https://x/c")
+    assert len(seen) == 2
+    assert all(p["payment_method_types"] == ["card"] for p in seen)

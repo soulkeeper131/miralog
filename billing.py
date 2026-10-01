@@ -102,6 +102,10 @@ def create_feature_checkout(
     stripe = get_stripe()
     params = {
         "mode": "payment",
+        # Само карти (вкл. Apple Pay / Google Pay): документът по Н-18, чл. 52о
+        # е за картови плащания. Без това Stripe показва всичко, включено в
+        # Dashboard (банков превод, SEPA и др.).
+        "payment_method_types": ["card"],
         "line_items": [{
             "price_data": {
                 "currency": (currency or "eur").lower(),
@@ -152,6 +156,10 @@ def create_features_checkout(
     keys = ",".join(i["key"] for i in items)
     params = {
         "mode": "payment",
+        # Само карти (вкл. Apple Pay / Google Pay): документът по Н-18, чл. 52о
+        # е за картови плащания. Без това Stripe показва всичко, включено в
+        # Dashboard (банков превод, SEPA и др.).
+        "payment_method_types": ["card"],
         "line_items": [{
             "price_data": {
                 "currency": (i.get("currency") or "eur").lower(),
