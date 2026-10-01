@@ -292,11 +292,11 @@ def test_stripe_refund_is_recorded_once_and_partially(app, user):
     s = _session(user["id"], ["akashic"], 900, kind="feature", intent="pi_refund_me")
     app.fulfill_checkout_session(s)
     pay = _payment(app, s["id"])
-    charge = {"payment_intent": "pi_refund_me", "amount_refunded": 300, "created": 1790000000}
-    app.record_stripe_refund(charge, "evt_1")
-    app.record_stripe_refund(charge, "evt_1")          # повторно изпратено събитие
+    charge = {"payment_intent": "pi_refund_me", "amount_refunded": 300}
+    app.record_stripe_refund(charge, "evt_1", 1790000000)
+    app.record_stripe_refund(charge, "evt_1", 1790000000)   # повторно изпратено събитие
     assert app.refunded_cents(pay["id"]) == 300
-    app.record_stripe_refund({**charge, "amount_refunded": 900}, "evt_2")
+    app.record_stripe_refund({**charge, "amount_refunded": 900}, "evt_2", 1790000100)
     assert app.refunded_cents(pay["id"]) == 900
 
 
@@ -358,9 +358,8 @@ def test_month_file_is_valid_for_nap(app, user, legal_ok):
     for s in sessions:
         app.fulfill_checkout_session(s)
         _set_paid_at(app, _payment(app, s["id"])["id"], "2026-09-15 09:00:00")
-    app.record_stripe_refund({"payment_intent": "pi_ref", "amount_refunded": 299,
-                              "created": int(datetime.datetime(2026, 9, 20, tzinfo=SOFIA).timestamp())},
-                             "evt_ref")
+    app.record_stripe_refund({"payment_intent": "pi_ref", "amount_refunded": 299},
+                             "evt_ref", int(datetime.datetime(2026, 9, 20, tzinfo=SOFIA).timestamp()))
     report = app.build_month_saft(2026, 9)
     assert report["valid"], report["problems"]
     orders, root = _orders(report["xml"])
@@ -554,3 +553,462 @@ def test_paid_reading_refresh_is_ignored_for_customers(app, user):
     app.set_ai_cache(pid, "profile", "Запазено разчитане")
     res = app.api_profile_interpretation(pid, refresh=True, user=(user["id"], user["email"]))
     assert res.get("cached") is True and res["interpretation"] == "Запазено разчитане"
+
+
+# --- преглед преди деплой: плащания и връщания -------------------------------------
+
+def _post_webhook(app, body: bytes) -> dict:
+    """POST към /api/stripe/webhook през ASGI — както го вика uvicorn."""
+    import asyncio
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+             "method": "POST", "scheme": "https", "path": "/api/stripe/webhook",
+             "raw_path": b"/api/stripe/webhook", "root_path": "", "query_string": b"",
+             "headers": [(b"host", b"astrokarta.bg"), (b"stripe-signature", b"t=1,v1=x"),
+                         (b"content-type", b"application/json")],
+             "client": ("8.8.8.8", 5000), "server": ("astrokarta.bg", 443)}
+    sent = {"status": 0, "body": b""}
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            sent["status"] = message["status"]
+        elif message["type"] == "http.response.body":
+            sent["body"] += message.get("body", b"")
+
+    asyncio.run(app.app(scope, receive, send))
+    return sent
+
+
+def test_stripe_refund_webhook_with_a_real_event_object(app, user, monkeypatch):
+    """stripe.Event не е dict: event.get("id") хвърляше AttributeError и всяко
+    връщане от Stripe завършваше с 500 — нито едно не стигаше до файла."""
+    import json
+    import stripe
+    s = _session(user["id"], ["akashic"], 900, kind="feature", intent="pi_hook_refund")
+    app.fulfill_checkout_session(s)
+    pay = _payment(app, s["id"])
+    sold = int(datetime.datetime(2026, 9, 28, 12, 0, tzinfo=SOFIA).timestamp())
+    refunded = int(datetime.datetime(2026, 10, 3, 12, 0, tzinfo=SOFIA).timestamp())
+    payload = {"id": "evt_hook_refund", "object": "event", "type": "charge.refunded",
+               "created": refunded,
+               "data": {"object": {"id": "ch_hook", "object": "charge", "created": sold,
+                                   "payment_intent": "pi_hook_refund", "amount_refunded": 900}}}
+    monkeypatch.setattr(app.billing, "construct_webhook_event",
+                        lambda body, sig: stripe.Event.construct_from(json.loads(body), "sk_test"))
+    res = _post_webhook(app, json.dumps(payload).encode())
+    assert res["status"] == 200, res["body"]
+    assert app.refunded_cents(pay["id"]) == 900
+    with sqlite3.connect(app.DB_PATH) as c:
+        when = c.execute("SELECT refunded_at FROM payment_refunds WHERE payment_id = ?",
+                         (pay["id"],)).fetchone()[0]
+    assert app.utc_to_sofia(when).strftime("%Y-%m-%d") == "2026-10-03", \
+        "датата е на връщането, не на продажбата"
+    assert _post_webhook(app, json.dumps(payload).encode())["status"] == 200
+    assert app.refunded_cents(pay["id"]) == 900, "повторно изпратено събитие не се брои два пъти"
+
+
+def test_refund_goes_to_the_month_of_the_refund(app, user, legal_ok):
+    """Без разгънат списък с връщания датата идваше от charge.created — часа на
+    продажбата — и връщането отиваше в месеца на продажбата."""
+    s = _session(user["id"], ["moon"], 299, kind="feature", intent="pi_late_refund")
+    app.fulfill_checkout_session(s)
+    _set_paid_at(app, _payment(app, s["id"])["id"], "2026-08-20 09:00:00")
+    sale = int(datetime.datetime(2026, 8, 20, 12, 0, tzinfo=SOFIA).timestamp())
+    event = int(datetime.datetime(2026, 9, 2, 12, 0, tzinfo=SOFIA).timestamp())
+    app.record_stripe_refund({"payment_intent": "pi_late_refund", "amount_refunded": 299,
+                              "created": sale}, "evt_late", event)
+    assert app.build_month_saft(2026, 8)["refunds"] == 0
+    september = app.build_month_saft(2026, 9)
+    assert september["refunds"] == 1 and september["refund_cents"] == 299
+    # разгънатият списък с връщания (ако Stripe го прати) е по-точен от събитието
+    s2 = _session(user["id"], ["numerology"], 400, kind="feature", intent="pi_listed")
+    app.fulfill_checkout_session(s2)
+    listed = int(datetime.datetime(2026, 9, 5, 12, 0, tzinfo=SOFIA).timestamp())
+    app.record_stripe_refund({"payment_intent": "pi_listed", "amount_refunded": 400,
+                              "refunds": {"data": [{"created": listed}]}}, "evt_listed", event)
+    with sqlite3.connect(app.DB_PATH) as c:
+        when = c.execute("SELECT r.refunded_at FROM payment_refunds r JOIN payments p"
+                         " ON p.id = r.payment_id WHERE p.payment_intent = 'pi_listed'").fetchone()[0]
+    assert app.utc_to_sofia(when).strftime("%Y-%m-%d") == "2026-09-05"
+
+
+def _slow_vat_split(app, monkeypatch):
+    """Разширява прозореца между „няма ли редове?“ и записа — така
+    състезанието се появява всеки път, а не веднъж на сто пускания."""
+    import time
+    real = app.split_vat_over_lines
+
+    def slow(*a, **k):
+        time.sleep(0.2)
+        return real(*a, **k)
+    monkeypatch.setattr(app, "split_vat_over_lines", slow)
+
+
+def test_parallel_fulfilment_records_one_sale(app, user, monkeypatch):
+    """Webhook-ът и връщането на клиента едновременно: досега и двамата
+    можеха да видят „няма редове“ и да запишат по комплект."""
+    import threading
+    monkeypatch.setattr(app, "send_sale_documents_for_payment", lambda pid, email: None)
+    _slow_vat_split(app, monkeypatch)
+    s = _session(user["id"], ["profile", "moon"], 798, amounts=[499, 299])
+    barrier = threading.Barrier(6)
+    errors = []
+
+    def run():
+        try:
+            barrier.wait()
+            app.fulfill_checkout_session(dict(s))
+        except Exception as e:          # pragma: no cover - показва се в assert
+            errors.append(e)
+    threads = [threading.Thread(target=run) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors
+    pay = _payment(app, s["id"])
+    assert [i["amount_cents"] for i in app.payment_items(pay["id"])] == [499, 299]
+    with sqlite3.connect(app.DB_PATH) as c:
+        assert c.execute("SELECT COUNT(*) FROM sale_documents WHERE payment_id = ?",
+                         (pay["id"],)).fetchone()[0] == 1
+
+
+def test_parallel_line_writes_store_one_set(app, user, monkeypatch):
+    import threading
+    _slow_vat_split(app, monkeypatch)
+    pid = app.record_payment(user["id"], plan_key=None, amount_cents=798, currency="EUR",
+                             method="тест", note="race")
+    lines = [{"key": "profile", "name": "Профил", "list_cents": 499, "amount_cents": 499},
+             {"key": "moon", "name": "Луна", "list_cents": 299, "amount_cents": 299}]
+    barrier = threading.Barrier(8)
+
+    def run():
+        barrier.wait()
+        app.store_payment_items(pid, lines)
+    threads = [threading.Thread(target=run) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(app.payment_items(pid)) == 2
+
+
+def test_voided_payment_cannot_be_refunded_and_its_refunds_stay_out(app, db, user, legal_ok):
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    keep = _session(user["id"], ["moon"], 299, kind="feature")
+    void = _session(user["id"], ["numerology"], 400, kind="feature", intent="pi_voided")
+    for s in (keep, void):
+        app.fulfill_checkout_session(s)
+        _set_paid_at(app, _payment(app, s["id"])["id"], "2026-09-10 09:00:00")
+    vid = _payment(app, void["id"])["id"]
+    app.api_admin_void_payment(vid, admin=admin)
+    with pytest.raises(HTTPException) as err:
+        app.api_admin_refund_payment(vid, app.PaymentRefund(method="account"), admin=admin)
+    assert err.value.status_code == 400
+    # Stripe все пак връща парите: записва се, но не влиза в одиторския файл,
+    # защото и продажбата не е там.
+    app.record_stripe_refund({"payment_intent": "pi_voided", "amount_refunded": 400}, "evt_void",
+                             int(datetime.datetime(2026, 9, 12, tzinfo=SOFIA).timestamp()))
+    assert app.refunded_cents(vid) == 400
+    report = app.build_month_saft(2026, 9)
+    assert report["valid"], report["problems"]
+    assert report["orders"] == 1 and report["refunds"] == 0
+
+
+def test_numbering_never_repeats_a_number_from_the_old_container(app, user, legal_ok):
+    """Докато върви деплой, старият контейнер още приема плащания и праща
+    документ с номера на плащането. Новата номерация не бива да го повтори."""
+    with sqlite3.connect(app.DB_PATH) as c:
+        before = c.execute("SELECT value FROM settings WHERE key = 'sale_doc_seed'").fetchone()
+        last = c.execute("SELECT seq FROM sqlite_sequence WHERE name = 'payments'").fetchone()
+        # както при миграцията: номерацията тръгва след най-голямото плащане
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sale_doc_seed', ?)",
+                  (str(last[0] if last else 0),))
+        c.commit()
+    try:
+        s1 = _session(user["id"], ["moon"], 299, kind="feature")
+        app.fulfill_checkout_session(s1)
+        old = app.record_payment(user["id"], plan_key=None, amount_cents=400, currency="EUR",
+                                 method="stripe", note="feature:numerology cs_old_container",
+                                 session_id="cs_old_container")
+        s2 = _session(user["id"], ["akashic"], 900, kind="feature")
+        app.fulfill_checkout_session(s2)
+        n1 = app.sale_document(_payment(app, s1["id"])["id"])["number"]
+        n2 = app.sale_document(_payment(app, s2["id"])["id"])["number"]
+        assert n1 < old < n2 and n2 == old + 1, (n1, old, n2)
+        for pid in (_payment(app, s1["id"])["id"], old, _payment(app, s2["id"])["id"]):
+            _set_paid_at(app, pid, "2026-09-10 09:00:00")
+        report = app.build_month_saft(2026, 9)
+        assert report["valid"], report["problems"]
+        doc_ns = [o.findtext("doc_n") for o in _orders(report["xml"])[0].values()]
+        assert sorted(doc_ns) == sorted({str(n1), str(old), str(n2)})
+    finally:
+        with sqlite3.connect(app.DB_PATH) as c:
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sale_doc_seed', ?)",
+                      (before[0] if before else "0",))
+            c.commit()
+
+
+def test_payment_from_the_old_container_gets_no_second_document(app, user, monkeypatch):
+    """Старият контейнер е записал плащането и е пратил своя документ; клиентът
+    се връща на новия. Достъпът се довършва, втори документ няма."""
+    sent = []
+    monkeypatch.setattr(app, "send_sale_documents_for_payment", lambda pid, email: sent.append(pid))
+    s = _session(user["id"], ["moon"], 299, kind="feature", session_id="cs_from_old_container")
+    pid = app.record_payment(user["id"], plan_key=None, amount_cents=299, currency="EUR",
+                             method="stripe", note="feature:moon cs_from_old_container",
+                             session_id="cs_from_old_container")
+    app.fulfill_checkout_session(s)
+    assert "moon" in app.unlocked_features(app.get_user_by_id(user["id"]))
+    assert app.sale_document(pid) is None and app.payment_items(pid) == []
+    assert not sent
+    assert _payment(app, s["id"])["payment_intent"] == s["payment_intent"], \
+        "без payment_intent връщане от Stripe не се свързва с плащането"
+
+
+def test_manual_payment_cannot_use_the_stripe_method(app, db, user):
+    """„stripe“ значи онлайн продажба с документ — ръчен запис с този метод
+    влизаше в одиторския файл без документ."""
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    with pytest.raises(HTTPException) as err:
+        app.api_admin_record_payment(app.AdminPaymentCreate(
+            user_id=user["id"], amount_cents=500, method=" Stripe "), admin=admin)
+    assert err.value.status_code == 400
+    app.api_admin_record_payment(app.AdminPaymentCreate(
+        user_id=user["id"], amount_cents=500, method="банка"), admin=admin)
+
+
+# --- преглед преди деплой: одиторският файл ---------------------------------------
+
+def _mail_on(app, monkeypatch):
+    monkeypatch.setattr(app, "notify_address", lambda: "owner@example.com")
+    monkeypatch.setattr(app, "smtp_setting", lambda key: "smtp.example.com" if key == "smtp_host" else "")
+
+
+def test_current_month_generated_early_does_not_block_the_automation(
+        app, db, user, legal_ok, _no_mail, monkeypatch):
+    """Админът генерира текущия месец (непълен); на 1-во число автоматиката
+    го пропускаше, защото „вече е генериран“ — и подаденият файл беше непълен."""
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    _mail_on(app, monkeypatch)
+    app.set_setting("saft:2026-09", "")
+    early = _session(user["id"], ["moon"], 299, kind="feature")
+    app.fulfill_checkout_session(early)
+    _set_paid_at(app, _payment(app, early["id"])["id"], "2026-09-10 09:00:00")
+    app.api_admin_saft_generate("2026-09", admin=admin)
+    assert app.saft_meta("2026-09")["orders"] == 1
+    late = _session(user["id"], ["numerology"], 400, kind="feature")
+    app.fulfill_checkout_session(late)
+    _set_paid_at(app, _payment(app, late["id"])["id"], "2026-09-29 09:00:00")
+    _no_mail.clear()
+    app.run_saft_automation(datetime.datetime(2026, 10, 1, 7, 0, tzinfo=SOFIA))
+    meta = app.saft_meta("2026-09")
+    assert meta["orders"] == 2 and meta["valid"] and meta["auto_at"]
+    assert len(_no_mail) == 1 and _no_mail[0][1]["attachment"][0] == "saft-2026-09.xml"
+    app.set_setting("saft:2026-09", "")
+
+
+def test_month_without_sales_gets_no_invalid_file_and_no_reminder(
+        app, db, user, legal_ok, _no_mail, monkeypatch):
+    """Досега месец без продажби (след първата продажба на магазина) даваше
+    „файлът НЕ е готов“ всеки месец и напомняне за файл, който не съществува."""
+    _mail_on(app, monkeypatch)
+    for key in ("2026-08", "2026-09"):
+        app.set_setting(f"saft:{key}", "")
+    s = _session(user["id"], ["moon"], 299, kind="feature")
+    app.fulfill_checkout_session(s)
+    _set_paid_at(app, _payment(app, s["id"])["id"], "2026-08-10 09:00:00")
+    target = app.SAFT_DIR / "saft-2026-09.xml"
+    if target.exists():
+        target.unlink()
+    _no_mail.clear()
+    app.run_saft_automation(datetime.datetime(2026, 10, 1, 7, 0, tzinfo=SOFIA))
+    assert not target.exists()
+    meta = app.saft_meta("2026-09")
+    assert meta["no_sales"] is True and not meta.get("generated_at")
+    assert len(_no_mail) == 1 and "няма продажби" in _no_mail[0][0][1]
+    assert not _no_mail[0][1].get("attachment")
+    for day in (1, 12, 13, 14):
+        app.run_saft_automation(datetime.datetime(2026, 10, day, 9, 0, tzinfo=SOFIA))
+    assert len(_no_mail) == 1, "без напомняния за месец без файл"
+    months = {m["key"]: m for m in app.api_admin_saft_months(
+        admin=db.get_user_by_email(app.ADMIN_EMAIL))["months"]}
+    assert months["2026-09"]["sales"] == 0 and months["2026-08"]["sales"] == 1
+    for key in ("2026-08", "2026-09"):
+        app.set_setting(f"saft:{key}", "")
+
+
+def test_month_list_keeps_the_newest_months(app, db, user):
+    """Списъкът режеше след 36 месеца от първата продажба — новите месеци
+    изчезваха, точно тези, които предстои да се подават."""
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    s = _session(user["id"], ["moon"], 299, kind="feature")
+    app.fulfill_checkout_session(s)
+    _set_paid_at(app, _payment(app, s["id"])["id"], "2021-01-10 09:00:00")
+    months = app.api_admin_saft_months(admin=admin)["months"]
+    now = datetime.datetime.now(SOFIA)
+    assert len(months) == 36
+    assert months[0]["key"] == f"{now.year:04d}-{now.month:02d}" and months[0]["in_progress"]
+    oldest = now.year * 12 + now.month - 1 - 35
+    assert months[-1]["key"] == f"{oldest // 12:04d}-{oldest % 12 + 1:02d}"
+
+
+def test_nap_tab_does_not_rebuild_every_file(app, db, user, legal_ok, monkeypatch):
+    """Табът строеше XML и го проверяваше срещу схемата за всеки генериран
+    месец при всяко отваряне — за отпечатъка стигат данните."""
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    s = _session(user["id"], ["moon"], 299, kind="feature")
+    app.fulfill_checkout_session(s)
+    pid = _payment(app, s["id"])["id"]
+    _set_paid_at(app, pid, "2026-09-10 09:00:00")
+    app.set_setting("saft:2026-09", "")
+    app.api_admin_saft_generate("2026-09", admin=admin)
+
+    def no_xml(*a, **k):
+        raise AssertionError("списъкът с месеци не бива да строи XML")
+    monkeypatch.setattr(app.saft, "build_saft_xml", no_xml)
+    monkeypatch.setattr(app.saft, "validate_saft", no_xml)
+    months = {m["key"]: m for m in app.api_admin_saft_months(admin=admin)["months"]}
+    assert months["2026-09"]["stale"] is False
+    app.api_admin_void_payment(pid, admin=admin)
+    months = {m["key"]: m for m in app.api_admin_saft_months(admin=admin)["months"]}
+    assert months["2026-09"]["stale"] is True
+    app.set_setting("saft:2026-09", "")
+
+
+def test_one_vat_rounding_rule(app):
+    assert app.vat_cents_of is app.saft.vat_cents_of
+
+
+# --- преглед преди деплой: споделяне, фактура, лични данни -------------------------
+
+def _share(app, user, person_id, cache_key):
+    token = "shr" + secrets.token_hex(8)
+    with sqlite3.connect(app.DB_PATH) as c:
+        c.execute("INSERT INTO share_links (token, person_id, user_id, cache_key) VALUES (?, ?, ?, ?)",
+                  (token, person_id, user["id"], cache_key))
+        c.commit()
+    return token
+
+
+def test_share_link_stops_when_the_module_is_taken_back(app, db, user):
+    """Линкът продължаваше да показва платеното разчитане и след отнемане на
+    модула (напр. след върнати пари) — PDF-ът и имейлът вече бяха спрени."""
+    import asyncio
+    from starlette.requests import Request
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    app.grant_feature_purchase(user["id"], "akashic", 900, "EUR", None)
+    pid = _person(app, user["id"])
+    app.set_ai_cache(pid, "akashic", "1. **Мисия** текст")
+    token = _share(app, user, pid, "akashic")
+    req = Request({"type": "http", "method": "GET", "path": f"/share/{token}", "headers": [],
+                   "query_string": b"", "scheme": "https", "server": ("astrokarta.bg", 443)})
+    assert app.api_get_share(token)["content"]
+    assert asyncio.run(app.share_page(req, token)).status_code == 200
+
+    app.api_admin_revoke_feature(user["id"], "akashic", admin=admin)
+    with pytest.raises(HTTPException) as err:
+        app.api_get_share(token)
+    assert err.value.status_code == 404
+    assert asyncio.run(app.share_page(req, token)).status_code == 404
+
+    app.grant_feature_purchase(user["id"], "akashic", 900, "EUR", None)
+    assert app.api_get_share(token)["content"], "върнатият модул пуска линка отново"
+
+
+def test_resent_invoice_keeps_its_number_and_date(app, user, legal_ok, monkeypatch):
+    """При „изпрати пак“ фактурата получаваше днешната дата със стария номер —
+    два различни документа с един номер."""
+    monkeypatch.setattr(app, "smtp_setting", lambda key: "smtp.example.com" if key == "smtp_host" else "")
+    seen = []
+    real = app.build_invoice_pdf
+
+    def capture(**kw):
+        seen.append((kw["invoice_number"], kw["issued_at"]))
+        return real(**kw)
+    monkeypatch.setattr(app, "build_invoice_pdf", capture)
+    s = _session(user["id"], ["moon"], 299, kind="feature")
+    monkeypatch.setattr(app, "_in_background", lambda fn, *a, **k: fn(*a, **k))
+    app.fulfill_checkout_session(s)
+    pid = _payment(app, s["id"])["id"]
+    with sqlite3.connect(app.DB_PATH) as c:
+        c.execute("UPDATE invoices SET issued_at = '2026-09-03 07:15:00' WHERE payment_id = ?", (pid,))
+        c.commit()
+    app.send_sale_documents_for_payment(pid, "buyer@example.com")
+    assert len(seen) == 2 and seen[0][0] == seen[1][0]
+    assert seen[1][1] == "03.09.2026 10:15:00", "датата на издаване, не днешната"
+    with sqlite3.connect(app.DB_PATH) as c:
+        assert c.execute("SELECT COUNT(*) FROM invoices WHERE payment_id = ?", (pid,)).fetchone()[0] == 1
+
+
+def test_unreadable_refund_amount_is_not_a_full_refund(app, db, user):
+    """В админа „5 лв“ ставаше NaN → null → и сървърът връщаше целия остатък."""
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    s = _session(user["id"], ["akashic"], 900, kind="feature")
+    app.fulfill_checkout_session(s)
+    pid = _payment(app, s["id"])["id"]
+    with pytest.raises(HTTPException) as err:
+        app.api_admin_refund_payment(pid, app.PaymentRefund.model_validate(
+            {"amount_cents": None, "method": "account"}), admin=admin)
+    assert err.value.status_code == 400 and app.refunded_cents(pid) == 0
+    app.api_admin_refund_payment(pid, app.PaymentRefund.model_validate(
+        {"amount_cents": 300, "method": "account"}), admin=admin)
+    app.api_admin_refund_payment(pid, app.PaymentRefund.model_validate({"method": "account"}), admin=admin)
+    assert app.refunded_cents(pid) == 900, "без поле — целият остатък"
+
+
+def test_deleting_a_person_removes_the_synastry_kept_by_the_partner(app, user):
+    """Синастрията се пази и под партньора — след изтриване на единия текстът
+    за него оставаше в базата, в споделен линк и в аудио файл."""
+    a, b = _person(app, user["id"]), _person(app, user["id"])
+    key = f"synastry:{min(a, b)}:{max(a, b)}"
+    app.set_ai_cache(a, key, "Съвместимост на двамата")
+    app.set_ai_cache(a, "profile", "Профилът на партньора остава")
+    token = _share(app, user, a, key)
+    audio = app.DB_PATH.parent / "audio"
+    audio.mkdir(parents=True, exist_ok=True)
+    pair_mp3 = audio / f"{a}_synastry-{min(a, b)}-{max(a, b)}_abc123.mp3"
+    own_mp3 = audio / f"{a}_profile_abc123.mp3"
+    for f in (pair_mp3, own_mp3):
+        f.write_bytes(b"ID3")
+    app.api_delete_person(b, user=(user["id"], user["email"]))
+    assert app.get_ai_cache(a, key) is None
+    assert app.get_ai_cache(a, "profile") is not None
+    with pytest.raises(HTTPException):
+        app.api_get_share(token)
+    assert not pair_mp3.exists() and own_mp3.exists()
+    own_mp3.unlink()
+
+
+def test_share_page_is_404_once_the_reading_is_gone(app, user):
+    import asyncio
+    from starlette.requests import Request
+    pid = _person(app, user["id"])
+    key = "horoscope:2026-10-01"
+    app.set_ai_cache(pid, key, "Днешният хороскоп")
+    token = _share(app, user, pid, key)
+    req = Request({"type": "http", "method": "GET", "path": f"/share/{token}", "headers": [],
+                   "query_string": b"", "scheme": "https", "server": ("astrokarta.bg", 443)})
+    assert asyncio.run(app.share_page(req, token)).status_code == 200
+    app.clear_ai_cache(pid)                 # напр. сменени рождени данни
+    assert asyncio.run(app.share_page(req, token)).status_code == 404
+
+
+def test_month_without_sales_is_reminded_once_a_real_file_exists(
+        app, db, user, legal_ok, _no_mail, monkeypatch):
+    admin = db.get_user_by_email(app.ADMIN_EMAIL)
+    _mail_on(app, monkeypatch)
+    app.set_setting("saft:2026-09", "")
+    app.run_saft_automation(datetime.datetime(2026, 10, 1, 7, 0, tzinfo=SOFIA))
+    assert app.saft_meta("2026-09")["no_sales"] is True
+    s = _session(user["id"], ["moon"], 299, kind="feature")
+    app.fulfill_checkout_session(s)
+    _set_paid_at(app, _payment(app, s["id"])["id"], "2026-09-15 09:00:00")
+    app.api_admin_saft_generate("2026-09", admin=admin)
+    assert "no_sales" not in app.saft_meta("2026-09")
+    _no_mail.clear()
+    app.run_saft_automation(datetime.datetime(2026, 10, 13, 9, 0, tzinfo=SOFIA))
+    assert len(_no_mail) == 1 and "напомняне" in _no_mail[0][0][1]
+    app.set_setting("saft:2026-09", "")

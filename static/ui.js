@@ -72,9 +72,11 @@
                 resolve(result);
             }
 
+            // Паролата се праща точно както е въведена: интервал в началото
+            // или края е част от нея и рязането ѝ правеше входа невъзможен.
             function values() {
                 const out = {};
-                inputs.forEach(i => { out[i.name] = i.value.trim(); });
+                inputs.forEach(i => { out[i.name] = i.type === 'password' ? i.value : i.value.trim(); });
                 return out;
             }
 

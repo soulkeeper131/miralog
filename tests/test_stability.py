@@ -285,6 +285,7 @@ def test_deleting_a_person_removes_readings_shares_and_audio(app, user):
 
 
 def test_shared_reading_is_rendered_and_escaped(app, user):
+    app.grant_feature_purchase(user["id"], "profile", 500, "EUR", None)   # споделя купен модул
     pid = _person(app, user["id"])
     app.set_ai_cache(pid, "profile", "1. **Заглавие** <script>alert(1)</script>")
     token = "tok" + secrets.token_hex(6)

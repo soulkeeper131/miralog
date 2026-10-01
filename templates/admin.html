@@ -615,7 +615,7 @@
         </div>
     </div>
 
-    <script src="/static/ui.js"></script>
+    <script src="/static/ui.js?v=2"></script>
     <script>
         /* ---------- auth ---------- */
         function getToken() {
@@ -761,8 +761,16 @@
                     '<th>Месец</th><th>Срок</th><th>Поръчки</th><th>Сума</th><th>Файл</th><th>Подаден</th><th></th>' +
                     '</tr></thead><tbody>';
                 months.forEach(function(m) {
+                    // Месец без продажби и връщания: схемата на НАП не допуска
+                    // файл без поръчки — няма какво да се генерира и подава.
+                    const empty = !m.in_progress && !m.sales && !m.refunds_count;
                     let fileState = '—';
                     if (m.in_progress) fileState = '<span class="hint">месецът тече</span>';
+                    else if (empty) {
+                        fileState = '<span class="hint">няма продажби — няма файл</span>';
+                        // Напр. единствената продажба е анулирана след генерирането.
+                        if (m.generated_at) fileState += ' <span class="badge badge-blocked" title="Файлът е генериран, а в месеца вече няма продажби">провери със счетоводителя</span>';
+                    }
                     else if (m.generated_at) {
                         fileState = m.valid
                             ? '<span class="badge">готов</span> <span class="hint">' + escapeHtml(m.generated_at) + '</span>'
@@ -771,9 +779,9 @@
                     } else fileState = '<span class="hint">не е генериран</span>';
                     const submitted = m.submitted_at
                         ? '<span class="badge">' + escapeHtml(m.submitted_at) + '</span>'
-                        : (m.in_progress ? '—' : '<span class="hint">не</span>');
+                        : (m.in_progress || empty ? '—' : '<span class="hint">не</span>');
                     let actions = '';
-                    if (!m.in_progress) {
+                    if (!m.in_progress && !empty) {
                         actions += '<button class="btn btn-ghost btn-sm" data-saft-gen="' + escapeHtml(m.key) + '">Генерирай' + (m.generated_at ? ' отново' : '') + '</button> ';
                         if (m.file && m.valid) actions += '<button class="btn btn-sm" data-saft-dl="' + escapeHtml(m.key) + '">Свали XML</button> ';
                         if (m.generated_at && m.valid) {
@@ -784,7 +792,7 @@
                     }
                     html += '<tr><td>' + escapeHtml(m.label) + '</td>' +
                         '<td>' + fmtDate(m.deadline) + '</td>' +
-                        '<td class="num">' + (m.orders != null ? escapeHtml(m.orders) : '—') + '</td>' +
+                        '<td class="num">' + (m.orders != null ? escapeHtml(m.orders) : escapeHtml(m.sales || 0)) + '</td>' +
                         '<td class="num">' + (m.total_cents != null ? money(m.total_cents, 'EUR') : '—') + '</td>' +
                         '<td>' + fileState + '</td><td>' + submitted + '</td>' +
                         '<td class="actions">' + actions + '</td></tr>';
@@ -1731,11 +1739,19 @@
                             'отнемат автоматично (бутонът за това е при потребителя).', {
                             title: 'Отбележи върнати пари', label: 'Сума (€)', placeholder: 'целият остатък', ok: 'Отбележи' });
                         if (amount === null) return;
+                        // Само празно поле значи „целият остатък“. Невалидна сума
+                        // (напр. „5 лв“) ставаше NaN → null → пълно връщане.
+                        const raw = String(amount).trim();
+                        const value = raw ? Number(raw.replace(',', '.')) : null;
+                        if (raw && !(isFinite(value) && value > 0)) {
+                            notify('Сумата трябва да е число над нула, напр. 4.99. Празно поле — целият остатък.', 'err');
+                            return;
+                        }
                         const method = await uiPrompt('Как са върнати парите: card (по карта), account (по сметка), cash (в брой) или other.', {
                             title: 'Начин на връщане', value: 'card', ok: 'Готово' });
                         if (method === null) return;
                         const body = { method: String(method).trim() || 'card' };
-                        if (String(amount).trim()) body.amount_cents = Math.round(parseFloat(String(amount).replace(',', '.')) * 100);
+                        if (raw) body.amount_cents = Math.round(value * 100);
                         try {
                             await api('/api/admin/payments/' + btn.dataset.refund + '/refund', {
                                 method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body),

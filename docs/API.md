@@ -362,7 +362,7 @@ SVG изображение: зодиакално колело с планети,
 | GET | `/api/persons/{id}/reading-audio?key=` | вход (и бисквитка) | MP3, прочетено на български (edge-tts, кешира се в `data/audio/`) |
 | POST | `/api/persons/{id}/email-reading` | вход | `{key, to?}` → PDF по имейл |
 | POST | `/api/persons/{id}/share` | вход | `{cache_key}` → `{token, url}` |
-| GET | `/api/share/{token}` | публичен | Споделеното разчитане |
+| GET | `/api/share/{token}` | публичен | Споделеното разчитане; 404, ако собственикът вече няма модула (отнет/върнат) или текстът е изтрит |
 
 ---
 
@@ -396,10 +396,10 @@ SVG изображение: зодиакално колело с планети,
 | PATCH / DELETE | `/users/{id}` | Промяна (план, роля, блокиране, парола) / изтриване |
 | GET | `/plans` | Планове |
 | PUT / DELETE | `/plans/{key}` | Запис / изтриване на план |
-| GET / POST | `/payments` | Дневник на плащанията (`?user_id=`, с върнати суми и номер на фактурата) / ръчно плащане |
+| GET / POST | `/payments` | Дневник на плащанията (`?user_id=`, с върнати суми и номер на фактурата) / ръчно плащане (методът `stripe` е запазен → 400) |
 | POST | `/payments/{id}/void` | Анулира грешно въведено плащане (`{reason}`); записът остава |
 | DELETE | `/payments/{id}` | Стар адрес — вече анулира, не трие |
-| POST | `/payments/{id}/refund` | Отбелязва върнати пари `{amount_cents?, method: card/account/cash/other, note?}` |
+| POST | `/payments/{id}/refund` | Отбелязва върнати пари `{amount_cents?, method: card/account/cash/other, note?}`; без `amount_cents` = целият остатък, изрично `null` → 400; анулирано плащане → 400 |
 | POST | `/payments/{id}/resend-documents` | Праща отново документа за продажба и фактурата (същите номера) |
 | GET | `/feature-prices` | Цените на модулите |
 | PUT | `/feature-prices/{key}` | `{price_cents, currency, is_purchasable}` |
@@ -407,7 +407,7 @@ SVG изображение: зодиакално колело с планети,
 | DELETE | `/feature-purchases/{user_id}/{key}` | Отнемане на модул |
 | GET | `/audit` | Одит лог (`?event=&user_id=&limit=&offset=`) |
 | GET | `/saft?year=&month=` | SAF-T XML за НАП (windows-1251), генериран на момента; 422 със списък с проблеми, ако не е валиден |
-| GET | `/saft/months` | Месеците с продажби: генериран ли е файлът, валиден ли е, подаден ли е, `stale` при промяна след генериране |
+| GET | `/saft/months` | Последните 36 месеца от първата продажба: `sales`/`refunds_count` (0 и 0 = няма файл за подаване), генериран ли е файлът, валиден ли е, подаден ли е, `stale` при промяна след генериране |
 | POST | `/saft/{ГГГГ-ММ}/generate` | Генерира и записва файла в `data/saft/` |
 | GET | `/saft/{ГГГГ-ММ}/file` | Сваля записания файл (само валиден) |
 | POST | `/saft/{ГГГГ-ММ}/submitted` | `{submitted: bool}` — отбелязва подаването в НАП |
