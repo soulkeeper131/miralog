@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY templates/ templates/
 COPY static/ static/
+# Официалната XSD схема на НАП за одиторския файл (Н-18) — файлът се
+# проверява срещу нея, преди да се изпрати на собственика.
+COPY n18/ n18/
 
 # Create dirs and download essential ephemeris files
 RUN mkdir -p /app/static /app/ephe /app/data && \

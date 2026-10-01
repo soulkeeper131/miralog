@@ -343,6 +343,13 @@
                 <div id="billingActions" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;"></div>
             </div>
 
+            <div class="section" id="documentsSection" hidden>
+                <h2>Моите документи</h2>
+                <div class="desc">Документите за продажба (Наредба Н-18) за всяко плащане — същите,
+                    които получаваш по имейл.</div>
+                <div id="documentsList"></div>
+            </div>
+
             <div class="section">
                 <h2>Дневен имейл</h2>
                 <div class="desc">
@@ -668,6 +675,47 @@
         });
 
         loadAccount();
+
+        // Документите за продажба — за сваляне по всяко време (Н-18, чл. 52о, ал. 5).
+        async function loadDocuments() {
+            try {
+                const resp = await fetch('/api/account/documents', { headers: authHeaders() });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const docs = data.documents || [];
+                if (!docs.length) return;
+                const list = document.getElementById('documentsList');
+                list.innerHTML = '';
+                docs.forEach(function (d) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(127,127,127,.15);';
+                    const text = document.createElement('div');
+                    text.textContent = '№ ' + d.number + ' от ' + d.issued_at + ' — ' +
+                        (d.amount_cents / 100).toFixed(2) + ' ' + (d.currency === 'EUR' ? '€' : d.currency);
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'btn';
+                    btn.textContent = 'Свали PDF';
+                    btn.addEventListener('click', async function () {
+                        try {
+                            const r = await fetch('/api/account/documents/' + d.payment_id + '.pdf', { headers: authHeaders() });
+                            if (!r.ok) throw new Error('Документът не може да се свали.');
+                            const blob = await r.blob();
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = 'dokument-' + d.number + '.pdf';
+                            document.body.appendChild(a); a.click(); a.remove();
+                            URL.revokeObjectURL(url);
+                        } catch (e) { showBanner(e.message, 'error'); }
+                    });
+                    row.appendChild(text);
+                    row.appendChild(btn);
+                    list.appendChild(row);
+                });
+                document.getElementById('documentsSection').hidden = false;
+            } catch (e) { /* документите не са критични за страницата */ }
+        }
+        loadDocuments();
     </script>
 </body>
 </html>

@@ -86,6 +86,8 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
 | POST | `/api/account` | вход | `{display_name?, email?, current_password?}`. Смяна на имейла иска `current_password` (иначе 403 `password_required`), прекъсва другите сесии и връща нов `token` |
 | POST | `/api/account/password` | вход | `{current_password, new_password}` → `{ok, token}`. Другите сесии се прекъсват |
 | POST | `/api/account/digest` | вход | `{digest_opt_in: bool}`, ежедневен имейл с хороскопа |
+| GET | `/api/account/documents` | вход | Документите за продажба на профила (№, дата, сума) |
+| GET | `/api/account/documents/{payment_id}.pdf` | вход | Документът като PDF (само собствен) |
 | GET | `/api/account/export` | вход | Експорт на всички лични данни (GDPR) |
 | DELETE | `/api/account` | вход | Изтриване на акаунта и данните |
 
@@ -369,7 +371,7 @@ SVG изображение: зодиакално колело с планети,
 | GET | `/api/billing/status` | вход | `{stripe_enabled, plan_key, purchased, digest_opt_in}` |
 | POST | `/api/billing/checkout/feature/{key}` | вход | Stripe Checkout сесия → URL (`key` може да е `bundle`) |
 | GET | `/api/billing/session/{session_id}` | вход | Приключва плащането веднага след връщане от Stripe |
-| POST | `/api/stripe/webhook` | Stripe подпис | `checkout.session.completed` → отключва модулите |
+| POST | `/api/stripe/webhook` | Stripe подпис | `checkout.session.completed` / `async_payment_succeeded` → отключва модулите; `charge.refunded` → отбелязва връщането |
 | POST | `/api/dev/mock-pay` | вход | `{keys: [...]}`. Тестово плащане, само при `MOCK_PAYMENTS=1` извън production |
 
 Плащането се приключва по два пътя (webhook и `billing/session`). Който
@@ -388,14 +390,21 @@ SVG изображение: зодиакално колело с планети,
 | PATCH / DELETE | `/users/{id}` | Промяна (план, роля, блокиране, парола) / изтриване |
 | GET | `/plans` | Планове |
 | PUT / DELETE | `/plans/{key}` | Запис / изтриване на план |
-| GET / POST | `/payments` | Дневник на плащанията (`?user_id=`) / ръчно плащане |
-| DELETE | `/payments/{id}` | Изтриване на плащане |
+| GET / POST | `/payments` | Дневник на плащанията (`?user_id=`, с върнати суми и номер на фактурата) / ръчно плащане |
+| POST | `/payments/{id}/void` | Анулира грешно въведено плащане (`{reason}`); записът остава |
+| DELETE | `/payments/{id}` | Стар адрес — вече анулира, не трие |
+| POST | `/payments/{id}/refund` | Отбелязва върнати пари `{amount_cents?, method: card/account/cash/other, note?}` |
+| POST | `/payments/{id}/resend-documents` | Праща отново документа за продажба и фактурата (същите номера) |
 | GET | `/feature-prices` | Цените на модулите |
 | PUT | `/feature-prices/{key}` | `{price_cents, currency, is_purchasable}` |
 | GET / POST | `/feature-purchases` | Покупки (`?user_id=`) / ръчно даване на модул |
 | DELETE | `/feature-purchases/{user_id}/{key}` | Отнемане на модул |
 | GET | `/audit` | Одит лог (`?event=&user_id=&limit=&offset=`) |
-| GET | `/saft?year=&month=` | SAF-T XML за НАП (windows-1251) |
+| GET | `/saft?year=&month=` | SAF-T XML за НАП (windows-1251), генериран на момента; 422 със списък с проблеми, ако не е валиден |
+| GET | `/saft/months` | Месеците с продажби: генериран ли е файлът, валиден ли е, подаден ли е, `stale` при промяна след генериране |
+| POST | `/saft/{ГГГГ-ММ}/generate` | Генерира и записва файла в `data/saft/` |
+| GET | `/saft/{ГГГГ-ММ}/file` | Сваля записания файл (само валиден) |
+| POST | `/saft/{ГГГГ-ММ}/submitted` | `{submitted: bool}` — отбелязва подаването в НАП |
 | GET | `/logs?q=&level=&limit=` | Търсене в `data/logs` по код на заявка, `user=ID` или текст; `level` за „само проблеми“ |
 | GET | `/ai-usage?days=30` | AI разходи: токени и цена по източник, модул, модел, ден и клиент (`days=0` = всичко) |
 | GET | `/daily-summary` | Текстът на сутрешното обобщение за вчера (само показва, не праща) |

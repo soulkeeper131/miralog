@@ -137,6 +137,7 @@ def create_features_checkout(
     success_url: str,
     cancel_url: str,
     brand: str = "АстроКарта",
+    bundle: bool = False,
 ) -> str:
     """Checkout for several one-off unlocks at once.
 
@@ -166,6 +167,11 @@ def create_features_checkout(
             "kind": "features",
             "user_id": str(user_id),
             "feature_keys": keys,
+            # Цената на всеки ред към момента на поръчката — за документите
+            # и одиторския файл (Н-18), когато платеното не е сборът по
+            # ценоразпис (пакет, промо код).
+            "feature_amounts": ",".join(f"{i['key']}:{int(i['amount_cents'])}" for i in items),
+            **({"bundle": "1"} if bundle else {}),
         },
         "allow_promotion_codes": True,
     }

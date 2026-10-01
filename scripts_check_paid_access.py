@@ -50,6 +50,18 @@ def main():
         print(f"плащания (всички)   : {payments['c']}  на стойност {money(payments['s'])}")
         print(f"от тях през Stripe  : {real['c']}  на стойност {money(real['s'])}")
 
+        # Анулирани и изцяло върнати плащания не очакват отключване. Колоните
+        # ги има след първия старт на новата версия; без тях — като досега.
+        pay_cols = {r[1] for r in conn.execute("PRAGMA table_info(payments)")}
+        has_refunds = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'payment_refunds'").fetchone()
+        settled = ""
+        if "voided_at" in pay_cols:
+            settled += " AND p.voided_at IS NULL"
+        if has_refunds:
+            settled += (" AND p.amount_cents > (SELECT COALESCE(SUM(r.amount_cents), 0)"
+                        " FROM payment_refunds r WHERE r.payment_id = p.id)")
+
         # --- всеки, който е платил през Stripe --------------------------------
         payers = conn.execute(
             "SELECT DISTINCT p.user_id, u.email, u.is_blocked"
@@ -67,8 +79,8 @@ def main():
             uid, email = row["user_id"], row["email"]
             paid_rows = conn.execute(
                 "SELECT amount_cents, currency, note, paid_at"
-                " FROM payments WHERE user_id = ? AND method = 'stripe'"
-                " ORDER BY paid_at", (uid,)).fetchall()
+                " FROM payments p WHERE p.user_id = ? AND p.method = 'stripe'" + settled +
+                " ORDER BY p.paid_at", (uid,)).fetchall()
             granted = [r["feature_key"] for r in conn.execute(
                 "SELECT feature_key FROM feature_purchases WHERE user_id = ?", (uid,))]
 
@@ -127,7 +139,7 @@ def main():
         orphan = conn.execute(
             "SELECT p.id, u.email, p.amount_cents, p.currency, p.note, p.paid_at"
             " FROM payments p JOIN users u ON u.id = p.user_id"
-            " WHERE p.method = 'stripe' AND p.amount_cents > 0"
+            " WHERE p.method = 'stripe' AND p.amount_cents > 0" + settled +
             "   AND NOT EXISTS (SELECT 1 FROM feature_purchases fp"
             "                   WHERE fp.payment_id = p.id)"
             " ORDER BY p.paid_at DESC").fetchall()

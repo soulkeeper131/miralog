@@ -42,7 +42,8 @@ def db():
     """Празни таблиците между тестовете, за да не си влияят."""
     import sqlite3
     with sqlite3.connect(app_module.DB_PATH) as conn:
-        for table in ("feature_purchases", "payments", "oauth_accounts",
+        for table in ("feature_purchases", "payment_items", "payment_refunds",
+                      "sale_documents", "invoices", "payments", "oauth_accounts",
                       "persons", "ai_cache", "audit_log"):
             try:
                 conn.execute(f"DELETE FROM {table}")

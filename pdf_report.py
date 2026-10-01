@@ -10,6 +10,7 @@ import io
 import os
 import re
 import datetime
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
@@ -22,6 +23,8 @@ from reportlab.platypus import (
     BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer,
     Table, TableStyle, KeepTogether,
 )
+
+_SOFIA = ZoneInfo("Europe/Sofia")
 
 # Brand colours, matching the app's light theme.
 ACCENT = colors.HexColor("#8659a3")
@@ -272,18 +275,40 @@ def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
 # --- Фискални документи: касов документ (Н-18) и фактура (ЗДДС) ---
 
 
-def _items_table(items, regular, bold):
-    """Таблица с артикули: име, ед. цена (без ДДС), ДДС, общо (с ДДС)."""
-    header = ["Артикул", "Ед. цена (без ДДС)", "ДДС", "Общо (с ДДС)"]
-    rows = [header]
-    for it in items:
-        rows.append([
-            str(it.get("name", "")),
-            f"{float(it.get('net', 0)):.2f} EUR",
-            f"{float(it.get('vat', 0)):.2f} EUR",
-            f"{float(it.get('total', 0)):.2f} EUR",
-        ])
-    t = Table(rows, colWidths=[70 * mm, 36 * mm, 30 * mm, 32 * mm], repeatRows=1)
+def _items_table(items, regular, bold, sale_document=False):
+    """Таблица с артикули: име, ед. цена (без ДДС), ДДС, общо (с ДДС).
+
+    За документа за регистриране на продажба (Н-18, чл. 52о, ал. 1, т. 5):
+    наименование, код на данъчна група, количество, единична цена и стойност.
+    """
+    cell = ParagraphStyle("Cell", fontName=regular, fontSize=9, leading=11, textColor=BODY)
+    if sale_document:
+        header = ["Наименование", "Дан. група", "К-во", "Ед. цена", "Стойност"]
+        rows = [header]
+        for it in items:
+            quant = int(it.get("quant", 1) or 1)
+            total = float(it.get("total", 0))
+            rows.append([
+                Paragraph(_inline(str(it.get("name", ""))), cell),
+                str(it.get("tax_group", "Б")),
+                str(quant),
+                f"{total / quant:.2f} EUR",
+                f"{total:.2f} EUR",
+            ])
+        widths = [64 * mm, 22 * mm, 14 * mm, 35 * mm, 35 * mm]
+    else:
+        header = ["Артикул", "Ед. цена (без ДДС)", "ДДС", "Общо (с ДДС)"]
+        rows = [header]
+        for it in items:
+            rows.append([
+                Paragraph(_inline(str(it.get("name", ""))), cell),
+                f"{float(it.get('net', 0)):.2f} EUR",
+                f"{float(it.get('vat', 0)):.2f} EUR",
+                f"{float(it.get('total', 0)):.2f} EUR",
+            ])
+        widths = [70 * mm, 36 * mm, 30 * mm, 32 * mm]
+    t = Table(rows, colWidths=widths, repeatRows=1)
+    centered = [("ALIGN", (1, 0), (2, -1), "CENTER")] if sale_document else []
     t.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), bold),
         ("FONTNAME", (0, 1), (-1, -1), regular),
@@ -301,7 +326,7 @@ def _items_table(items, regular, bold):
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SURFACE]),
-    ]))
+    ] + centered))
     return t
 
 
@@ -331,7 +356,8 @@ def _totals_table(net_total, vat_total, total, vat_rate, regular, bold):
 
 
 def _document_layout(*, title, subtitle, meta, items, net_total, vat_total,
-                     total, vat_rate, footer_lines, brand, logo_path) -> bytes:
+                     total, vat_rate, footer_lines, brand, logo_path,
+                     sale_document=False, qr_data=None) -> bytes:
     """Общ layout за фискални документи: header, мета, таблица, тотали, footer."""
     regular, bold, _ = _register_fonts()
     st = _styles()
@@ -349,8 +375,9 @@ def _document_layout(*, title, subtitle, meta, items, net_total, vat_total,
         canvas.drawRightString(A4[0] - 20 * mm, A4[1] - 15 * mm, title)
         canvas.setFont(regular, 8)
         canvas.setFillColor(MUTED)
+        # Местно време — същото като часа в самия документ.
         canvas.drawString(20 * mm, 12 * mm,
-                          f"{brand} · {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}")
+                          f"{brand} · {datetime.datetime.now(_SOFIA).strftime('%d.%m.%Y %H:%M')}")
         canvas.setStrokeColor(RULE)
         canvas.setLineWidth(0.5)
         canvas.line(20 * mm, 16 * mm, A4[0] - 20 * mm, 16 * mm)
@@ -386,9 +413,22 @@ def _document_layout(*, title, subtitle, meta, items, net_total, vat_total,
                            alignment=0, spaceAfter=1)))
     story.append(Spacer(1, 6 * mm))
 
-    story.append(_items_table(items, regular, bold))
+    story.append(_items_table(items, regular, bold, sale_document=sale_document))
     story.append(Spacer(1, 4 * mm))
     story.append(_totals_table(net_total, vat_total, total, vat_rate, regular, bold))
+
+    if qr_data:
+        # QR код по Приложение № 18а — не по-малък от 18 × 18 мм.
+        from reportlab.graphics.barcode import qr as rl_qr
+        from reportlab.graphics.shapes import Drawing
+        widget = rl_qr.QrCodeWidget(qr_data)
+        x1, y1, x2, y2 = widget.getBounds()
+        size = 32 * mm
+        drawing = Drawing(size, size, transform=[size / (x2 - x1), 0, 0, size / (y2 - y1), 0, 0])
+        drawing.add(widget)
+        drawing.hAlign = "LEFT"
+        story.append(Spacer(1, 6 * mm))
+        story.append(drawing)
 
     if footer_lines:
         story.append(Spacer(1, 6 * mm))
@@ -401,27 +441,38 @@ def _document_layout(*, title, subtitle, meta, items, net_total, vat_total,
     return buf.getvalue()
 
 
-def build_receipt_pdf(*, brand, company_name, company_id, items, net_total,
-                      vat_total, total, vat_rate, datetime_str, unp, stripe_id,
-                      logo_path=None) -> bytes:
-    """Касов документ (електронен документ за продажба) по Н-18, чл. 52а."""
+def build_receipt_pdf(*, brand, company_name, company_id, address, contact,
+                      domain, e_shop_n, doc_number, issued_str, order_no, trans_ref,
+                      items, net_total, vat_total, total, vat_rate, payment_method,
+                      qr_data, logo_path=None) -> bytes:
+    """Документ за регистриране на продажба по Наредба № Н-18, чл. 52о, ал. 1.
+
+    Реквизитите по реда на чл. 52о, ал. 1: т. 1 — наименование, номер и дата;
+    т. 2 — данните на търговеца; т. 3 — номер на поръчката; т. 4 —
+    референтен номер на трансакцията; т. 5 — артикулите с данъчна група,
+    количество, единична цена, стойност, обща сума и начин на плащане;
+    т. 6 — QR код по Приложение № 18а.
+    """
     meta = [
         ("Търговец:", company_name or "—"),
         ("ЕИК:", company_id or "—"),
+        ("Седалище и адрес на управление:", address or "—"),
+        ("Контакт:", contact or "—"),
+        ("Електронен магазин:", f"{domain} (№ в НАП: {e_shop_n or '—'})"),
+        ("Номер на поръчката:", order_no),
+        ("Референтен номер на трансакцията:", trans_ref or "—"),
+        ("Начин на плащане:", payment_method),
     ]
     footer_lines = [
-        f"Дата и час: {datetime_str}",
-        f"УНП (номер на продажбата): {unp}",
-        f"Идентификатор на плащането: {stripe_id}",
-        "Начин на плащане: карта (Stripe)",
-        "Документът е издаден по реда на Наредба № Н-18 за отчитане на "
-        "дистанционни продажби с плащане с карта.",
+        "Документът е издаден по реда на чл. 52о от Наредба № Н-18 при "
+        "неприсъствено плащане с банкова карта.",
     ]
     return _document_layout(
-        title="КАСОВ ДОКУМЕНТ", subtitle="Електронен документ за продажба",
+        title="ДОКУМЕНТ ЗА РЕГИСТРИРАНЕ НА ПРОДАЖБА",
+        subtitle=f"№ {doc_number} от {issued_str}",
         meta=meta, items=items, net_total=net_total, vat_total=vat_total,
         total=total, vat_rate=vat_rate, footer_lines=footer_lines,
-        brand=brand, logo_path=logo_path)
+        brand=brand, logo_path=logo_path, sale_document=True, qr_data=qr_data)
 
 
 def build_invoice_pdf(*, brand, company_name, company_id, vat_number, address,

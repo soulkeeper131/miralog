@@ -470,6 +470,7 @@
                 <div class="tab" role="tab" tabindex="0" data-tab="users">Потребители</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="plans">Пакети</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="payments">Плащания</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="nap">НАП (Н-18)</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="settings">Настройки</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="audit">Активност</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="ai">AI разходи</div>
@@ -538,6 +539,19 @@
                 <div class="section">
                     <h2>Всички плащания</h2>
                     <div id="paymentsBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-nap">
+                <div class="section">
+                    <h2>Одиторски файл за НАП</h2>
+                    <p class="hint">Наредба Н-18, чл. 3, ал. 17: за всеки месец с продажби се подава
+                        стандартизиран одиторски файл <b>до 15-о число</b> на следващия месец — през е-услугата
+                        на НАП „Подаване на стандартизиран одиторски файл от лице по чл. 3, ал. 17“ с КЕП.
+                        До срока може да се подава повторно; важи последният. Файлът се генерира сам на 1-во
+                        число (след 6:00), проверява се срещу схемата на НАП и се праща на адреса за известия;
+                        напомняне идва 3 дни преди срока, ако не е отбелязан като подаден.</p>
+                    <div id="napBody"></div>
                 </div>
             </div>
 
@@ -708,6 +722,7 @@
             plans: loadPlans,
             payments: loadPayments,
             settings: loadSettings,
+            nap: loadNap,
             audit: loadAudit,
             logs: loadLogs,
             ai: loadAiUsage,
@@ -730,6 +745,94 @@
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTab(tabEl.dataset.tab, tabEl); }
             });
         });
+
+        /* ---------- НАП (Н-18) ---------- */
+        async function loadNap() {
+            const el = document.getElementById('napBody');
+            el.innerHTML = crystalLoader('Зареждане на месеците…');
+            try {
+                const d = await api('/api/admin/saft/months');
+                const months = d.months || [];
+                if (!months.length) {
+                    el.innerHTML = '<div class="empty">Още няма онлайн продажби — няма месеци за подаване.</div>';
+                    return;
+                }
+                let html = '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>Месец</th><th>Срок</th><th>Поръчки</th><th>Сума</th><th>Файл</th><th>Подаден</th><th></th>' +
+                    '</tr></thead><tbody>';
+                months.forEach(function(m) {
+                    let fileState = '—';
+                    if (m.in_progress) fileState = '<span class="hint">месецът тече</span>';
+                    else if (m.generated_at) {
+                        fileState = m.valid
+                            ? '<span class="badge">готов</span> <span class="hint">' + escapeHtml(m.generated_at) + '</span>'
+                            : '<span class="badge badge-blocked">проблеми</span>';
+                        if (m.stale) fileState += ' <span class="badge badge-blocked" title="Нещо в месеца е променено след генерирането">генерирай отново</span>';
+                    } else fileState = '<span class="hint">не е генериран</span>';
+                    const submitted = m.submitted_at
+                        ? '<span class="badge">' + escapeHtml(m.submitted_at) + '</span>'
+                        : (m.in_progress ? '—' : '<span class="hint">не</span>');
+                    let actions = '';
+                    if (!m.in_progress) {
+                        actions += '<button class="btn btn-ghost btn-sm" data-saft-gen="' + escapeHtml(m.key) + '">Генерирай' + (m.generated_at ? ' отново' : '') + '</button> ';
+                        if (m.file && m.valid) actions += '<button class="btn btn-sm" data-saft-dl="' + escapeHtml(m.key) + '">Свали XML</button> ';
+                        if (m.generated_at && m.valid) {
+                            actions += m.submitted_at
+                                ? '<button class="btn btn-ghost btn-sm" data-saft-sub="' + escapeHtml(m.key) + '" data-val="0">Не е подаден</button>'
+                                : '<button class="btn btn-ghost btn-sm" data-saft-sub="' + escapeHtml(m.key) + '" data-val="1">Отбележи подаден</button>';
+                        }
+                    }
+                    html += '<tr><td>' + escapeHtml(m.label) + '</td>' +
+                        '<td>' + fmtDate(m.deadline) + '</td>' +
+                        '<td class="num">' + (m.orders != null ? escapeHtml(m.orders) : '—') + '</td>' +
+                        '<td class="num">' + (m.total_cents != null ? money(m.total_cents, 'EUR') : '—') + '</td>' +
+                        '<td>' + fileState + '</td><td>' + submitted + '</td>' +
+                        '<td class="actions">' + actions + '</td></tr>';
+                    if (m.generated_at && !m.valid && (m.problems || []).length) {
+                        html += '<tr><td colspan="7"><div class="error">' +
+                            m.problems.map(function(p) { return escapeHtml(p); }).join('<br>') + '</div></td></tr>';
+                    }
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+                el.querySelectorAll('[data-saft-gen]').forEach(function(btn) {
+                    btn.addEventListener('click', async function() {
+                        try {
+                            const r = await api('/api/admin/saft/' + btn.dataset.saftGen + '/generate', {
+                                method: 'POST', headers: jsonHeaders() });
+                            notify(r.valid ? 'Файлът е генериран и проверен.' : 'Файлът има проблеми — виж под реда.', r.valid ? 'ok' : 'err');
+                            loadNap();
+                        } catch (e) { notifyError(e); }
+                    });
+                });
+                el.querySelectorAll('[data-saft-dl]').forEach(function(btn) {
+                    btn.addEventListener('click', async function() {
+                        try {
+                            const resp = await fetch('/api/admin/saft/' + btn.dataset.saftDl + '/file', { headers: authHeaders() });
+                            if (!resp.ok) throw new Error('Файлът не може да се свали (HTTP ' + resp.status + ').');
+                            const blob = await resp.blob();
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = 'saft-' + btn.dataset.saftDl + '.xml';
+                            document.body.appendChild(a); a.click(); a.remove();
+                            URL.revokeObjectURL(url);
+                        } catch (e) { notifyError(e); }
+                    });
+                });
+                el.querySelectorAll('[data-saft-sub]').forEach(function(btn) {
+                    btn.addEventListener('click', async function() {
+                        try {
+                            await api('/api/admin/saft/' + btn.dataset.saftSub + '/submitted', {
+                                method: 'POST', headers: jsonHeaders(),
+                                body: JSON.stringify({ submitted: btn.dataset.val === '1' }) });
+                            loadNap();
+                        } catch (e) { notifyError(e); }
+                    });
+                });
+            } catch (e) {
+                if (!forbidden) el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
 
         /* ---------- AI usage ---------- */
         const AI_SOURCES = { client: 'Клиентски разчитания', seo: 'SEO страници (системни)',
@@ -1571,33 +1674,84 @@
                     el.innerHTML = '<div class="empty">Още няма отбелязани плащания.</div>';
                     return;
                 }
-                let html = '<div class="table-wrap"><table><thead><tr>' +
-                    '<th>Дата</th><th>Имейл</th><th>Пакет</th><th>Сума</th><th>Метод</th><th>Бележка</th><th></th>' +
+                let html = '<p class="hint">Плащане не се трие — фискалният запис трябва да остане (Н-18). ' +
+                    'Грешно въведено плащане се <b>анулира</b>; върнати пари се отбелязват с <b>Върни</b> ' +
+                    '(връщанията в Stripe се отбелязват сами).</p>' +
+                    '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>Дата</th><th>Имейл</th><th>Сума</th><th>Метод</th><th>Документи</th><th>Състояние</th><th></th>' +
                     '</tr></thead><tbody>';
                 payments.forEach(function(p) {
-                    html += '<tr><td>' + fmtDate(p.paid_at) + '</td>' +
-                        '<td>' + escapeHtml(p.email) + '</td>' +
-                        '<td><span class="badge badge-plan">' + escapeHtml(p.plan_key || '—') + '</span></td>' +
+                    const refunded = Number(p.refunded_cents) || 0;
+                    let state = '<span class="badge">активно</span>';
+                    if (p.voided_at) state = '<span class="badge badge-blocked" title="' + escapeHtml(p.void_reason || '') + '">анулирано</span>';
+                    else if (refunded >= p.amount_cents && p.amount_cents > 0) state = '<span class="badge badge-blocked">върнато</span>';
+                    else if (refunded > 0) state = '<span class="badge">върнати ' + money(refunded, p.currency) + '</span>';
+                    const docs = p.method === 'stripe'
+                        ? (p.invoice_number ? 'фактура ' + escapeHtml(p.invoice_number) : '—')
+                        : '—';
+                    let actions = '';
+                    if (!p.voided_at) {
+                        if (p.method === 'stripe') {
+                            actions += '<button class="btn btn-ghost btn-sm" data-resend="' + escapeHtml(p.id) + '">Документи пак</button> ';
+                        }
+                        if (refunded < p.amount_cents) {
+                            actions += '<button class="btn btn-ghost btn-sm" data-refund="' + escapeHtml(p.id) + '">Върни</button> ';
+                        }
+                        actions += '<button class="btn btn-danger btn-sm" data-void="' + escapeHtml(p.id) + '">Анулирай</button>';
+                    }
+                    html += '<tr' + (p.voided_at ? ' style="opacity:.55;"' : '') + '><td>' + fmtDate(p.paid_at) + '</td>' +
+                        '<td>' + (p.email ? escapeHtml(p.email) : '<span class="hint">изтрит акаунт #' + escapeHtml(p.user_id) + '</span>') + '</td>' +
                         '<td class="num">' + money(p.amount_cents, p.currency) + '</td>' +
                         '<td>' + escapeHtml(p.method || '—') + '</td>' +
-                        '<td>' + escapeHtml(p.note || '—') + '</td>' +
-                        '<td class="actions"><button class="btn btn-danger btn-sm" data-del-payment="' +
-                            escapeHtml(p.id) + '">Изтрий</button></td></tr>';
+                        '<td>' + docs + '</td>' +
+                        '<td>' + state + '</td>' +
+                        '<td class="actions">' + actions + '</td></tr>';
                 });
                 html += '</tbody></table></div>';
                 el.innerHTML = html;
-                el.querySelectorAll('[data-del-payment]').forEach(function(btn) {
+                el.querySelectorAll('[data-void]').forEach(function(btn) {
                     btn.addEventListener('click', async function() {
-                        const ok = await uiConfirm('Записът изчезва от историята на плащанията.', {
-                            title: 'Да изтрия ли това плащане?', ok: 'Изтрий', danger: true });
-                        if (!ok) return;
+                        const reason = await uiPrompt('Анулирането е за грешно въведено плащане: записът остава, ' +
+                            'но не се брои в приходите и в одиторския файл. За върнати пари ползвай „Върни“.', {
+                            title: 'Анулиране на плащане', label: 'Причина', ok: 'Анулирай' });
+                        if (reason === null) return;
                         try {
-                            await api('/api/admin/payments/' + btn.dataset.delPayment, {
-                                method: 'DELETE', headers: authHeaders(),
+                            await api('/api/admin/payments/' + btn.dataset.void + '/void', {
+                                method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ reason: reason }),
                             });
-                            notify('Плащането е изтрито.');
+                            notify('Плащането е анулирано.');
                             loadPayments();
                             loaded.overview = false;
+                        } catch (e) { notifyError(e); }
+                    });
+                });
+                el.querySelectorAll('[data-refund]').forEach(function(btn) {
+                    btn.addEventListener('click', async function() {
+                        const amount = await uiPrompt('Сума в евро — празно за целия остатък. Модулите не се ' +
+                            'отнемат автоматично (бутонът за това е при потребителя).', {
+                            title: 'Отбележи върнати пари', label: 'Сума (€)', placeholder: 'целият остатък', ok: 'Отбележи' });
+                        if (amount === null) return;
+                        const method = await uiPrompt('Как са върнати парите: card (по карта), account (по сметка), cash (в брой) или other.', {
+                            title: 'Начин на връщане', value: 'card', ok: 'Готово' });
+                        if (method === null) return;
+                        const body = { method: String(method).trim() || 'card' };
+                        if (String(amount).trim()) body.amount_cents = Math.round(parseFloat(String(amount).replace(',', '.')) * 100);
+                        try {
+                            await api('/api/admin/payments/' + btn.dataset.refund + '/refund', {
+                                method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body),
+                            });
+                            notify('Връщането е отбелязано.');
+                            loadPayments();
+                        } catch (e) { notifyError(e); }
+                    });
+                });
+                el.querySelectorAll('[data-resend]').forEach(function(btn) {
+                    btn.addEventListener('click', async function() {
+                        try {
+                            const r = await api('/api/admin/payments/' + btn.dataset.resend + '/resend-documents', {
+                                method: 'POST', headers: jsonHeaders(),
+                            });
+                            notify('Документите са пратени до ' + r.email + '.');
                         } catch (e) { notifyError(e); }
                     });
                 });
@@ -1822,6 +1976,14 @@
                         '<input type="email" id="lgEmail" value="' + escapeHtml(lg.privacy_email || '') + '"></div>' +
                     '<h3 style="margin-top:20px;">Наредба Н-18</h3>' +
                     '<div class="form-grid">' +
+                        '<div class="form-group"><label for="lgContact">Имейл или телефон в документа за продажба</label>' +
+                            '<input type="text" id="lgContact" value="' + escapeHtml(lg.contact || '') + '">' +
+                            '<div class="hint">Празно = имейлът за лични данни (чл. 52о, ал. 1, т. 2).</div></div>' +
+                        '<div class="form-group"><label for="lgPsp">Доставчик на платежни услуги (за файла към НАП)</label>' +
+                            '<input type="text" id="lgPsp" value="' + escapeHtml(lg.psp_id || '') + '">' +
+                            '<div class="hint">ЕИК/ДДС номер и наименование, напр. IE3206488LH Stripe Payments Europe, Limited.</div></div>' +
+                    '</div>' +
+                    '<div class="form-grid">' +
                         '<div class="form-group"><label for="lgShopN">Номер на е-магазин (НАП)</label>' +
                             '<input type="text" id="lgShopN" value="' + escapeHtml(lg.e_shop_n || '') + '">' +
                             '<div class="hint">Получава се при регистрация по Приложение № 33.</div></div>' +
@@ -1851,6 +2013,9 @@
                     '<label class="check"><input type="checkbox" id="ntDaily"' +
                         (nt.daily !== false ? ' checked' : '') +
                         '> Сутрешно обобщение — регистрации, плащания, AI разход, грешки</label>' +
+                    '<label class="check"><input type="checkbox" id="ntSaft"' +
+                        (nt.saft !== false ? ' checked' : '') +
+                        '> Одиторски файл за НАП — готовият файл на 1-во число и напомняне преди 15-о</label>' +
                     '<div class="form-grid" style="margin-top:12px;">' +
                         '<div class="form-group"><label for="ntEmail">Адрес за известия</label>' +
                             '<input type="email" id="ntEmail" value="' +
@@ -2137,6 +2302,8 @@
                         dpo: document.getElementById('lgDpo').value.trim(),
                         e_shop_n: document.getElementById('lgShopN').value.trim(),
                         e_shop_type: document.getElementById('lgShopType').value,
+                        contact: document.getElementById('lgContact').value.trim(),
+                        psp_id: document.getElementById('lgPsp').value.trim(),
                     },
                 }, 'Юридическите данни са запазени.');
             });
@@ -2149,6 +2316,7 @@
                         payments: document.getElementById('ntPay').checked,
                         problems: document.getElementById('ntProblems').checked,
                         daily: document.getElementById('ntDaily').checked,
+                        saft: document.getElementById('ntSaft').checked,
                     },
                 }, 'Настройките за известия са запазени.');
             });

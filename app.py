@@ -486,6 +486,65 @@ def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_session"
             " ON payments(stripe_session_id) WHERE stripe_session_id IS NOT NULL")
 
+        # Фискалната следа на една продажба (Н-18). Плащане не се трие —
+        # анулира се или се отбелязва върнатата сума, иначе одиторският файл
+        # за вече подаден месец би се променил тихо.
+        for col, ddl in [
+            ("payment_intent", "ALTER TABLE payments ADD COLUMN payment_intent TEXT"),
+            ("discount_cents", "ALTER TABLE payments ADD COLUMN discount_cents INTEGER NOT NULL DEFAULT 0"),
+            ("voided_at", "ALTER TABLE payments ADD COLUMN voided_at TIMESTAMP"),
+            ("void_reason", "ALTER TABLE payments ADD COLUMN void_reason TEXT"),
+            ("documents_at", "ALTER TABLE payments ADD COLUMN documents_at TIMESTAMP"),
+            ("granted_at", "ALTER TABLE payments ADD COLUMN granted_at TIMESTAMP"),
+        ]:
+            if col not in [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]:
+                conn.execute(ddl)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_intent ON payments(payment_intent)")
+        # Редовете на продажбата с реално платената сума за всеки: при пакет
+        # или промо код това не е цената от ценоразписа. Документите за
+        # клиента и одиторският файл четат оттук, за да съвпадат до стотинка.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payment_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payment_id INTEGER NOT NULL REFERENCES payments(id),
+                feature_key TEXT NOT NULL,
+                name TEXT NOT NULL,
+                list_cents INTEGER NOT NULL DEFAULT 0,
+                amount_cents INTEGER NOT NULL,
+                vat_rate INTEGER NOT NULL,
+                vat_cents INTEGER NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id)")
+        # Върнати суми — по една на ред, с датата на връщане: одиторският
+        # файл ги показва в месеца, в който парите са върнати (Н-18).
+        # method: card / account / cash / other (кодовете r_paym в XSD).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payment_refunds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payment_id INTEGER NOT NULL REFERENCES payments(id),
+                amount_cents INTEGER NOT NULL,
+                refunded_at TIMESTAMP NOT NULL,
+                method TEXT NOT NULL DEFAULT 'card',
+                source TEXT NOT NULL DEFAULT 'admin',
+                external_id TEXT UNIQUE,
+                note TEXT,
+                recorded_by INTEGER REFERENCES users(id)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_refunds_payment ON payment_refunds(payment_id)")
+        # Документ за регистриране на продажбата (Н-18, чл. 52о, ал. 1, т. 1):
+        # 10-разряден номер, нараства със стъпка 1 за всяка продажба, уникален
+        # за целия магазин. Отделен брояч — тестовите и ръчните плащания не
+        # бива да оставят дупки в номерацията.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sale_documents (
+                number INTEGER PRIMARY KEY,
+                payment_id INTEGER NOT NULL UNIQUE REFERENCES payments(id),
+                issued_at TIMESTAMP NOT NULL
+            )
+        """)
+
         # Фактури по ЗДДС — поредната номерация (10 цифри, чл. 113 ЗДДС) се
         # генерира от AUTOINCREMENT; фактури никога не се трият/преизползват.
         conn.execute("""
@@ -622,6 +681,13 @@ def init_db():
                     " lat, lon, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (cur.lastrowid, "Демо Профил", 1990, 6, 15, 12, 30,
                      42.6977, 23.3219, "Europe/Sofia"))
+                # Безплатното, което всеки нов акаунт получава (досега идваше
+                # от попълването при всеки старт, което вече е еднократно).
+                for key in ("chart", "horoscope"):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO feature_purchases"
+                        " (user_id, feature_key, price_cents, currency) VALUES (?, ?, 0, 'EUR')",
+                        (cur.lastrowid, key))
 
         # Seed the one-off price list. Everything in the paid plan can also be
         # bought on its own, at a price that only makes sense for one feature.
@@ -647,101 +713,140 @@ def init_db():
                     ("numerology", 400, 1),
                 ])
 
+        # --- Еднократни миграции ---
+        # Досега всичко по-долу вървеше при всеки старт (= всеки деплой) и
+        # връщаше обратно ръчните промени на админа: отнет модул се появяваше
+        # отново, създаден от админа план ставаше вечна безплатна покупка.
+        # Всяка миграция вече се отбелязва в settings и минава само веднъж.
+        # На първия старт след тази промяна минават за последно — точно
+        # както досега — затова той не променя нищо в достъпа.
+        def once(name: str) -> bool:
+            key = f"migration:{name}"
+            if conn.execute("SELECT 1 FROM settings WHERE key = ?", (key,)).fetchone():
+                return False
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)",
+                         (key, datetime.datetime.utcnow().isoformat(timespec="seconds")))
+            return True
+
+        # Плащанията отпреди тази версия вече са отключени и документите им са
+        # пратени. Без отметка повторно отваряне на стар линк за успешно
+        # плащане би отключило отнет модул и би издало втора фактура.
+        if once("payments_state_backfill"):
+            conn.execute("UPDATE payments SET granted_at = paid_at WHERE granted_at IS NULL")
+            conn.execute("UPDATE payments SET documents_at = paid_at"
+                         " WHERE documents_at IS NULL AND method = 'stripe'")
+
+        # Досега документите за продажба носеха номера на плащането. Новата
+        # номерация продължава след най-големия вече използван номер, за да
+        # не се повтори номер от издаден документ.
+        if once("sale_document_numbering"):
+            seed = conn.execute("SELECT COALESCE(MAX(id), 0) FROM payments").fetchone()[0]
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sale_doc_seed', ?)",
+                         (str(int(seed)),))
+
         # Older installs gave the demo plan a free chart and numerology.
-        conn.execute(
-            "UPDATE plans SET name = 'Основен', features = ?"
-            " WHERE key = 'demo' AND features LIKE '%chart%'",
-            (json.dumps(["planets", "aspects"]),))
+        if once("demo_plan_without_chart"):
+            conn.execute(
+                "UPDATE plans SET name = 'Основен', features = ?"
+                " WHERE key = 'demo' AND features LIKE '%chart%'",
+                (json.dumps(["planets", "aspects"]),))
 
         # Accounts created before the chart became free were never granted it,
         # so their own chart page would 402. Give it to anyone who has a person.
-        conn.execute(
-            "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
-            " SELECT DISTINCT user_id, 'chart', 0, 'EUR' FROM persons")
+        if once("chart_for_everyone_with_a_person"):
+            conn.execute(
+                "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
+                " SELECT DISTINCT user_id, 'chart', 0, 'EUR' FROM persons")
 
         # Synastry folded into the love module: one purchase covers both. Anybody
         # who bought it separately keeps their access through that key.
-        conn.execute(
-            "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
-            " WHERE feature_key = 'synastry'")
-        conn.execute(
-            "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
-            " SELECT user_id, 'love', 0, 'EUR' FROM feature_purchases"
-            " WHERE feature_key = 'synastry'")
+        if once("synastry_into_love"):
+            conn.execute(
+                "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
+                " WHERE feature_key = 'synastry'")
+            conn.execute(
+                "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
+                " SELECT user_id, 'love', 0, 'EUR' FROM feature_purchases"
+                " WHERE feature_key = 'synastry'")
 
         # The daily horoscope used to cost 3 EUR; it now comes with the chart.
-        conn.execute(
-            "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
-            " WHERE feature_key = 'horoscope'")
-        conn.execute(
-            "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
-            " SELECT DISTINCT user_id, 'horoscope', 0, 'EUR' FROM persons")
+        if once("horoscope_free_with_chart"):
+            conn.execute(
+                "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
+                " WHERE feature_key = 'horoscope'")
+            conn.execute(
+                "INSERT OR IGNORE INTO feature_purchases (user_id, feature_key, price_cents, currency)"
+                " SELECT DISTINCT user_id, 'horoscope', 0, 'EUR' FROM persons")
 
         # „Пълно разчитане“ was withdrawn: the module, its endpoint and its
         # price are gone, so clear the leftover rows rather than leave a key
         # nothing can serve.
-        conn.execute("DELETE FROM feature_prices WHERE feature_key = 'interpretation'")
-        conn.execute("DELETE FROM feature_purchases WHERE feature_key = 'interpretation'")
-        for plan_key, feats_json in conn.execute(
-                "SELECT key, features FROM plans WHERE features LIKE '%interpretation%'").fetchall():
-            try:
-                feats = [f for f in json.loads(feats_json) if f != "interpretation"]
-            except Exception:
-                continue
-            conn.execute("UPDATE plans SET features = ? WHERE key = ?",
-                         (json.dumps(feats), plan_key))
+        if once("remove_interpretation"):
+            conn.execute("DELETE FROM feature_prices WHERE feature_key = 'interpretation'")
+            conn.execute("DELETE FROM feature_purchases WHERE feature_key = 'interpretation'")
+            for plan_key, feats_json in conn.execute(
+                    "SELECT key, features FROM plans WHERE features LIKE '%interpretation%'").fetchall():
+                try:
+                    feats = [f for f in json.loads(feats_json) if f != "interpretation"]
+                except Exception:
+                    continue
+                conn.execute("UPDATE plans SET features = ? WHERE key = ?",
+                             (json.dumps(feats), plan_key))
 
         # The monthly plan is gone: everything is a one-off purchase now.
         # Anybody who paid for a subscription keeps what they paid for, turned
         # into permanent purchases — an expiry date would otherwise lock them
         # out of modules they already bought. This runs before the plan rows
         # are rewritten, so it still sees what each plan granted.
-        paid_plans = {
-            key: feats for key, feats in conn.execute(
-                "SELECT key, features FROM plans WHERE key != 'demo'").fetchall()
-        }
-        for user_id, plan_key in conn.execute(
-                "SELECT id, plan_key FROM users WHERE plan_key IS NOT NULL"
-                " AND plan_key != 'demo'").fetchall():
-            try:
-                feats = json.loads(paid_plans.get(plan_key) or "[]")
-            except Exception:
-                continue
-            for key in feats:
-                conn.execute(
-                    "INSERT OR IGNORE INTO feature_purchases"
-                    " (user_id, feature_key, price_cents, currency)"
-                    " VALUES (?, ?, 0, 'EUR')", (user_id, key))
-        # With the modules now owned outright, the expiry date has no meaning.
-        conn.execute("UPDATE users SET plan_expires = NULL WHERE plan_expires IS NOT NULL")
-        # The lifecycle emails announced an expiry that can no longer happen.
-        conn.execute("DELETE FROM settings WHERE key IN"
-                     " ('tpl_expiring_subject', 'tpl_expiring_body',"
-                     "  'tpl_expired_subject', 'tpl_expired_body')")
-        # „Пълен достъп“ was the monthly plan. Everyone keeps their modules via
-        # the purchases written above, so the plan row itself is retired and
-        # every account returns to the shared baseline.
-        conn.execute("UPDATE users SET plan_key = 'demo' WHERE plan_key != 'demo'")
-        conn.execute("DELETE FROM plans WHERE key != 'demo'")
+        if once("monthly_plan_to_purchases"):
+            paid_plans = {
+                key: feats for key, feats in conn.execute(
+                    "SELECT key, features FROM plans WHERE key != 'demo'").fetchall()
+            }
+            for user_id, plan_key in conn.execute(
+                    "SELECT id, plan_key FROM users WHERE plan_key IS NOT NULL"
+                    " AND plan_key != 'demo'").fetchall():
+                try:
+                    feats = json.loads(paid_plans.get(plan_key) or "[]")
+                except Exception:
+                    continue
+                for key in feats:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO feature_purchases"
+                        " (user_id, feature_key, price_cents, currency)"
+                        " VALUES (?, ?, 0, 'EUR')", (user_id, key))
+            # With the modules now owned outright, the expiry date has no meaning.
+            conn.execute("UPDATE users SET plan_expires = NULL WHERE plan_expires IS NOT NULL")
+            # The lifecycle emails announced an expiry that can no longer happen.
+            conn.execute("DELETE FROM settings WHERE key IN"
+                         " ('tpl_expiring_subject', 'tpl_expiring_body',"
+                         "  'tpl_expired_subject', 'tpl_expired_body')")
+            # „Пълен достъп“ was the monthly plan. Everyone keeps their modules via
+            # the purchases written above, so the plan row itself is retired and
+            # every account returns to the shared baseline.
+            conn.execute("UPDATE users SET plan_key = 'demo' WHERE plan_key != 'demo'")
+            conn.execute("DELETE FROM plans WHERE key != 'demo'")
 
         # The chart was briefly sold for 9 EUR; it is now granted at signup,
         # so any install that seeded the old price must stop offering it.
-        conn.execute(
-            "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
-            " WHERE feature_key = 'chart'")
+        if once("chart_not_for_sale"):
+            conn.execute(
+                "UPDATE feature_prices SET price_cents = 0, is_purchasable = 0"
+                " WHERE feature_key = 'chart'")
 
         # Безплатните функции се раздаваха само в /api/onboard, затова всеки,
         # който е влязъл през Google, Facebook или /register, е останал без
         # достъп до собствената си натална карта. Няма как да си я купи —
         # chart и horoscope не се продават. Наваксваме за заварените акаунти.
-        for key in ("chart", "horoscope"):
-            conn.execute(
-                "INSERT OR IGNORE INTO feature_purchases"
-                " (user_id, feature_key, price_cents, currency, payment_id)"
-                " SELECT id, ?, 0, 'EUR', NULL FROM users"
-                " WHERE id NOT IN (SELECT user_id FROM feature_purchases"
-                "                  WHERE feature_key = ?)",
-                (key, key))
+        if once("free_features_for_all_accounts"):
+            for key in ("chart", "horoscope"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO feature_purchases"
+                    " (user_id, feature_key, price_cents, currency, payment_id)"
+                    " SELECT id, ?, 0, 'EUR', NULL FROM users"
+                    " WHERE id NOT IN (SELECT user_id FROM feature_purchases"
+                    "                  WHERE feature_key = ?)",
+                    (key, key))
 
         # Features added after a plan was first seeded do not appear in existing
         # rows, so the paid plan would silently lose access to them.
@@ -853,6 +958,12 @@ LEGAL_DEFAULTS = {
     "e_shop_n": "[[НОМЕР НА Е-МАГАЗИН ОТ НАП (RF...)]]",
     # e_shop_type: 1 = собствен сайт, 2 = продажби през маркетплейс.
     "e_shop_type": "1",
+    # Имейл или телефон, който се печата в документа за продажба (чл. 52о,
+    # ал. 1, т. 2). Празно = имейлът за лични данни.
+    "contact": "",
+    # Доставчикът на платежни услуги в одиторския файл (proc_id): ЕИК/ДДС
+    # номер и наименование по Приложение № 38.
+    "psp_id": "IE3206488LH Stripe Payments Europe, Limited",
 }
 
 def legal() -> dict:
@@ -1698,6 +1809,11 @@ def require_admin(user: Tuple[int, str] = Depends(get_current_user)) -> dict:
     if not row or row.get("role") != "admin":
         raise HTTPException(403, "Нужни са администраторски права.")
     return row
+
+def _is_admin_id(user_id: int) -> bool:
+    row = get_user_by_id(user_id)
+    return bool(row and row.get("role") == "admin")
+
 
 def require_feature(feature: str):
     """Dependency factory gating a feature behind the user's plan."""
@@ -2701,6 +2817,7 @@ def api_onboard(data: OnboardRequest, request: Request):
                 success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}&amount_cents={total}&currency={cur}",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
                 brand=brand_name(),
+                bundle=is_bundle,
             )
         except Exception as e:
             # Мълчаливият провал беше по-лош от самата грешка: човекът се
@@ -2893,11 +3010,12 @@ EMAIL_TEMPLATES = {
     ),
     # Касов документ (Н-18, чл. 52а) и фактура (ЗДДС) се издават като PDF —
     # имейлът е кратко придружително писмо, а документът е прикачен файл.
-    "receipt_subject": "Касов документ от {brand} — №{unp}",
+    "receipt_subject": "Документ за продажба от {brand} — №{unp}",
     "receipt_body": (
         "Здравей!\n\n"
-        "Благодарим за покупката! Касовият документ за продажбата ти "
-        "е прикачен към това писмо като PDF.\n\n"
+        "Благодарим за покупката! Документът за регистриране на продажбата "
+        "е прикачен към това писмо като PDF. Можеш да го свалиш и от "
+        "Настройки → Моите документи.\n\n"
         "Поздрави,\n{brand}"
     ),
     # Известие до собственика при нова регистрация. Шаблонът е тук, за да
@@ -3557,11 +3675,12 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
             "SELECT COALESCE(plan_key, 'demo') AS plan_key, COUNT(*) AS c FROM users GROUP BY 1"
         )]
         revenue = conn.execute(
-            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments"
+            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments WHERE voided_at IS NULL"
         ).fetchone()["s"]
         month_start = datetime.date.today().replace(day=1).isoformat()
         revenue_month = conn.execute(
-            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments WHERE paid_at >= ?",
+            "SELECT COALESCE(SUM(amount_cents), 0) s FROM payments"
+            " WHERE paid_at >= ? AND voided_at IS NULL",
             (month_start,)
         ).fetchone()["s"]
         # Nothing expires any more, so the old "expiring soon" list would always
@@ -3579,7 +3698,8 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
         ]
         recent = [dict(r) for r in conn.execute(
             "SELECT p.id, p.amount_cents, p.currency, p.paid_at, p.plan_key, u.email "
-            "FROM payments p JOIN users u ON u.id = p.user_id "
+            "FROM payments p LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.voided_at IS NULL "
             "ORDER BY p.paid_at DESC LIMIT 10"
         )]
 
@@ -3645,7 +3765,8 @@ def api_admin_users(q: Optional[str] = None, admin: dict = Depends(require_admin
     sql = ("SELECT u.id, u.email, u.role, u.plan_key, u.plan_expires, u.is_blocked, u.note, "
            "u.created_at, u.last_login, "
            "(SELECT COUNT(*) FROM persons p WHERE p.user_id = u.id) AS persons, "
-           "(SELECT COALESCE(SUM(amount_cents),0) FROM payments pm WHERE pm.user_id = u.id) AS paid_cents "
+           "(SELECT COALESCE(SUM(amount_cents),0) FROM payments pm"
+           " WHERE pm.user_id = u.id AND pm.voided_at IS NULL) AS paid_cents "
            "FROM users u")
     params: list = []
     if q:
@@ -3686,7 +3807,12 @@ def api_admin_create_user(data: AdminUserCreate, admin: dict = Depends(require_a
              data.plan_key or "demo", expires, (data.note or "").strip() or None)
         )
         conn.commit()
-        return {"ok": True, "id": cur.lastrowid, "email": email}
+        new_id = cur.lastrowid
+    # Като всеки друг нов акаунт: картата и дневният хороскоп са безплатни.
+    # Досега ги даваше само попълването при старт — до следващия деплой
+    # ръчно създаденият акаунт не виждаше собствената си карта.
+    grant_signup_features(new_id)
+    return {"ok": True, "id": new_id, "email": email}
 
 @app.patch("/api/admin/users/{user_id}")
 def api_admin_update_user(user_id: int, data: AdminUserUpdate, admin: dict = Depends(require_admin)):
@@ -3761,7 +3887,8 @@ def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
             "DELETE FROM ai_cache WHERE person_id IN (SELECT id FROM persons WHERE user_id = ?)",
             (user_id,))
         conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        # Плащанията и фактурите остават (виж api_delete_account) — само се
+        # отделят от изтрития акаунт по номер.
         # Покупките и връзките към Google/Facebook също са на този акаунт.
         # SQLite не налага външните ключове (foreign_keys е изключен по
         # подразбиране), затова остават като сираци — а ако по-късно нов
@@ -3825,7 +3952,13 @@ def api_admin_delete_plan(plan_key: str, admin: dict = Depends(require_admin)):
 
 @app.get("/api/admin/payments")
 def api_admin_payments(user_id: Optional[int] = None, admin: dict = Depends(require_admin)):
-    sql = ("SELECT p.*, u.email FROM payments p JOIN users u ON u.id = p.user_id")
+    # LEFT JOIN: плащанията на изтрит акаунт остават в дневника (без имейл).
+    sql = ("SELECT p.*, u.email,"
+           " (SELECT COALESCE(SUM(r.amount_cents), 0) FROM payment_refunds r"
+           "  WHERE r.payment_id = p.id) AS refunded_cents,"
+           " (SELECT number FROM invoices i WHERE i.payment_id = p.id ORDER BY i.id LIMIT 1)"
+           "  AS invoice_number"
+           " FROM payments p LEFT JOIN users u ON u.id = p.user_id")
     params: list = []
     if user_id:
         sql += " WHERE p.user_id = ?"
@@ -3877,13 +4010,98 @@ def api_admin_record_payment(data: AdminPaymentCreate, admin: dict = Depends(req
           user_id=data.user_id, actor=admin["email"])
     return {"ok": True}
 
+class PaymentVoid(BaseModel):
+    reason: Optional[str] = None
+
+
+class PaymentRefund(BaseModel):
+    amount_cents: Optional[int] = None      # празно = целият остатък
+    method: str = "card"                     # account / card / cash / other
+    note: Optional[str] = None
+
+
+def _admin_payment(payment_id: int) -> dict:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Плащането не е намерено.")
+    return dict(row)
+
+
+@app.post("/api/admin/payments/{payment_id}/void")
+def api_admin_void_payment(payment_id: int, data: Optional[PaymentVoid] = None,
+                           admin: dict = Depends(require_admin)):
+    """Анулира грешно въведено плащане. Записът остава — само не се брои.
+
+    Досега имаше „Изтрий“: плащането изчезваше от дневника, от вече подаден
+    одиторски файл и от защитата срещу повторна обработка на Stripe сесията
+    (след изтриване същата сесия отключваше модулите и издаваше нова фактура).
+    За върнати пари е „Върнати пари“, не анулиране.
+    """
+    payment = _admin_payment(payment_id)
+    if payment.get("voided_at"):
+        return {"ok": True, "already": True}
+    reason = ((data.reason if data else "") or "").strip()[:300] or None
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE payments SET voided_at = CURRENT_TIMESTAMP, void_reason = ?"
+                     " WHERE id = ?", (reason, payment_id))
+        conn.commit()
+    audit("payment_voided", f"Анулирано плащане #{payment_id}: {reason or 'без причина'}",
+          user_id=payment["user_id"], actor=admin["email"])
+    return {"ok": True}
+
+
 @app.delete("/api/admin/payments/{payment_id}")
 def api_admin_delete_payment(payment_id: int, admin: dict = Depends(require_admin)):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
-        conn.commit()
-    audit("payment_deleted", f"Изтрито плащане id={payment_id}", actor=admin["email"])
-    return {"ok": True}
+    """Стар адрес: вече анулира, не трие (фискалният запис трябва да остане)."""
+    return api_admin_void_payment(payment_id, PaymentVoid(reason="анулирано (стар бутон „Изтрий“)"),
+                                  admin=admin)
+
+
+@app.post("/api/admin/payments/{payment_id}/refund")
+def api_admin_refund_payment(payment_id: int, data: PaymentRefund,
+                             admin: dict = Depends(require_admin)):
+    """Отбелязва върнати пари (напр. по банков път или в брой).
+
+    Връщанията, направени в Stripe, се отбелязват сами от webhook-а —
+    тук е за всичко останало. Модулите не се отнемат автоматично; за това е
+    бутонът за отнемане.
+    """
+    payment = _admin_payment(payment_id)
+    if data.method not in REFUND_METHODS:
+        raise HTTPException(400, "Начинът на връщане трябва да е account, card, cash или other.")
+    remaining = int(payment["amount_cents"]) - refunded_cents(payment_id)
+    amount = remaining if data.amount_cents is None else int(data.amount_cents)
+    if amount <= 0 or amount > remaining:
+        raise HTTPException(400, f"Сумата трябва да е между 0.01 и {remaining / 100:.2f}.")
+    add_refund(payment_id, amount, method=data.method, source="admin",
+               note=(data.note or "").strip()[:300], recorded_by=admin["id"])
+    audit("payment_refunded",
+          f"Отбелязано връщане {amount / 100:.2f} {payment['currency']} по плащане #{payment_id}",
+          user_id=payment["user_id"], actor=admin["email"])
+    return {"ok": True, "refunded_cents": refunded_cents(payment_id)}
+
+
+@app.post("/api/admin/payments/{payment_id}/resend-documents")
+def api_admin_resend_documents(payment_id: int, admin: dict = Depends(require_admin)):
+    """Изпраща отново касовия документ и фактурата (същия номер на фактурата)."""
+    payment = _admin_payment(payment_id)
+    if payment.get("method") != "stripe":
+        raise HTTPException(400, "Документи се изпращат само за онлайн плащания.")
+    if not payment_items(payment_id):
+        raise HTTPException(400, "Плащането е отпреди редовете да се пазят — документите "
+                                 "не могат да се възстановят автоматично.")
+    user = get_user_by_id(payment["user_id"]) or {}
+    email = (user.get("email") or "").strip()
+    if not email:
+        raise HTTPException(400, "Акаунтът на купувача е изтрит — няма адрес за изпращане.")
+    if not smtp_setting("smtp_host"):
+        raise HTTPException(400, "SMTP сървърът не е конфигуриран.")
+    send_sale_documents_for_payment(payment_id, email)
+    audit("documents_resent", f"Документите за плащане #{payment_id} са пратени отново до {email}",
+          user_id=payment["user_id"], actor=admin["email"])
+    return {"ok": True, "email": email}
 
 # --- One-off feature purchases ---
 
@@ -4123,77 +4341,348 @@ def api_admin_ai_usage(days: int = 30, admin: dict = Depends(require_admin)):
     }
 
 
+# --- Одиторски файл по Н-18 (Приложение № 38): генериране и автоматизация ---
+SAFT_DIR = DB_PATH.parent / "saft"
+SAFT_DEADLINE_DAY = 15      # до 15-о число на следващия месец (чл. 52т, ал. 3)
+
+
+def _month_key(year: int, month: int) -> str:
+    return f"{int(year):04d}-{int(month):02d}"
+
+
+def _parse_month_key(key: str) -> Tuple[int, int]:
+    try:
+        year, month = (int(x) for x in str(key).split("-"))
+        if 2020 <= year <= 2100 and 1 <= month <= 12:
+            return year, month
+    except ValueError:
+        pass
+    raise HTTPException(400, "Месецът трябва да е във формат ГГГГ-ММ.")
+
+
+def _month_bounds_utc(year: int, month: int) -> Tuple[str, str]:
+    """Календарният месец по българско време, като граници в UTC — така се пази
+    времето в базата. Досега краят беше „ГГГГ-ММ-31“ в UTC: продажбите на 31-во
+    число изчезваха от файла, а тези между 00 и 03 ч. отиваха в грешен месец."""
+    start = datetime.datetime(year, month, 1, tzinfo=SOFIA_TZ)
+    nxt = datetime.datetime(year + (month == 12), 1 if month == 12 else month + 1, 1,
+                            tzinfo=SOFIA_TZ)
+    fmt = lambda d: d.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return fmt(start), fmt(nxt)
+
+
+def saft_deadline(year: int, month: int) -> datetime.date:
+    nxt_y, nxt_m = (year + 1, 1) if month == 12 else (year, month + 1)
+    return datetime.date(nxt_y, nxt_m, SAFT_DEADLINE_DAY)
+
+
+def _legacy_sale_lines(payment: dict) -> list:
+    """Плащане отпреди редовете да се пазят: както в издадения тогава документ —
+    сумата поравно между модулите, но вече точно до стотинка."""
+    keys, _ = _parse_payment_note(payment.get("note") or "")
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+    keys = keys or ["online"]
+    parts = allocate_cents(int(payment["amount_cents"]), [1] * len(keys))
+    vats = split_vat_over_lines(parts, saft.VAT_RATE)
+    return [{"name": names.get(k) or (feature_offer(k) or {}).get("name") or "Онлайн услуга",
+             "quant": 1, "sum_cents": c, "vat_rate": saft.VAT_RATE, "vat_cents": v}
+            for k, c, v in zip(keys, parts, vats)]
+
+
+def build_month_saft(year: int, month: int) -> dict:
+    """Одиторският файл за месец + отчет: поръчки, суми, проблеми.
+
+    Влизат онлайн продажбите (Stripe, paym 4) без анулираните; връщанията —
+    в месеца, в който парите са върнати. Ръчно отбелязаните плащания не влизат
+    автоматично: изброяват се в отчета, за да реши собственикът/счетоводителят.
+    """
+    lg = legal()
+    start, end = _month_bounds_utc(year, month)
+    in_month = "datetime({col}) >= datetime(?) AND datetime({col}) < datetime(?)"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        payments = [dict(r) for r in conn.execute(
+            "SELECT * FROM payments WHERE method = 'stripe' AND voided_at IS NULL AND "
+            + in_month.format(col="paid_at") + " ORDER BY datetime(paid_at), id", (start, end))]
+        manual = [dict(r) for r in conn.execute(
+            "SELECT id, amount_cents, currency, method, note, paid_at FROM payments"
+            " WHERE COALESCE(method, '') NOT IN ('stripe', 'тест') AND voided_at IS NULL AND "
+            + in_month.format(col="paid_at") + " ORDER BY datetime(paid_at)", (start, end))]
+        refunds = [dict(r) for r in conn.execute(
+            "SELECT r.* FROM payment_refunds r JOIN payments p ON p.id = r.payment_id"
+            " WHERE p.method = 'stripe' AND " + in_month.format(col="r.refunded_at")
+            + " ORDER BY datetime(r.refunded_at), r.id", (start, end))]
+
+    psp_id = (lg.get("psp_id") or "").strip()
+    orders = []
+    for p in payments:
+        items = payment_items(p["id"])
+        lines = ([{"name": it["name"], "quant": 1, "sum_cents": it["amount_cents"],
+                   "vat_rate": it["vat_rate"], "vat_cents": it["vat_cents"]} for it in items]
+                 or _legacy_sale_lines(p))
+        doc = sale_document(p["id"])
+        paid_local = utc_to_sofia(p["paid_at"])
+        doc_local = utc_to_sofia(doc["issued_at"]) if doc else paid_local
+        orders.append({
+            "ord_n": str(p["id"]),
+            "ord_d": paid_local.strftime("%Y-%m-%d"),
+            # Плащанията отпреди номерацията носят номера, с който е издаден
+            # документът им тогава (номерът на плащането).
+            "doc_n": doc["number"] if doc else p["id"],
+            "doc_date": doc_local.strftime("%Y-%m-%d"),
+            "items": lines,
+            "disc_cents": 0,
+            "paym": saft.PAYM_PSP,
+            "pos_n": "",
+            "trans_n": p.get("payment_intent") or p.get("stripe_session_id") or "",
+            "proc_id": psp_id,
+        })
+
+    merged = {}
+    for r in refunds:
+        m = merged.setdefault(r["payment_id"], {"ord_n": str(r["payment_id"]), "amount_cents": 0})
+        m["amount_cents"] += int(r["amount_cents"])
+        m["date"] = utc_to_sofia(r["refunded_at"]).strftime("%Y-%m-%d")
+        m["paym"] = saft.REFUND_METHOD_CODES.get(r["method"], saft.RPAYM_OTHER)
+    refund_list = list(merged.values())
+
+    xml_bytes = saft.build_saft_xml(
+        eik=(lg.get("company_id") or "").strip(),
+        e_shop_n=(lg.get("e_shop_n") or "").strip(),
+        domain_name=BRAND_DOMAIN,
+        e_shop_type=lg.get("e_shop_type", "1") or "1",
+        month=month, year=year, orders=orders, refunds=refund_list,
+        creation_date=datetime.datetime.now(SOFIA_TZ).strftime("%Y-%m-%d"),
+    )
+    problems = saft.validate_saft(xml_bytes)
+    # Отпечатък на данните (без датата на създаване) — показва дали нещо в
+    # месеца се е променило след генерирането, т.е. дали файлът трябва наново.
+    fingerprint = hashlib.sha256(json.dumps(
+        {"orders": orders, "refunds": refund_list,
+         "legal": [lg.get("company_id"), lg.get("e_shop_n"), psp_id]},
+        sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+    return {
+        "key": _month_key(year, month),
+        "xml": xml_bytes,
+        "orders": len(orders),
+        "total_cents": sum(int(p["amount_cents"]) for p in payments),
+        "refunds": len(refund_list),
+        "refund_cents": sum(r["amount_cents"] for r in refund_list),
+        "manual": manual,
+        "problems": problems,
+        "valid": not problems,
+        "fingerprint": fingerprint,
+        "deadline": saft_deadline(year, month).isoformat(),
+    }
+
+
+def saft_meta(key: str) -> Optional[dict]:
+    raw = get_setting(f"saft:{key}")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
+
+
+def _save_saft_meta(key: str, meta: dict) -> None:
+    set_setting(f"saft:{key}", json.dumps(meta, ensure_ascii=False))
+
+
+def generate_and_store_saft(year: int, month: int) -> dict:
+    """Генерира файла, записва го в data/saft и пази отчета в настройките."""
+    report = build_month_saft(year, month)
+    key = report["key"]
+    SAFT_DIR.mkdir(parents=True, exist_ok=True)
+    target = SAFT_DIR / f"saft-{key}.xml"
+    tmp = target.with_suffix(".part")
+    tmp.write_bytes(report["xml"])
+    os.replace(tmp, target)
+    meta = saft_meta(key) or {}
+    meta.update({
+        "generated_at": datetime.datetime.now(SOFIA_TZ).strftime("%Y-%m-%d %H:%M"),
+        "orders": report["orders"], "total_cents": report["total_cents"],
+        "refunds": report["refunds"], "refund_cents": report["refund_cents"],
+        "manual": len(report["manual"]), "problems": report["problems"],
+        "valid": report["valid"], "fingerprint": report["fingerprint"],
+        "deadline": report["deadline"],
+    })
+    _save_saft_meta(key, meta)
+    return report
+
+
+def _saft_email_body(report: dict, year: int, month: int) -> str:
+    key = report["key"]
+    deadline = datetime.date.fromisoformat(report["deadline"]).strftime("%d.%m.%Y")
+    lines = [f"Одиторски файл (Н-18) за {month:02d}.{year}",
+             "",
+             f"Поръчки: {report['orders']} на обща стойност {report['total_cents'] / 100:.2f} EUR",
+             f"Върнати: {report['refunds']} на стойност {report['refund_cents'] / 100:.2f} EUR",
+             ""]
+    if report["valid"]:
+        lines += ["Файлът е проверен срещу схемата на НАП и аритметиката — прикачен е към писмото.",
+                  "",
+                  f"Подай го до {deadline} през е-услугата на НАП „Подаване на стандартизиран "
+                  "одиторски файл от лице по чл. 3, ал. 17“ с КЕП. Може да се подава "
+                  "повторно до срока — важи последният.",
+                  "",
+                  f"След подаването го отбележи като подаден: https://{ADMIN_HOST}/admin → НАП (Н-18)."]
+    else:
+        lines += ["ФАЙЛЪТ НЕ Е ГОТОВ за подаване:", ""] + [f"  • {p}" for p in report["problems"]] + [
+                  "", f"Оправи горното и натисни „Генерирай отново“ в https://{ADMIN_HOST}/admin → НАП (Н-18).",
+                  f"Срок за подаване: {deadline}."]
+    if report["manual"]:
+        lines += ["", f"Ръчно отбелязани плащания през месеца (не са във файла): {len(report['manual'])}.",
+                  "Провери със счетоводителя дали трябва да влязат (код на плащане 5)."]
+    return "\n".join(lines)
+
+
+def run_saft_automation(now: Optional[datetime.datetime] = None) -> None:
+    """Всеки месец: файл за предишния месец + напомняне преди срока.
+
+    Вика се от часовия фонов цикъл. След 6:00 на 1-во число генерира и
+    проверява файла за изтеклия месец и го праща на собственика. Ако на 12-о
+    още не е отбелязан като подаден — едно напомняне. Нищо не се подава
+    автоматично: НАП приема файла само през портала с КЕП.
+    """
+    now = now or datetime.datetime.now(SOFIA_TZ)
+    if now.hour < 6:
+        return
+    year, month = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+    key = _month_key(year, month)
+    start, end = _month_bounds_utc(year, month)
+    with sqlite3.connect(DB_PATH) as conn:
+        had_sales_before = conn.execute(
+            "SELECT 1 FROM payments WHERE method = 'stripe' AND datetime(paid_at) < datetime(?) LIMIT 1",
+            (end,)).fetchone()
+    if not had_sales_before:
+        return      # магазинът още не е продавал — няма за какво да се подава
+    meta = saft_meta(key)
+    to = notify_address()
+    can_mail = bool(to and smtp_setting("smtp_host") and notify_enabled("saft"))
+    if meta is None or not meta.get("generated_at"):
+        report = generate_and_store_saft(year, month)
+        meta = saft_meta(key) or {}
+        log.info("Одиторски файл %s: %s поръчки, валиден=%s", key, report["orders"], report["valid"])
+        if can_mail:
+            subject = (f"Одиторски файл за {month:02d}.{year} е готов" if report["valid"]
+                       else f"Одиторският файл за {month:02d}.{year} НЕ е готов")
+            body = _saft_email_body(report, year, month)
+            attachment = (f"saft-{key}.xml", report["xml"], "application/xml") if report["valid"] else None
+            try:
+                send_email(to, f"{brand_name()}: {subject}", body, attachment=attachment,
+                           html=_email_html(body))
+                meta["emailed_at"] = now.strftime("%Y-%m-%d %H:%M")
+                _save_saft_meta(key, meta)
+            except Exception as e:
+                log.warning("Писмото с одиторския файл %s не тръгна: %s", key, e)
+        return
+    deadline = datetime.date.fromisoformat(meta.get("deadline") or saft_deadline(year, month).isoformat())
+    days_left = (deadline - now.date()).days
+    if (not meta.get("submitted_at") and 0 <= days_left <= 3 and not meta.get("reminded_at")
+            and can_mail):
+        body = (f"Одиторският файл за {month:02d}.{year} още не е отбелязан като подаден.\n\n"
+                f"Срокът е {deadline.strftime('%d.%m.%Y')}. Файлът е в https://{ADMIN_HOST}/admin → "
+                "НАП (Н-18); подава се през е-услугата на НАП с КЕП.\n\n"
+                "Ако вече е подаден, отбележи го там и напомнянето спира.")
+        try:
+            send_email(to, f"{brand_name()}: напомняне — одиторски файл до "
+                           f"{deadline.strftime('%d.%m.%Y')}", body, html=_email_html(body))
+            meta["reminded_at"] = now.strftime("%Y-%m-%d %H:%M")
+            _save_saft_meta(key, meta)
+        except Exception as e:
+            log.warning("Напомнянето за одиторския файл %s не тръгна: %s", key, e)
+
+
 @app.get("/api/admin/saft")
 def api_admin_saft(year: int, month: int, admin: dict = Depends(require_admin)):
     """Генерира Стандартизиран одиторски файл (SAF-T) за даден месец.
 
-    Наредба № Н-18, чл. 3, ал. 17. Изход: windows-1251 XML за подаване в НАП.
-    Плейсхолдъри ([[...]]) за ЕИК и e_shop_n се попълват в LEGAL_DEFAULTS.
+    Наредба № Н-18, чл. 3, ал. 17 и Приложение № 38. Файл с проблеми не се
+    сваля (422 със списъка) — подаден в НАП, би бил отхвърлен или грешен.
     """
-    from fastapi.responses import Response
     if not (1 <= int(month) <= 12):
         raise HTTPException(400, "Месецът трябва да е между 1 и 12.")
     if int(year) < 2020:
         raise HTTPException(400, "Годината трябва да е поне 2020.")
-
-    lg = legal()
-    start = f"{int(year):04d}-{int(month):02d}-01"
-    end = f"{int(year):04d}-{int(month):02d}-31"
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM payments WHERE method = 'stripe'"
-            " AND paid_at >= ? AND paid_at < ? ORDER BY id",
-            (start, end))]
-
-    orders = []
-    for p in rows:
-        keys, session_id = _parse_payment_note(p.get("note") or "")
-        if not keys:
-            keys = ["feature"]
-        total2 = float(p["amount_cents"]) / 100.0
-        per = total2 / len(keys)
-        items = []
-        for k in keys:
-            offer = feature_offer(k)
-            name = (offer or {}).get("name") or k
-            net, vat = saft.split_vat(per)
-            items.append({
-                "name": name, "quant": 1, "price": round(net, 2),
-                "vat_rate": saft.VAT_RATE, "vat": vat, "total": round(per, 2),
-            })
-        net_total, vat_total = saft.split_vat(total2)
-        paid = (p.get("paid_at") or "")[:10]
-        orders.append({
-            "ord_n": str(p["id"]),
-            "ord_d": paid,
-            "doc_n": p["id"],
-            "doc_date": paid,
-            "items": items,
-            "total1": net_total,
-            "disc": 0,
-            "vat": vat_total,
-            "total2": total2,
-            "paym": saft.PAYM_PSP,
-            "pos_n": "",
-            "trans_n": session_id,
-            "proc_id": "stripe",
-        })
-
-    xml_bytes = saft.build_saft_xml(
-        eik=lg.get("company_id", ""),
-        e_shop_n=lg.get("e_shop_n", ""),
-        domain_name=BRAND_DOMAIN,
-        e_shop_type=lg.get("e_shop_type", "1"),
-        month=month, year=year,
-        orders=orders,
-    )
-    filename = f"saft-{int(year)}-{int(month):02d}.xml"
+    report = build_month_saft(int(year), int(month))
+    if not report["valid"]:
+        raise HTTPException(422, {"reason": "saft_invalid", "problems": report["problems"]})
+    filename = f"saft-{report['key']}.xml"
     return Response(
-        content=xml_bytes,
+        content=report["xml"],
         media_type="application/xml; charset=windows-1251",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/api/admin/saft/months")
+def api_admin_saft_months(admin: dict = Depends(require_admin)):
+    """Месеците с продажби: генериран ли е файлът, валиден ли е, подаден ли е,
+    променило ли се е нещо след генерирането."""
+    with sqlite3.connect(DB_PATH) as conn:
+        first = conn.execute("SELECT MIN(paid_at) FROM payments WHERE method = 'stripe'").fetchone()[0]
+    now = datetime.datetime.now(SOFIA_TZ)
+    months = []
+    if first:
+        cur = utc_to_sofia(first)
+        y, m = cur.year, cur.month
+        while (y, m) <= (now.year, now.month) and len(months) < 36:
+            key = _month_key(y, m)
+            meta = saft_meta(key) or {}
+            in_progress = (y, m) == (now.year, now.month)
+            entry = {"key": key, "label": f"{m:02d}.{y}", "in_progress": in_progress,
+                     "deadline": saft_deadline(y, m).isoformat(), **meta}
+            if meta.get("generated_at") and not in_progress:
+                entry["stale"] = build_month_saft(y, m)["fingerprint"] != meta.get("fingerprint")
+            entry["file"] = (SAFT_DIR / f"saft-{key}.xml").exists()
+            months.append(entry)
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    months.reverse()
+    return {"months": months, "deadline_day": SAFT_DEADLINE_DAY}
+
+
+@app.post("/api/admin/saft/{key}/generate")
+def api_admin_saft_generate(key: str, admin: dict = Depends(require_admin)):
+    year, month = _parse_month_key(key)
+    report = generate_and_store_saft(year, month)
+    audit("saft_generated", f"Одиторски файл {key}: {report['orders']} поръчки, "
+                            f"валиден={report['valid']}", actor=admin["email"])
+    return {k: v for k, v in report.items() if k != "xml"}
+
+
+@app.get("/api/admin/saft/{key}/file")
+def api_admin_saft_file(key: str, admin: dict = Depends(require_admin)):
+    year, month = _parse_month_key(key)
+    path = SAFT_DIR / f"saft-{_month_key(year, month)}.xml"
+    if not path.exists():
+        raise HTTPException(404, "Файлът още не е генериран.")
+    meta = saft_meta(_month_key(year, month)) or {}
+    if not meta.get("valid"):
+        raise HTTPException(422, {"reason": "saft_invalid", "problems": meta.get("problems") or []})
+    return Response(content=path.read_bytes(), media_type="application/xml; charset=windows-1251",
+                    headers={"Content-Disposition": f'attachment; filename="{path.name}"'})
+
+
+class SaftSubmitted(BaseModel):
+    submitted: bool = True
+
+
+@app.post("/api/admin/saft/{key}/submitted")
+def api_admin_saft_submitted(key: str, data: SaftSubmitted, admin: dict = Depends(require_admin)):
+    year, month = _parse_month_key(key)
+    key = _month_key(year, month)
+    meta = saft_meta(key) or {}
+    meta["submitted_at"] = (datetime.datetime.now(SOFIA_TZ).strftime("%Y-%m-%d %H:%M")
+                            if data.submitted else None)
+    meta["submitted_by"] = admin["email"] if data.submitted else None
+    _save_saft_meta(key, meta)
+    audit("saft_submitted" if data.submitted else "saft_unsubmitted",
+          f"Одиторски файл {key} отбелязан като {'подаден' if data.submitted else 'неподаден'}",
+          actor=admin["email"])
+    return {"ok": True, **meta}
+
 
 @app.get("/api/admin/2fa/status")
 def api_admin_2fa_status(admin: dict = Depends(require_admin)):
@@ -4317,6 +4806,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 success_url=success,
                 cancel_url=cancel,
                 brand=brand_name(),
+                bundle=True,
             )
             return {"ok": True, "checkout_url": url, "bundle": bundle}
         except Exception as e:
@@ -4438,6 +4928,7 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             "payments": notify_enabled("payments"),
             "problems": notify_enabled("problems"),
             "daily": notify_enabled("daily"),
+            "saft": notify_enabled("saft"),
             "fallback": (smtp_setting("smtp_from") or smtp_setting("smtp_user") or ""),
         },
         "legal": {key: (get_setting(f"legal_{key}") or default)
@@ -4505,7 +4996,7 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     if isinstance(notify, dict):
         if "email" in notify:
             set_setting("notify_email", str(notify.get("email") or "").strip())
-        for kind in ("new_users", "payments", "problems", "daily"):
+        for kind in ("new_users", "payments", "problems", "daily", "saft"):
             if kind in notify:
                 set_setting(f"notify_{kind}", "1" if notify.get(kind) else "0")
 
@@ -4730,11 +5221,25 @@ def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_adm
         subject, body = render_email_template(kind, **fields)
         send_email(to, subject, body, html=_email_html(body))
         sent += 1
-    # Касов документ (Н-18) и фактура (ЗДДС) — реалният резултат е PDF attachment.
-    items = [{"name": "Натална карта", "net": 8.40, "vat": 1.68,
-              "total": 10.08, "vat_rate": 20}]
-    send_receipt_email(to, items=items, total2=10.08, unp=4201, stripe_id="cs_test_preview")
-    send_invoice_email(to, items=items, total2=10.08, invoice_number="0000000001")
+    # Документ за продажба (Н-18) и фактура (ЗДДС) — реалният резултат е PDF.
+    items = [{"name": "Нумерология", "net": 3.33, "vat": 0.67, "total": 4.00,
+              "vat_rate": 20, "tax_group": "Б", "quant": 1}]
+    lg = legal()
+    issued = datetime.datetime.now(SOFIA_TZ)
+    pdf_bytes = build_receipt_pdf(
+        brand=brand_name(), company_name=lg.get("company_name") or "",
+        company_id=lg.get("company_id") or "", address=lg.get("address") or "",
+        contact=(lg.get("contact") or lg.get("privacy_email") or ""),
+        domain=BRAND_DOMAIN, e_shop_n=lg.get("e_shop_n") or "",
+        doc_number="0000000000", issued_str=issued.strftime("%d.%m.%Y %H:%M:%S"),
+        order_no="ПРИМЕР", trans_ref="pi_preview", items=items,
+        net_total=3.33, vat_total=0.67, total=4.00, vat_rate=20,
+        payment_method=SALE_PAYMENT_METHOD,
+        qr_data=sale_qr_data(lg.get("e_shop_n") or "", "ПРИМЕР", "pi_preview", issued, 400))
+    subject, body = render_email_template("receipt", unp="0000000000 (ПРИМЕР)")
+    send_email(to, subject, body, attachment=("primer-dokument.pdf", pdf_bytes, "application/pdf"),
+               html=_email_html(body))
+    send_invoice_email(to, items=items, total2=4.00, invoice_number="0000000000")
     sent += 2
     audit("templates_preview", f"Изпратени {sent} темплейта за преглед до {to}",
           actor=admin["email"])
@@ -4971,10 +5476,12 @@ def build_daily_summary(day: datetime.date) -> str:
             f"SELECT COUNT(*) FROM page_views WHERE {in_day.format(col='viewed_at')}", rng).fetchone()[0]
         pays = conn.execute(
             "SELECT p.amount_cents, p.currency, p.note, u.email FROM payments p"
-            " JOIN users u ON u.id = p.user_id WHERE p.method = 'stripe' AND "
+            " LEFT JOIN users u ON u.id = p.user_id WHERE p.method = 'stripe'"
+            " AND p.voided_at IS NULL AND "
             + in_day.format(col="p.paid_at") + " ORDER BY p.paid_at", rng).fetchall()
         month = conn.execute(
             "SELECT COALESCE(SUM(amount_cents), 0) FROM payments WHERE method = 'stripe'"
+            " AND voided_at IS NULL"
             " AND datetime(paid_at) >= datetime(?) AND datetime(paid_at) < datetime(?)",
             (month_start, rng[1])).fetchone()[0]
         webhooks = conn.execute(
@@ -5202,8 +5709,138 @@ def stripe_success_url(default_path: str, amount_cents: Optional[int] = None, cu
     return url
 
 
+def allocate_cents(total_cents: int, weights: list) -> list:
+    """Разпределя сума по тежести, до стотинка и със същия сбор.
+
+    Метод на най-големия остатък: при 25 € върху 6 модула или при промо код
+    сборът на редовете е точно платеното — нито 25.02, нито 24.99.
+    """
+    n = len(weights)
+    if n == 0:
+        return []
+    w = [max(0, int(x or 0)) for x in weights]
+    if sum(w) <= 0:
+        w = [1] * n
+    total_w = sum(w)
+    total_cents = int(total_cents or 0)
+    raw = [total_cents * x / total_w for x in w]
+    base = [int(r) for r in raw]
+    rest = total_cents - sum(base)
+    for i in sorted(range(n), key=lambda i: raw[i] - base[i], reverse=True)[:rest]:
+        base[i] += 1
+    return base
+
+
+def vat_cents_of(gross_cents: int, rate: int) -> int:
+    """ДДС, съдържащ се в бруто сума, закръглен до стотинка (половинката нагоре)."""
+    if rate <= 0:
+        return 0
+    return (int(gross_cents) * rate * 2 + (100 + rate)) // (2 * (100 + rate))
+
+
+def split_vat_over_lines(amounts: list, rate: int) -> list:
+    """ДДС за всеки ред, така че сборът да е ДДС-ът на цялата поръчка.
+
+    Закръгляне по ред дава 4.18 вместо 4.17 за 25 € в 6 реда; ДДС-ът се смята
+    върху общата сума (както във фактурата) и се разпределя до стотинка.
+    """
+    total_vat = vat_cents_of(sum(int(a) for a in amounts), rate)
+    return allocate_cents(total_vat, [int(a) for a in amounts])
+
+
+def _parse_feature_amounts(raw: str) -> dict:
+    out = {}
+    for part in (raw or "").split(","):
+        key, _, cents = part.partition(":")
+        try:
+            out[key.strip()] = int(cents)
+        except ValueError:
+            continue
+    return out
+
+
+def sale_lines(meta: dict, kind: str, keys: list, amount_cents: int,
+               subtotal_cents: int) -> Tuple[list, list]:
+    """(редове за документите, [(модул, платено)] за достъпа) за една сесия.
+
+    Пакетът е един продаден артикул — „Всички модули“ за 25 € — и така стои
+    в бележката и в одиторския файл. Достъпът все пак е по модул, затова
+    сумата се разпределя и по ключовете (сборът е точно платеното).
+    """
+    planned = _parse_feature_amounts(meta.get("feature_amounts") or "")
+    weights = [planned.get(k) if planned.get(k) is not None
+               else (feature_offer(k) or {}).get("price_cents", 0) for k in keys]
+    per_key = allocate_cents(amount_cents, weights)
+    grants = list(zip(keys, per_key))
+
+    list_total = subtotal_cents or sum(weights) or amount_cents
+    is_bundle = (meta.get("bundle") == "1"
+                 or (kind == "features" and not planned and len(keys) > 1
+                     and list_total == BUNDLE_PRICE_CENTS))
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+    if is_bundle:
+        included = ", ".join(names.get(k, k) for k in keys)
+        name = f"Пакет „{BUNDLE_NAME}“: {included}"
+        if len(name) > 200:
+            name = name[:197].rstrip(" ,") + "…"
+        lines = [{"key": BUNDLE_KEY, "name": name, "list_cents": list_total,
+                  "amount_cents": int(amount_cents)}]
+    else:
+        lines = [{"key": k, "name": names.get(k) or (feature_offer(k) or {}).get("name") or k,
+                  "list_cents": int(w or 0), "amount_cents": c}
+                 for k, w, c in zip(keys, weights, per_key)]
+    return lines, grants
+
+
+def session_is_paid(session: dict) -> bool:
+    """Платена сесия — вкл. поръчка, покрита изцяло с промо код."""
+    return (session.get("payment_status") or "") in ("paid", "no_payment_required")
+
+
+def _payment_by_session(session_id: str) -> Optional[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM payments WHERE stripe_session_id = ?",
+                           (session_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def store_payment_items(payment_id: int, lines: list) -> None:
+    """Записва редовете на продажбата — веднъж; повторно извикване не пипа нищо."""
+    with sqlite3.connect(DB_PATH) as conn:
+        if conn.execute("SELECT 1 FROM payment_items WHERE payment_id = ? LIMIT 1",
+                        (payment_id,)).fetchone():
+            return
+        rate = saft.VAT_RATE
+        vats = split_vat_over_lines([line["amount_cents"] for line in lines], rate)
+        for line, vat in zip(lines, vats):
+            conn.execute(
+                "INSERT INTO payment_items (payment_id, feature_key, name, list_cents,"
+                " amount_cents, vat_rate, vat_cents) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (payment_id, line["key"], line["name"][:200], int(line.get("list_cents") or 0),
+                 int(line["amount_cents"]), rate, vat))
+        conn.commit()
+
+
+def payment_items(payment_id: int) -> list:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM payment_items WHERE payment_id = ? ORDER BY id", (payment_id,))]
+
+
 def fulfill_checkout_session(session: dict) -> None:
-    """Apply a completed Stripe Checkout session to the local DB."""
+    """Apply a completed Stripe Checkout session to the local DB.
+
+    Идва по два пътя (webhook и връщането на клиента), понякога едновременно и
+    понякога повторно. Затова всяка стъпка е защитена поотделно:
+      1. записът в дневника — веднъж (уникален stripe_session_id);
+      2. достъпът — докато не мине успешно веднъж (granted_at). Ако първият
+         опит е прекъснат след записа (напр. „database is locked“), следващият
+         довършва отключването, вместо да приеме, че всичко е готово;
+      3. документите за клиента — точно веднъж (documents_at се заема атомарно).
+    Анулирано плащане не се отключва отново.
+    """
     meta = session.get("metadata") or {}
     kind = meta.get("kind") or ""
     try:
@@ -5214,34 +5851,71 @@ def fulfill_checkout_session(session: dict) -> None:
         log.warning("Stripe session без user_id: %s", session.get("id"))
         return
 
+    if kind == "features" and meta.get("feature_keys"):
+        keys = [k.strip() for k in meta["feature_keys"].split(",") if k.strip()]
+        note_head = f"features:{','.join(keys)}"
+    elif kind == "feature" and meta.get("feature_key"):
+        keys = [meta["feature_key"].strip()]
+        note_head = f"feature:{keys[0]}"
+    else:
+        log.warning("Stripe session %s без модули в metadata (kind=%s)", session.get("id"), kind)
+        return
+
     amount = int(session.get("amount_total") or 0)
+    subtotal = int(session.get("amount_subtotal") or amount)
     currency = (session.get("currency") or "eur").upper()
     customer_id = session.get("customer")
     if isinstance(customer_id, dict):
         customer_id = customer_id.get("id")
-
+    intent = session.get("payment_intent")
+    if isinstance(intent, dict):
+        intent = intent.get("id")
     session_id = session.get("id")
 
-    # A basket of modules bought in one go, from the signup flow.
-    if kind == "features" and meta.get("feature_keys"):
-        keys = [k.strip() for k in meta["feature_keys"].split(",") if k.strip()]
-        pay_id = record_payment(
-            user_id, plan_key=None, amount_cents=amount, currency=currency,
-            method="stripe", note=f"features:{','.join(keys)} {session_id}",
-            session_id=session_id)
-        if pay_id is None:
-            # Already handled: a redelivered webhook, or the customer's own
-            # return beat it here. Repeating the unlocks is harmless, but the
-            # ledger and the documents must not double up.
-            log.info("Stripe сесия %s вече е обработена", session_id)
-            return
-        for key in keys:
-            offer = feature_offer(key)
-            grant_feature_purchase(
-                user_id, key,
-                offer["price_cents"] if offer else 0,
-                offer["currency"] if offer else currency,
-                pay_id)
+    lines, grants = sale_lines(meta, kind, keys, amount, subtotal)
+
+    pay_id = record_payment(
+        user_id, plan_key=None, amount_cents=amount, currency=currency,
+        method="stripe", note=f"{note_head} {session_id}", session_id=session_id)
+    first = pay_id is not None
+    payment = _payment_by_session(session_id) if session_id else None
+    if payment is None:
+        log.warning("Stripe сесия %s: няма запис в дневника след опит за запис", session_id)
+        return
+    pay_id = payment["id"]
+    if payment.get("voided_at"):
+        log.info("Stripe сесия %s е анулирана — не се отключва отново", session_id)
+        return
+
+    # Нова продажба (или недовършена) — плащанията отпреди тази версия вече
+    # имат издаден документ и не получават нито редове, нито нов номер.
+    new_sale = first or not payment.get("documents_at")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE payments SET payment_intent = COALESCE(payment_intent, ?) WHERE id = ?",
+            (intent, pay_id))
+        if new_sale:
+            conn.execute("UPDATE payments SET discount_cents = ? WHERE id = ?",
+                         (max(0, subtotal - amount), pay_id))
+        conn.commit()
+    if new_sale:
+        store_payment_items(pay_id, lines)
+
+    if not payment.get("granted_at"):
+        for key, cents in grants:
+            grant_feature_purchase(user_id, key, cents, currency, pay_id)
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE payments SET granted_at = CURRENT_TIMESTAMP"
+                         " WHERE id = ? AND granted_at IS NULL", (pay_id,))
+            conn.commit()
+        if not first:
+            log.warning("Stripe сесия %s: довършено отключване след прекъснат опит", session_id)
+    elif not first:
+        # Already handled: a redelivered webhook, or the customer's own
+        # return beat it here.
+        log.info("Stripe сесия %s вече е обработена", session_id)
+
+    if first:
         if customer_id:
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute(
@@ -5249,61 +5923,191 @@ def fulfill_checkout_session(session: dict) -> None:
                     (customer_id, user_id))
                 conn.commit()
         log.info("Stripe отключване %s за user=%s", keys, user_id)
-        audit("payment_succeeded", f"Stripe {amount} {currency} за модули {', '.join(keys)} ({session.get('id')})",
+        audit("payment_succeeded",
+              f"Stripe {amount} {currency} за модули {', '.join(keys)} ({session_id})",
               user_id=user_id, actor="stripe")
-        audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}", user_id=user_id, actor="stripe")
-        notify_payment(user_id, amount, currency, keys, session.get("id"))
-        # Електронен документ (Н-18) — изпраща се на купувача по имейл.
-        email = _session_email(session)
-        if email:
-            per = amount / 100.0 / len(keys)
-            items = []
-            for key in keys:
-                o = feature_offer(key)
-                name = (o or {}).get("name") or key
-                net, vat = saft.split_vat(per)
-                items.append({"name": name, "net": net, "vat": vat,
-                              "total": per, "vat_rate": saft.VAT_RATE})
-            send_sale_documents(email, items=items, total2=amount / 100.0,
-                                unp=pay_id, stripe_id=session.get("id") or "",
-                                user_id=user_id)
-        return
+        audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}",
+              user_id=user_id, actor="stripe")
+        notify_payment(user_id, amount, currency, keys, session_id)
 
-    feature_key = meta.get("feature_key")
-    if kind == "feature" and feature_key:
-        pay_id = record_payment(
-            user_id, plan_key=None, amount_cents=amount, currency=currency,
-            method="stripe", note=f"feature:{feature_key} {session_id}",
-            session_id=session_id)
-        if pay_id is None:
-            log.info("Stripe сесия %s вече е обработена", session_id)
-            return
-        grant_feature_purchase(user_id, feature_key, amount, currency, pay_id)
-        if customer_id:
-            with sqlite3.connect(DB_PATH) as conn:
+    # Документ за регистриране на продажбата (Н-18, чл. 52о): номерът се
+    # издава при регистрирането на продажбата, независимо дали имейлът ще
+    # тръгне. Стари плащания (отпреди номерацията) пазят издадения им номер.
+    if new_sale:
+        assign_sale_document(pay_id)
+
+    # Електронен документ (Н-18) и фактура — точно веднъж, във фона, за да не
+    # чака клиентът (и Stripe) пощенския сървър.
+    email = _session_email(session)
+    if email and _claim_documents(pay_id):
+        _in_background(send_sale_documents_for_payment, pay_id, email)
+
+    # A chart bought through onboarding belongs to an account that has no
+    # usable password yet; this is the visitor's way in.
+    if first and kind == "feature" and keys == ["chart"]:
+        send_welcome_set_password(user_id)
+
+
+REFUND_METHODS = ("account", "card", "cash", "other")
+
+
+def add_refund(payment_id: int, amount_cents: int, *, method: str, source: str,
+               refunded_at: Optional[str] = None, external_id: Optional[str] = None,
+               note: str = "", recorded_by: Optional[int] = None) -> bool:
+    """Записва върната сума. False, ако вече е записана (същото external_id)."""
+    if method not in REFUND_METHODS:
+        raise ValueError(f"unknown refund method {method}")
+    when = refunded_at or datetime.datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO payment_refunds (payment_id, amount_cents, refunded_at, method,"
+                " source, external_id, note, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (payment_id, int(amount_cents), when, method, source, external_id,
+                 note or None, recorded_by))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        return False
+    return True
+
+
+def refunded_cents(payment_id: int) -> int:
+    with sqlite3.connect(DB_PATH) as conn:
+        return int(conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM payment_refunds WHERE payment_id = ?",
+            (payment_id,)).fetchone()[0])
+
+
+def record_stripe_refund(charge: dict, event_id: str) -> None:
+    """charge.refunded → разликата спрямо вече записаното, с датата на събитието.
+
+    Stripe праща натрупаната върната сума; записваме само новото, за да не се
+    дублира при частични връщания или повторно изпратено събитие.
+    """
+    intent = charge.get("payment_intent")
+    if isinstance(intent, dict):
+        intent = intent.get("id")
+    payment = None
+    if intent:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM payments WHERE payment_intent = ?",
+                               (intent,)).fetchone()
+            payment = dict(row) if row else None
+    if payment is None and intent and billing.checkout_key_present():
+        # Плащане отпреди да пазим payment_intent: намираме сесията в Stripe.
+        try:
+            sessions = billing.get_stripe().checkout.Session.list(payment_intent=intent, limit=1)
+            data = _strip_stripe(sessions).get("data") or []
+            if data:
+                payment = _payment_by_session(data[0].get("id"))
+                if payment:
+                    with sqlite3.connect(DB_PATH) as conn:
+                        conn.execute("UPDATE payments SET payment_intent = ? WHERE id = ?",
+                                     (intent, payment["id"]))
+                        conn.commit()
+        except Exception:
+            log.warning("Stripe връщане: сесията за %s не се намери", intent, exc_info=True)
+    if payment is None:
+        log.warning("Stripe връщане за непознато плащане (payment_intent=%s)", intent)
+        report_problem("refund_unmatched", "Връщане в Stripe без плащане в базата",
+                       f"payment_intent={intent}. Отбележи връщането ръчно от Админ → Плащания.")
+        return
+    total_refunded = int(charge.get("amount_refunded") or 0)
+    delta = total_refunded - refunded_cents(payment["id"])
+    if delta <= 0:
+        return
+    when = datetime.datetime.utcnow()
+    try:
+        created = int(charge.get("created") or 0)
+        refunds = ((charge.get("refunds") or {}).get("data") or [])
+        if refunds:
+            created = max(int(r.get("created") or 0) for r in refunds) or created
+        if created:
+            when = datetime.datetime.utcfromtimestamp(created)
+    except (TypeError, ValueError):
+        pass
+    if add_refund(payment["id"], delta, method="card", source="stripe",
+                  refunded_at=when.isoformat(sep=" ", timespec="seconds"),
+                  external_id=event_id or None):
+        audit("payment_refunded",
+              f"Stripe върна {delta / 100:.2f} {payment['currency']} по плащане #{payment['id']}",
+              user_id=payment["user_id"], actor="stripe")
+
+
+SOFIA_TZ = ZoneInfo("Europe/Sofia")
+
+
+def utc_to_sofia(ts) -> datetime.datetime:
+    """Записаното в базата (UTC, „ГГГГ-ММ-ДД ЧЧ:ММ:СС“) → местно време."""
+    raw = str(ts or "").replace("T", " ")[:19]
+    dt = datetime.datetime.fromisoformat(raw) if raw else datetime.datetime.utcnow()
+    return dt.replace(tzinfo=datetime.timezone.utc).astimezone(SOFIA_TZ)
+
+
+def assign_sale_document(payment_id: int) -> dict:
+    """Номерът и датата на документа за продажбата — издава се точно веднъж.
+
+    Номерът е следващият след най-големия досега (или след началото на
+    номерацията), затова расте със стъпка 1 и не се повтаря.
+    """
+    now = datetime.datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+    for _ in range(5):
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute("SELECT number, issued_at FROM sale_documents WHERE payment_id = ?",
+                               (payment_id,)).fetchone()
+            if row:
+                return {"number": int(row[0]), "issued_at": row[1]}
+            try:
                 conn.execute(
-                    "UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, ?) WHERE id = ?",
-                    (customer_id, user_id))
+                    "INSERT INTO sale_documents (number, payment_id, issued_at)"
+                    " SELECT MAX(COALESCE((SELECT MAX(number) FROM sale_documents), 0),"
+                    "            CAST(COALESCE((SELECT value FROM settings"
+                    "                           WHERE key = 'sale_doc_seed'), '0') AS INTEGER)) + 1,"
+                    " ?, ?", (payment_id, now))
                 conn.commit()
-        log.info("Stripe отключване %s за user=%s", feature_key, user_id)
-        audit("payment_succeeded", f"Stripe {amount} {currency} за {feature_key} ({session.get('id')})",
-              user_id=user_id, actor="stripe")
-        audit("feature_unlocked", f"Модул отключен: {feature_key}", user_id=user_id, actor="stripe")
-        notify_payment(user_id, amount, currency, [feature_key], session.get("id"))
-        # Електронен документ (Н-18) — изпраща се на купувача по имейл.
-        email = _session_email(session)
-        if email:
-            net, vat = saft.split_vat(amount / 100.0)
-            name = (feature_offer(feature_key) or {}).get("name") or feature_key
-            send_sale_documents(email, items=[{"name": name, "net": net, "vat": vat,
-                                             "total": amount / 100.0, "vat_rate": saft.VAT_RATE}],
-                                total2=amount / 100.0, unp=pay_id,
-                                stripe_id=session.get("id") or "",
-                                user_id=user_id)
-        # A chart bought through onboarding belongs to an account that has no
-        # usable password yet; this is the visitor's way in.
-        if feature_key == "chart":
-            send_welcome_set_password(user_id)
+            except sqlite3.IntegrityError:
+                continue        # едновременна продажба взе същия номер — опитваме пак
+    raise RuntimeError(f"не може да се издаде номер на документ за плащане {payment_id}")
+
+
+def sale_document(payment_id: int) -> Optional[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT number, issued_at FROM sale_documents WHERE payment_id = ?",
+                           (payment_id,)).fetchone()
+    return {"number": int(row[0]), "issued_at": row[1]} if row else None
+
+
+def sale_qr_data(e_shop_n: str, order_no: str, trans_ref: str,
+                 issued: datetime.datetime, total_cents: int) -> str:
+    """Съдържанието на QR кода по Приложение № 18а за софтуер по чл. 52т:
+    <№ на е-магазина>*< >*<№ на поръчката>*<реф. № на трансакцията>*
+    <ГГГГ-ММ-ДД>*<ЧЧ:ММ:СС>*<обща сума>. Второто поле е празно по образеца.
+    """
+    return "*".join([str(e_shop_n or "").strip(), "", str(order_no), str(trans_ref or ""),
+                     issued.strftime("%Y-%m-%d"), issued.strftime("%H:%M:%S"),
+                     saft.money(total_cents)])
+
+
+def _claim_documents(payment_id: int) -> bool:
+    """Атомарно „заема“ изпращането на документите — само един път печели."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute("UPDATE payments SET documents_at = CURRENT_TIMESTAMP"
+                           " WHERE id = ? AND documents_at IS NULL", (payment_id,))
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def document_items(payment_id: int) -> list:
+    """Редовете за бележката/фактурата от записаната продажба."""
+    out = []
+    for it in payment_items(payment_id):
+        gross = it["amount_cents"] / 100.0
+        vat = it["vat_cents"] / 100.0
+        out.append({"name": it["name"], "net": round(gross - vat, 2), "vat": vat,
+                    "total": gross, "vat_rate": it["vat_rate"]})
+    return out
+
 
 def _session_email(session: dict) -> str:
     """Имейлът на купувача от Stripe Checkout session."""
@@ -5312,31 +6116,69 @@ def _session_email(session: dict) -> str:
         return (cd.get("email") or session.get("customer_email") or "").strip()
     return (session.get("customer_email") or "").strip()
 
-def send_receipt_email(email: str, *, items, total2, unp, stripe_id) -> bool:
-    """Изпраща електронен документ за продажба (Н-18, чл. 52а) като PDF."""
+SALE_PAYMENT_METHOD = "Банкова карта — неприсъствено плащане чрез Stripe"
+
+
+def build_sale_receipt(payment_id: int) -> Tuple[bytes, str, str]:
+    """(PDF, име на файла, номер на документа) за записана продажба.
+
+    Всичко идва от записаното при продажбата — номерът и часът на документа,
+    редовете, транзакцията — затова повторното генериране (за изпращане пак
+    или за сваляне от профила) дава същия документ.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone()
+    if not row:
+        raise ValueError(f"няма плащане {payment_id}")
+    payment = dict(row)
+    stored = payment_items(payment_id)
+    if not stored:
+        # Плащане отпреди редовете да се пазят: документът му е издаден тогава
+        # с друг номер — нов номер тук би бил втори документ за същата продажба.
+        raise ValueError(f"плащане {payment_id} е отпреди документите да се пазят")
+    doc = sale_document(payment_id) or assign_sale_document(payment_id)
+    issued = utc_to_sofia(doc["issued_at"])
+    lg = legal()
+    items = []
+    for it in stored:
+        items.append({"name": it["name"], "tax_group": saft.tax_group(it["vat_rate"]),
+                      "quant": 1, "net": (it["amount_cents"] - it["vat_cents"]) / 100.0,
+                      "vat": it["vat_cents"] / 100.0, "total": it["amount_cents"] / 100.0})
+    total_cents = int(payment["amount_cents"])
+    vat_cents = sum(int(it["vat_cents"]) for it in stored)
+    doc_number = f"{doc['number']:010d}"
+    trans_ref = payment.get("payment_intent") or payment.get("stripe_session_id") or ""
+    order_no = str(payment_id)
+    logo = BASE_DIR / "static" / "logo-header.png"
+    pdf_bytes = build_receipt_pdf(
+        brand=brand_name(),
+        company_name=lg.get("company_name") or "",
+        company_id=lg.get("company_id") or "",
+        address=lg.get("address") or "",
+        contact=(lg.get("contact") or lg.get("privacy_email") or ""),
+        domain=BRAND_DOMAIN, e_shop_n=lg.get("e_shop_n") or "",
+        doc_number=doc_number, issued_str=issued.strftime("%d.%m.%Y %H:%M:%S"),
+        order_no=order_no, trans_ref=trans_ref,
+        items=items, net_total=(total_cents - vat_cents) / 100.0, vat_total=vat_cents / 100.0,
+        total=total_cents / 100.0, vat_rate=saft.VAT_RATE,
+        payment_method=SALE_PAYMENT_METHOD,
+        qr_data=sale_qr_data(lg.get("e_shop_n") or "", order_no, trans_ref, issued, total_cents),
+        logo_path=str(logo) if logo.exists() else None)
+    filename = f"{brand_slug()}-dokument-za-prodazhba-{doc_number}.pdf"
+    return pdf_bytes, filename, doc_number
+
+
+def send_receipt_email(email: str, *, payment_id: int) -> bool:
+    """Изпраща документа за регистриране на продажба (Н-18, чл. 52о, ал. 5)."""
     if not email or not smtp_setting("smtp_host"):
         return False
-    lg = legal()
-    now = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y %H:%M:%S")
-    net_total = sum(float(it.get("net", 0)) for it in items)
-    vat_total = sum(float(it.get("vat", 0)) for it in items)
-
-    logo = BASE_DIR / "static" / "logo-header.png"
     try:
-        pdf_bytes = build_receipt_pdf(
-            brand=brand_name(),
-            company_name=lg.get("company_name") or "",
-            company_id=lg.get("company_id") or "",
-            items=items, net_total=net_total, vat_total=vat_total,
-            total=total2, vat_rate=saft.VAT_RATE,
-            datetime_str=now, unp=unp, stripe_id=stripe_id,
-            logo_path=str(logo) if logo.exists() else None)
+        pdf_bytes, filename, doc_number = build_sale_receipt(payment_id)
     except Exception as e:
-        log.warning("PDF за касов документ се провали: %s", e)
+        log.warning("PDF за документа за продажба %s се провали: %s", payment_id, e, exc_info=True)
         return False
-
-    subject, body = render_email_template("receipt", unp=unp)
-    filename = f"{brand_slug()}-kasov-dokument-{unp}.pdf"
+    subject, body = render_email_template("receipt", unp=doc_number)
     try:
         send_email(email, subject, body,
                    attachment=(filename, pdf_bytes, "application/pdf"),
@@ -5398,15 +6240,46 @@ def send_invoice_email(email: str, *, items, total2, invoice_number) -> bool:
         log.warning("Неуспешен invoice имейл до %s: %s", email, e)
         return False
 
-def send_sale_documents(email: str, *, items, total2, unp, stripe_id, user_id) -> None:
-    """Издава касов документ (Н-18) + фактура (ЗДДС) за една продажба.
+def issue_invoice_for_payment(user_id: int, payment_id: int) -> str:
+    """Номерът на фактурата за плащането — издава нов само ако още няма."""
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT number FROM invoices WHERE payment_id = ? ORDER BY id LIMIT 1",
+                           (payment_id,)).fetchone()
+    if row and row[0]:
+        return row[0]
+    return issue_invoice(user_id, payment_id)
 
-    Касовият документ покрива фискализацията (чл. 52а Н-18); фактурата е
-    задължителна, защото търговецът е регистриран по ЗДДС.
+
+def send_sale_documents_for_payment(payment_id: int, email: str) -> None:
+    """Касов документ (Н-18) + фактура (ЗДДС) за записана продажба.
+
+    Чете редовете от payment_items, затова документите, дневникът и
+    одиторският файл показват едни и същи суми. Повторно извикване (напр.
+    „изпрати пак“ от админа) не издава втора фактура за същото плащане.
     """
-    send_receipt_email(email, items=items, total2=total2, unp=unp, stripe_id=stripe_id)
-    invoice_number = issue_invoice(user_id, unp)
-    send_invoice_email(email, items=items, total2=total2, invoice_number=invoice_number)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone()
+    if not row:
+        return
+    payment = dict(row)
+    items = document_items(payment_id)
+    if not items:
+        log.warning("Плащане %s без редове — документите не са пратени", payment_id)
+        return
+    total2 = payment["amount_cents"] / 100.0
+    sent = send_receipt_email(email, payment_id=payment_id)
+    invoice_number = issue_invoice_for_payment(payment["user_id"], payment_id)
+    sent_invoice = send_invoice_email(email, items=items, total2=total2,
+                                      invoice_number=invoice_number)
+    if not (sent and sent_invoice):
+        log.warning("Документите за плащане %s не тръгнаха изцяло (бележка=%s, фактура=%s)",
+                    payment_id, sent, sent_invoice)
+        report_problem("sale_documents", "Документите за продажба не тръгнаха",
+                       f"Плащане #{payment_id}: бележка={'да' if sent else 'не'}, "
+                       f"фактура={'да' if sent_invoice else 'не'}. "
+                       "Изпрати ги отново от Админ → Плащания.")
+
 
 def hash_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -5578,6 +6451,10 @@ def backup_status() -> dict:
 
 
 def run_scheduled_jobs() -> None:
+    try:
+        run_saft_automation()
+    except Exception:
+        log.exception("Автоматичният одиторски файл (Н-18) се провали")
     run_db_backup()
     run_digest_emails()
     try:
@@ -6044,7 +6921,7 @@ def api_billing_session(session_id: str,
     if owner != user_id:
         raise HTTPException(403, "Тази поръчка не е твоя.")
 
-    paid = raw.get("payment_status") == "paid"
+    paid = session_is_paid(raw)
     if paid:
         fulfill_checkout_session(raw)
 
@@ -6097,18 +6974,25 @@ async def api_stripe_webhook(request: Request):
     obj = _strip_stripe(obj)
     try:
         # Only one-off purchases exist now, so the subscription events that
-        # used to arrive here have nothing left to update.
-        if etype == "checkout.session.completed":
+        # used to arrive here have nothing left to update. Работата с базата и
+        # пощата върви в нишка — async рутът не бива да спира целия сайт.
+        if etype in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
             # A session can "complete" while the money is still moving with
-            # delayed payment methods; only grant once Stripe says it is paid.
-            if obj.get("payment_status") == "paid":
-                fulfill_checkout_session(obj)
+            # delayed payment methods; only grant once Stripe says it is paid
+            # (then async_payment_succeeded arrives). A basket fully covered
+            # by a promo code is "no_payment_required" — also a sale.
+            if session_is_paid(obj):
+                await asyncio.to_thread(fulfill_checkout_session, obj)
             else:
                 log.warning("Stripe session %s приключи без paid статус: %s",
                             obj.get("id"), obj.get("payment_status"))
                 audit("webhook_skipped",
                       f"Stripe session {obj.get('id')} не е paid ({obj.get('payment_status')})",
                       actor="stripe")
+        elif etype == "charge.refunded":
+            # Връщане, направено в Stripe: отбелязва се само, за да влезе в
+            # одиторския файл за месеца на връщането (Н-18).
+            await asyncio.to_thread(record_stripe_refund, obj, event.get("id") or "")
     except Exception:
         log.exception("Обработка на Stripe event %s се провали", etype)
         audit("webhook_error", f"Stripe event {etype} се провали", actor="stripe")
@@ -6133,6 +7017,9 @@ def api_create_share(person_id: int, data: ShareCreate, request: Request,
     cache_key = (data.cache_key or "").strip()
     if not cache_key or not get_ai_cache(person_id, cache_key):
         raise HTTPException(404, "Няма запазено разчитане за споделяне.")
+    # Споделянето изнася текста навън — като PDF-а и имейла, само при право
+    # за модула (отнет или върнат модул не бива да се публикува по линк).
+    require_reading_access(user_id, cache_key)
     token = secrets.token_urlsafe(24)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -6306,6 +7193,45 @@ def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(ge
     # Това устройство остава вписано с нов токен.
     return {"ok": True, "token": create_token(user_id, row["email"])}
 
+@app.get("/api/account/documents")
+def api_account_documents(user: Tuple[int, str] = Depends(get_current_user)):
+    """Документите за продажба на профила — за сваляне по всяко време."""
+    user_id, _ = user
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.amount_cents, p.currency, p.paid_at, d.number, d.issued_at,"
+            " (SELECT number FROM invoices i WHERE i.payment_id = p.id ORDER BY i.id LIMIT 1)"
+            "  AS invoice_number"
+            " FROM payments p JOIN sale_documents d ON d.payment_id = p.id"
+            " WHERE p.user_id = ? AND p.method = 'stripe' AND p.voided_at IS NULL"
+            " ORDER BY d.number DESC", (user_id,))]
+    out = []
+    for r in rows:
+        names = [it["name"] for it in payment_items(r["id"])]
+        out.append({
+            "payment_id": r["id"],
+            "number": f"{int(r['number']):010d}",
+            "issued_at": utc_to_sofia(r["issued_at"]).strftime("%d.%m.%Y %H:%M"),
+            "amount_cents": r["amount_cents"], "currency": r["currency"],
+            "items": names, "invoice_number": r.get("invoice_number"),
+        })
+    return {"documents": out}
+
+
+@app.get("/api/account/documents/{payment_id}.pdf")
+def api_account_document_pdf(payment_id: int, user: Tuple[int, str] = Depends(get_current_user)):
+    user_id, _ = user
+    with sqlite3.connect(DB_PATH) as conn:
+        owner = conn.execute("SELECT user_id FROM payments WHERE id = ?", (payment_id,)).fetchone()
+    if not owner or owner[0] != user_id or not sale_document(payment_id):
+        raise HTTPException(404, "Документът не е намерен.")
+    pdf_bytes, filename, _ = build_sale_receipt(payment_id)
+    quoted = urllib.parse.quote(filename)
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"})
+
+
 @app.get("/api/account/export")
 def api_export_account(user: Tuple[int, str] = Depends(get_current_user)):
     """GDPR чл. 20 — преносимост: пълно копие на данните в машинночетим формат."""
@@ -6367,7 +7293,10 @@ def api_delete_account(user: Tuple[int, str] = Depends(get_current_user)):
             conn.execute(f"DELETE FROM share_links WHERE person_id IN ({qs})", person_ids)
         conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM feature_purchases WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        # Плащанията и фактурите остават: счетоводните документи се пазят по
+        # закон (ЗСч, Н-18), а без тях одиторският файл за вече подаден месец
+        # би се променил. В тях няма лични данни — имейлът е в users и си
+        # отива с акаунта; остава само номерът на изтрития акаунт.
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
         # Връзките към Google/Facebook пазят имейла — лични данни, които
         # трябва да си отидат заедно с акаунта.
@@ -6820,6 +7749,9 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
                                user: Tuple[int, str] = Depends(require_feature("profile"))):
     """AI 'about me' reading — strengths, weaknesses and what makes this chart distinctive."""
     user_id, email = user
+    # Ново генериране харчи пари за AI; бутонът за клиенти е махнат, а адресът
+    # оставаше отворен за всеки купувач. Само админ може да регенерира.
+    refresh = refresh and _is_admin_id(user_id)
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
@@ -6964,6 +7896,9 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     data source for akashic records, so the reading stays anchored to the chart.
     """
     user_id, email = user
+    # Ново генериране харчи пари за AI; бутонът за клиенти е махнат, а адресът
+    # оставаше отворен за всеки купувач. Само админ може да регенерира.
+    refresh = refresh and _is_admin_id(user_id)
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
@@ -7099,6 +8034,9 @@ def api_numerology(person_id: int, user: Tuple[int, str] = Depends(require_featu
 def api_numerology_interpretation(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("numerology"))):
     """Generate AI interpretation of a person's numerology profile. Cached per year — pass ?refresh=true to regenerate."""
     user_id, email = user
+    # Ново генериране харчи пари за AI; бутонът за клиенти е махнат, а адресът
+    # оставаше отворен за всеки купувач. Само админ може да регенерира.
+    refresh = refresh and _is_admin_id(user_id)
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
@@ -7407,6 +8345,9 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
                                   user: Tuple[int, str] = Depends(require_feature("love"))):
     """AI love reading — uses the partner's full chart when available."""
     user_id, email = user
+    # Ново генериране харчи пари за AI; бутонът за клиенти е махнат, а адресът
+    # оставаше отворен за всеки купувач. Само админ може да регенерира.
+    refresh = refresh and _is_admin_id(user_id)
     p = get_person(data.person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
@@ -7530,6 +8471,9 @@ def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_
 def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("love"))):
     """Generate an AI interpretation of synastry between two persons."""
     user_id, email = user
+    # Ново генериране харчи пари за AI; бутонът за клиенти е махнат, а адресът
+    # оставаше отворен за всеки купувач. Само админ може да регенерира.
+    refresh = refresh and _is_admin_id(user_id)
     p1 = get_person(data.person1_id, user_id)
     if not p1:
         raise HTTPException(404, f"Person 1 (id={data.person1_id}) not found")
@@ -7859,6 +8803,9 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
                               user: Tuple[int, str] = Depends(require_feature("period"))):
     """AI reading of a date range's transits. Cached per person + date range."""
     user_id, email = user
+    # Ново генериране харчи пари за AI; бутонът за клиенти е махнат, а адресът
+    # оставаше отворен за всеки купувач. Само админ може да регенерира.
+    refresh = refresh and _is_admin_id(user_id)
     p = get_person(data.person_id, user_id)
     if not p:
         raise HTTPException(404, f"Person (id={data.person_id}) not found")
@@ -8216,7 +9163,7 @@ READING_TITLES = {
 
 # Ключът на кеша носи и суфикс („horoscope:2026-09-09“), а правото за достъп
 # се пази по базовия ключ. „love-full“ е част от любовния модул.
-_READING_FEATURE = {"love-full": "love"}
+_READING_FEATURE = {"love-full": "love", "synastry": "love"}
 
 
 # Повелителни глаголи, с които моделът често започва („Провери интуицията си“).
