@@ -2954,6 +2954,17 @@ def get_sign_horoscope(sign: str, date_iso: str) -> Optional[str]:
         return row[0] if row else None
 
 
+def get_previous_sign_horoscope(sign: str, before_date_iso: str):
+    """Най-новият успешен хороскоп преди дадена дата — (date, content) или (None, None)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT date, content FROM sign_horoscope "
+            "WHERE sign = ? AND date < ? ORDER BY date DESC LIMIT 1",
+            (sign, before_date_iso)
+        ).fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+
 def set_sign_horoscope(sign: str, date_iso: str, content: str) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -7650,6 +7661,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
     `model=PAID_MODEL` (deepseek-v4-pro), безплатните ползват дефолта (Flash)."""
     import urllib.request
     import urllib.error
+    import http.client
 
     # Граматичните правила се добавят към всяко разчитане, без значение от модела.
     prompt = BG_GRAMMAR_RULES + "\n\n" + prompt
@@ -7711,6 +7723,12 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
             _note_ai_usage(provider, result)   # всеки опит се плаща, и отрязаният
+            # DeepSeek при претоварване връща 200 с {"error": ...} без "choices".
+            # Тук падаше с KeyError и грозен traceback вместо чисто съобщение.
+            if "choices" not in result or not result["choices"]:
+                err = result.get("error", {})
+                raise AIError(f"{provider} върна грешка: "
+                              f"{err.get('message') or err.get('code') or 'няма choices'}")
             msg = result["choices"][0]["message"]
             content = msg.get("content") or ""
             # Fallback: ако все пак моделът е мислил и content е празен, вземи
@@ -7738,6 +7756,9 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
         raise AIError(f"{provider} отне прекалено дълго да отговори (над 3 минути). Опитайте отново — генерирането на дълъг текст понякога отнема повече време.")
     except urllib.error.URLError as e:
         raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
+    except http.client.HTTPException as e:
+        # IncompleteRead / RemoteDisconnected — връзката е прекъсната по средата.
+        raise AIError(f"{provider} прекъсна връзката по средата на отговора. Опитайте отново.") from e
 
 
 _call_ai_unlogged = call_ai
@@ -8625,6 +8646,8 @@ async def horoskop_hub(request: Request):
     previews = []
     for sign in ZODIAC_SIGNS:
         cached = get_sign_horoscope(sign["sign"], date_iso)
+        if not cached:
+            _, cached = get_previous_sign_horoscope(sign["sign"], date_iso)
         excerpt = ""
         if cached:
             _, body = split_summary(cached)
@@ -8653,6 +8676,14 @@ async def horoskop_sign(request: Request, sign_slug: str):
     date_bg = now.strftime("%d.%m.%Y")
 
     cached = get_sign_horoscope(sign["sign"], date_iso)
+    stale_date = None
+    if not cached:
+        prev_date, cached = get_previous_sign_horoscope(sign["sign"], date_iso)
+        if prev_date:
+            try:
+                stale_date = datetime.datetime.strptime(prev_date, "%Y-%m-%d").strftime("%d.%m.%Y")
+            except ValueError:
+                stale_date = prev_date
     ctx = _sign_seo_context(request, sign, date_bg)
     ctx.update({
         "sign": sign,
@@ -8661,6 +8692,7 @@ async def horoskop_sign(request: Request, sign_slug: str):
         "date_iso": date_iso,
         "sky": daily_sky(),
         "faq": _SIGN_FAQ,
+        "stale_date": stale_date,
     })
     if cached:
         summary, body = split_summary(cached)
@@ -8678,22 +8710,26 @@ def sofia_today() -> datetime.date:
 
 
 def warm_sign_horoscopes() -> int:
-    """Пуска генерирането за всеки знак без текст за днес. Връща колко са пуснати.
-    Написаните и вече течащите се прескачат — повторното викане е безплатно."""
+    """Пуска генерирането за всеки знак без текст за днес И утре. Връща колко са пуснати.
+    Държим утрешния хороскоп готов още днес (ден напред): дори нощната генерация
+    да се провали, страницата за утре никога не остава празна."""
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
-    date_iso = now.date().isoformat()
-    date_bg = now.strftime("%d.%m.%Y")
+    dates = [now.date(), now.date() + datetime.timedelta(days=1)]
     started = 0
-    for sign in ZODIAC_SIGNS:
-        if get_sign_horoscope(sign["sign"], date_iso):
-            continue
-        cache_key = f"sign:{sign['sign']}:{date_iso}"
-        with _AI_JOBS_LOCK:
-            running = _AI_JOBS.get(cache_key)
-        if running and not running["done"].is_set():
-            continue
-        ai_job(cache_key, lambda s=sign: _generate_sign_horoscope(s, date_bg, date_iso))
-        started += 1
+    for d in dates:
+        date_iso = d.isoformat()
+        date_bg = d.strftime("%d.%m.%Y")
+        for sign in ZODIAC_SIGNS:
+            if get_sign_horoscope(sign["sign"], date_iso):
+                continue
+            cache_key = f"sign:{sign['sign']}:{date_iso}"
+            with _AI_JOBS_LOCK:
+                running = _AI_JOBS.get(cache_key)
+            if running and not running["done"].is_set():
+                continue
+            ai_job(cache_key, lambda s=sign, db=date_bg, di=date_iso:
+                   _generate_sign_horoscope(s, db, di))
+            started += 1
     return started
 
 
@@ -8720,7 +8756,7 @@ async def _horoscope_warm_loop():
         try:
             started = await asyncio.to_thread(run_horoscope_warm)
             if started:
-                log.info("Хороскопи по зодия: пуснати %d за днес", started)
+                log.info("Хороскопи по зодия: пуснати %d (днес + утре)", started)
         except Exception:
             log.exception("Генерирането на хороскопите по зодия не тръгна")
         await asyncio.sleep(HOROSCOPE_WARM_EVERY)
@@ -8757,6 +8793,11 @@ def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": True}
         if running and running["done"].is_set() and running["error"]:
+            prev_date, prev = get_previous_sign_horoscope(sign["sign"], date_iso)
+            if prev:
+                summary, body = split_summary(prev)
+                return {"summary": summary, "body": body, "date": prev_date,
+                        "cached": True, "stale": True}
             return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_sign_horoscope(sign, date_bg, date_iso))
@@ -8765,6 +8806,11 @@ def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
         if cached:
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": False}
+        prev_date, prev = get_previous_sign_horoscope(sign["sign"], date_iso)
+        if prev:
+            summary, body = split_summary(prev)
+            return {"summary": summary, "body": body, "date": prev_date,
+                    "cached": True, "stale": True}
         return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
     return {"pending": True, "date": date_bg}
 
