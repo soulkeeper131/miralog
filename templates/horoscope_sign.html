@@ -66,6 +66,7 @@
         .horo-reading ul li::before { content: "✦"; position: absolute; left: 0; color: var(--accent); font-size: 0.8em; top: 0.2em; }
         .horo-reading hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
         .horo-loading { text-align: center; color: var(--text-soft); padding: 40px 0; }
+        .stale-note { display: inline-block; margin: 0.6rem 0 0; padding: 8px 14px; border-radius: 10px; background: var(--surface-raised, rgba(255,255,255,0.05)); border: 1px solid var(--line); color: var(--text-soft); font-size: 0.9rem; }
         .horo-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
         .horo-meta .trust-item { display: block; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
     </style>
@@ -86,6 +87,7 @@
             <p><span class="kicker">Дневен хороскоп · {{ date_bg }}</span></p>
             <h1>Дневен хороскоп за {{ sign.name }}</h1>
             <p class="lede">Какво носи днешният ден за родените под знака {{ sign.name }}.</p>
+            {% if stale_date %}<p class="stale-note">⚠️ Днешният хороскоп още се подготвя — показваме последния наличен (от {{ stale_date }}).</p>{% endif %}
             <p class="sub">{{ sign.name }} е {{ sign.element|lower }} и {{ sign.modality|lower }} знак, управляван от {{ sign.ruler }}. Период: {{ sign.dates }}.</p>
             <div class="cta-row">
                 <a class="btn btn-primary" href="/start">Създай своята натална карта</a>

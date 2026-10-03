@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Как се генерират хороскопите: навреме, с правилния модел и без излишни разходи."""
+import datetime
 import secrets
 import sqlite3
 import threading
@@ -26,16 +27,18 @@ def test_warm_starts_every_missing_sign(app, monkeypatch):
     _clear_signs(app)
     started = []
     monkeypatch.setattr(app, "ai_job", lambda key, fn: started.append(key) or _done_job())
-    assert app.warm_sign_horoscopes() == 12
-    assert len(started) == 12
+    # Днес + утре (ден напред) = 2 дни × 12 зодии
+    assert app.warm_sign_horoscopes() == 24
+    assert len(started) == 24
 
 
 def test_warm_skips_signs_already_written(app, monkeypatch):
     """Повторното викане на всеки 10 минути не бива да харчи нищо."""
     _clear_signs(app)
-    today = app.sofia_today().isoformat()
-    for s in app.ZODIAC_SIGNS:
-        app.set_sign_horoscope(s["sign"], today, "Готов текст.")
+    today = app.sofia_today()
+    for d in (today, today + datetime.timedelta(days=1)):
+        for s in app.ZODIAC_SIGNS:
+            app.set_sign_horoscope(s["sign"], d.isoformat(), "Готов текст.")
     started = []
     monkeypatch.setattr(app, "ai_job", lambda key, fn: started.append(key) or _done_job())
     assert app.warm_sign_horoscopes() == 0
