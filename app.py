@@ -8294,34 +8294,37 @@ def sitemap_xml(request: Request):
     seo = seo_settings()
     base = public_base_url(request)
     today = datetime.date.today().isoformat()
+    # Вечнозелените страници не се обновяват ежедневно — стабилна дата, за да
+    # не „викат вълк" (иначе Google игнорира lastmod). Само хороскопите взимат today.
+    evergreen = "2026-09-12"
     entries = [
-        ("/", "weekly", "1.0"),
-        ("/register", "monthly", "0.6"),
+        ("/", "weekly", "1.0", evergreen),
+        ("/register", "monthly", "0.6", evergreen),
     ]
     # Every module gets its own landing page — the long-tail content that the
     # search engines actually find people through.
-    entries += [(f"/{p['slug']}", "monthly", "0.8") for p in FEATURE_PAGES]
+    entries += [(f"/{p['slug']}", "monthly", "0.8", evergreen) for p in FEATURE_PAGES]
     # Daily horoscopes per zodiac sign (12) + the hub. These refresh daily, so
     # they get a high change frequency and priority — they are the freshest,
     # most-searched content on the site.
-    entries.append(("/horoskop", "daily", "0.9"))
-    entries += [(f"/horoskop/{s['slug']}", "daily", "0.9") for s in ZODIAC_SIGNS]
+    entries.append(("/horoskop", "daily", "0.9", today))
+    entries += [(f"/horoskop/{s['slug']}", "daily", "0.9", today) for s in ZODIAC_SIGNS]
     # Evergreen "planet in sign" pages — the long-tail backbone.
     for pl in PLANETS:
-        entries += [(f"/{pl['slug']}-v-{s['slug']}", "monthly", "0.7")
+        entries += [(f"/{pl['slug']}-v-{s['slug']}", "monthly", "0.7", evergreen)
                     for s in ZODIAC_SIGNS]
     # Zodiac sign profiles — the highest-volume searches ("характеристика на ...").
-    entries += [(f"/zodia/{s['slug']}", "monthly", "0.8") for s in ZODIAC_SIGNS]
+    entries += [(f"/zodia/{s['slug']}", "monthly", "0.8", evergreen) for s in ZODIAC_SIGNS]
     # Sign compatibility — 78 pairs, long-tail "съвместимост овен телец" searches.
-    entries.append(("/savmestimost", "monthly", "0.8"))
-    entries += [(f"/savmestimost/{slug}", "monthly", "0.7") for _, _, slug in COMPAT_PAIRS]
+    entries.append(("/savmestimost", "monthly", "0.8", evergreen))
+    entries += [(f"/savmestimost/{slug}", "monthly", "0.7", evergreen) for _, _, slug in COMPAT_PAIRS]
     # Planet in house — 120 pages, long-tail "луна в 7 дом" searches.
     for pl in BODY_PLANETS:
-        entries += [(f"/{pl['slug']}-v-{h['num']}-dom", "monthly", "0.7") for h in HOUSES]
+        entries += [(f"/{pl['slug']}-v-{h['num']}-dom", "monthly", "0.7", evergreen) for h in HOUSES]
     urls = "".join(
-        f"<url><loc>{base}{path}</loc><lastmod>{today}</lastmod>"
+        f"<url><loc>{base}{path}</loc><lastmod>{lm}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
-        for path, freq, prio in entries
+        for path, freq, prio, lm in entries
     )
     xml = ('<?xml version="1.0" encoding="UTF-8"?>'
            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
