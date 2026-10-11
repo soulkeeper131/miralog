@@ -1012,3 +1012,18 @@ def test_month_without_sales_is_reminded_once_a_real_file_exists(
     app.run_saft_automation(datetime.datetime(2026, 10, 13, 9, 0, tzinfo=SOFIA))
     assert len(_no_mail) == 1 and "напомняне" in _no_mail[0][0][1]
     app.set_setting("saft:2026-09", "")
+
+
+def test_unfilled_e_shop_number_is_blank_on_the_receipt(app):
+    """Без номер от НАП документът и QR кодът не носят „[[…]]“ на клиента."""
+    app.set_setting("legal_e_shop_n", "")
+    try:
+        lg = app.legal()
+        assert "[[" in lg["e_shop_n"]            # плейсхолдърът си остава за проверката на файла
+        assert app.e_shop_number(lg) == ""
+        assert "[[" not in app.sale_qr_data(app.e_shop_number(lg), "1", "pi_x",
+                                            datetime.datetime.now(), 299)
+        app.set_setting("legal_e_shop_n", "RF0000123")
+        assert app.e_shop_number(app.legal()) == "RF0000123"
+    finally:
+        app.set_setting("legal_e_shop_n", "")

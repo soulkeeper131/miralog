@@ -255,3 +255,15 @@ def test_admin_report_all_time(app):
 def test_admin_report_lists_the_prices_it_uses(app):
     rep = app.api_admin_ai_usage(days=30, admin={"id": 1})
     assert rep["prices"]["deepseek-v4-pro"]["output"] == pytest.approx(3.96)
+
+
+@pytest.mark.parametrize("payload", [
+    {"error": {"message": "Server overloaded", "code": "busy"}},
+    {"error": "Server overloaded"},
+    {"choices": []},
+])
+def test_reply_without_choices_is_a_clean_ai_error(app, monkeypatch, payload):
+    """DeepSeek при претоварване връща 200 без "choices" — беше KeyError: 'choices'."""
+    _provider(monkeypatch, payload)
+    with pytest.raises(app.AIError):
+        app.call_ai("key", "deepseek", "тест", max_tokens=10)

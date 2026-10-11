@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Как се генерират хороскопите: навреме, с правилния модел и без излишни разходи."""
+import datetime
 import secrets
 import sqlite3
 import threading
@@ -26,16 +27,18 @@ def test_warm_starts_every_missing_sign(app, monkeypatch):
     _clear_signs(app)
     started = []
     monkeypatch.setattr(app, "ai_job", lambda key, fn: started.append(key) or _done_job())
-    assert app.warm_sign_horoscopes() == 12
-    assert len(started) == 12
+    # Днес + утре (ден напред) = 2 дни × 12 зодии
+    assert app.warm_sign_horoscopes() == 24
+    assert len(started) == 24
 
 
 def test_warm_skips_signs_already_written(app, monkeypatch):
     """Повторното викане на всеки 10 минути не бива да харчи нищо."""
     _clear_signs(app)
-    today = app.sofia_today().isoformat()
-    for s in app.ZODIAC_SIGNS:
-        app.set_sign_horoscope(s["sign"], today, "Готов текст.")
+    today = app.sofia_today()
+    for d in (today, today + datetime.timedelta(days=1)):
+        for s in app.ZODIAC_SIGNS:
+            app.set_sign_horoscope(s["sign"], d.isoformat(), "Готов текст.")
     started = []
     monkeypatch.setattr(app, "ai_job", lambda key, fn: started.append(key) or _done_job())
     assert app.warm_sign_horoscopes() == 0
@@ -192,3 +195,47 @@ def test_admin_can_still_refresh_a_horoscope(app, db, monkeypatch):
     monkeypatch.setattr(app, "ai_job", lambda k, fn: started.append(k) or _done_job())
     app.api_daily_horoscope(pid, refresh=True, user=(admin["id"], admin["email"]))
     assert len(started) == 1
+
+
+# --- небето по дата, последният наличен хороскоп ----------------------------
+
+def test_sign_horoscope_uses_the_sky_of_its_own_day(app, monkeypatch):
+    """Утрешният хороскоп се пише днес, но по утрешното небе, не по сегашното."""
+    tomorrow = (app.sofia_today() + datetime.timedelta(days=1)).isoformat()
+    asked = []
+    monkeypatch.setattr(app, "sky_for_date", lambda d: asked.append(d) or dict(app._EMPTY_SKY))
+    monkeypatch.setattr(app, "daily_sky", lambda: pytest.fail("ползва небето в момента"))
+    monkeypatch.setattr(app, "ai_config_or_raise", lambda: ("key", "deepseek"))
+    monkeypatch.setattr(app, "call_ai", lambda *a, **k: "Текст.")
+    app._generate_sign_horoscope(app.ZODIAC_SIGNS[0], "утре", tomorrow)
+    assert asked == [tomorrow]
+
+
+def test_sky_for_date_differs_between_days(app):
+    """Луната се мести ~13° на ден — небето за два различни дни не е едно и също."""
+    a = app.sky_for_date("2026-10-10")
+    b = app.sky_for_date("2026-10-11")
+    moon = lambda sky: next(p for p in sky["positions"] if p["name"] == "Moon")
+    assert (moon(a)["sign_bg"], moon(a)["degree"]) != (moon(b)["sign_bg"], moon(b)["degree"])
+
+
+def test_api_shows_the_last_horoscope_with_a_bulgarian_date(app, monkeypatch):
+    """Ако днешният не се получи, клиентът вижда последния, с дата като на страницата."""
+    _clear_signs(app)
+    today = app.sofia_today()
+    yesterday = today - datetime.timedelta(days=1)
+    sign = app.ZODIAC_SIGNS[0]
+    app.set_sign_horoscope(sign["sign"], yesterday.isoformat(), "Вчерашен текст.")
+    failed = {"done": threading.Event(), "error": "AI грешка", "failed_at": time.time()}
+    failed["done"].set()
+    monkeypatch.setattr(app, "ai_job", lambda key, fn: failed)
+    with app._AI_JOBS_LOCK:
+        app._AI_JOBS[f"sign:{sign['sign']}:{today.isoformat()}"] = failed
+    try:
+        out = app.api_horoskop(sign["slug"], None)
+    finally:
+        with app._AI_JOBS_LOCK:
+            app._AI_JOBS.pop(f"sign:{sign['sign']}:{today.isoformat()}", None)
+    assert out.get("stale") is True
+    assert out["date"] == yesterday.strftime("%d.%m.%Y")
+    assert "Вчерашен текст." in out["body"]

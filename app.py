@@ -966,6 +966,12 @@ LEGAL_DEFAULTS = {
     "psp_id": "IE3206488LH Stripe Payments Europe, Limited",
 }
 
+def e_shop_number(lg: dict) -> str:
+    """Номерът на е-магазина за документа и QR кода; незапълненият („[[…]]“) е празен."""
+    value = str(lg.get("e_shop_n") or "").strip()
+    return "" if "[[" in value else value
+
+
 def legal() -> dict:
     """Юридическите данни за документите, с fallback към плейсхолдърите."""
     return {k: (get_setting(f"legal_{k}") or default)
@@ -3222,55 +3228,86 @@ _DAILY_SKY_BODIES = ["Sun", "Moon", "Mercury", "Venus", "Mars",
                      "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
 
 
+def _sky_at(moment: datetime.datetime) -> dict:
+    """Позициите и главните аспекти в даден момент (часовото време на София)."""
+    subject = charts.Subject(
+        date_time=moment.replace(tzinfo=None),
+        latitude=42.6977, longitude=23.3219, timezone="Europe/Sofia",
+    )
+    chart_now = charts.Natal(subject)
+    positions = []
+    for obj in chart_now.objects.values():
+        name = getattr(obj, "name", None)
+        if name in _DAILY_SKY_BODIES:
+            sign = str(obj.sign.name)
+            positions.append({
+                "name": name,
+                "name_bg": tr_object(name),
+                "symbol": sign_symbol(sign),
+                "sign_bg": tr_sign(sign),
+                "degree": int(obj.sign_longitude.degrees),
+                "retrograde": getattr(obj, "movement", None)
+                              and str(obj.movement) == "Retrograde",
+            })
+    aspects = []
+    for a in serialize_aspects(chart_now.aspects):
+        if a.get("type") not in MAJOR_ASPECTS:
+            continue
+        dev = aspect_deviation(a)
+        if dev is None or dev > 3.0:
+            continue
+        a["deviation"] = dev
+        aspects.append(a)
+    aspects.sort(key=lambda a: a["deviation"])
+    return {
+        "positions": positions,
+        "aspects": aspects,
+        "moon_phase_bg": tr_moon_phase(chart_now.moon_phase.formatted if hasattr(chart_now, "moon_phase") and chart_now.moon_phase else None),
+        "shape_bg": tr_shape(chart_now.shape if hasattr(chart_now, "shape") else None),
+    }
+
+
+_EMPTY_SKY = {"positions": [], "aspects": [], "moon_phase_bg": "", "shape_bg": ""}
+
+
 def daily_sky() -> dict:
-    """Today's transit positions + major aspects, for the sign horoscopes."""
+    """Небето в момента — за лентата на страниците с хороскопи."""
     now_ts = _time.time()
     cached = _DAILY_SKY_CACHE
     if cached["data"] is not None and now_ts - cached["t"] < _SKY_CACHE_TTL:
         return cached["data"]
     try:
-        now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
-        subject = charts.Subject(
-            date_time=now.replace(tzinfo=None),
-            latitude=42.6977, longitude=23.3219, timezone="Europe/Sofia",
-        )
-        chart_now = charts.Natal(subject)
-        positions = []
-        for obj in chart_now.objects.values():
-            name = getattr(obj, "name", None)
-            if name in _DAILY_SKY_BODIES:
-                sign = str(obj.sign.name)
-                positions.append({
-                    "name": name,
-                    "name_bg": tr_object(name),
-                    "symbol": sign_symbol(sign),
-                    "sign_bg": tr_sign(sign),
-                    "degree": int(obj.sign_longitude.degrees),
-                    "retrograde": getattr(obj, "movement", None)
-                                  and str(obj.movement) == "Retrograde",
-                })
-        aspects = []
-        for a in serialize_aspects(chart_now.aspects):
-            if a.get("type") not in MAJOR_ASPECTS:
-                continue
-            dev = aspect_deviation(a)
-            if dev is None or dev > 3.0:
-                continue
-            a["deviation"] = dev
-            aspects.append(a)
-        aspects.sort(key=lambda a: a["deviation"])
-        result = {
-            "positions": positions,
-            "aspects": aspects,
-            "moon_phase_bg": tr_moon_phase(chart_now.moon_phase.formatted if hasattr(chart_now, "moon_phase") and chart_now.moon_phase else None),
-            "shape_bg": tr_shape(chart_now.shape if hasattr(chart_now, "shape") else None),
-        }
+        result = _sky_at(datetime.datetime.now(ZoneInfo("Europe/Sofia")))
         cached["t"] = _time.time()
         cached["data"] = result
         return result
     except Exception:
         log.warning("daily_sky failed; the sign horoscope will be text-only", exc_info=True)
-        return {"positions": [], "aspects": [], "moon_phase_bg": "", "shape_bg": ""}
+        return dict(_EMPTY_SKY)
+
+
+_SKY_BY_DATE: dict = {}
+
+
+def sky_for_date(date_iso: str) -> dict:
+    """Небето по обяд на дадения ден — по него се пише хороскопът за деня.
+
+    Хороскопът за утре се пише още днес, затова не бива да ползва небето
+    „в момента“: Луната минава ~13° на ден и често сменя знака."""
+    cached = _SKY_BY_DATE.get(date_iso)
+    if cached is not None:
+        return cached
+    try:
+        day = datetime.date.fromisoformat(date_iso)
+        result = _sky_at(datetime.datetime(day.year, day.month, day.day, 12, 0))
+    except Exception:
+        log.warning("sky_for_date(%s) failed; the sign horoscope will be text-only",
+                    date_iso, exc_info=True)
+        return dict(_EMPTY_SKY)
+    if len(_SKY_BY_DATE) > 7:
+        _SKY_BY_DATE.clear()
+    _SKY_BY_DATE[date_iso] = result
+    return result
 
 
 def get_sign_horoscope(sign: str, date_iso: str) -> Optional[str]:
@@ -3280,6 +3317,25 @@ def get_sign_horoscope(sign: str, date_iso: str) -> Optional[str]:
             (sign, date_iso)
         ).fetchone()
         return row[0] if row else None
+
+
+def _bg_date(date_iso: str) -> str:
+    """2026-10-03 → 03.10.2026; непознат формат се връща както е."""
+    try:
+        return datetime.datetime.strptime(date_iso, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return date_iso
+
+
+def get_previous_sign_horoscope(sign: str, before_date_iso: str):
+    """Най-новият успешен хороскоп преди дадена дата — (date, content) или (None, None)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT date, content FROM sign_horoscope "
+            "WHERE sign = ? AND date < ? ORDER BY date DESC LIMIT 1",
+            (sign, before_date_iso)
+        ).fetchone()
+        return (row[0], row[1]) if row else (None, None)
 
 
 def set_sign_horoscope(sign: str, date_iso: str, content: str) -> None:
@@ -3392,14 +3448,14 @@ def _md_to_html(raw: str) -> str:
 
 
 def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Optional[str]:
-    """Write and cache today's horoscope for one zodiac sign. Returns the raw reply."""
-    sky = daily_sky()
+    """Write and cache the horoscope for one zodiac sign and day. Returns the raw reply."""
+    sky = sky_for_date(date_iso)
     sign_name = sign_data["name"]
     prompt = f"""Ти си професионален астролог. Напиши ДНЕВЕН ХОРОСКОП ЗА ЗОДИЯ {sign_name} за {date_bg}, стриктно базиран на реалните астрономически данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ за хората, родени под знака {sign_name} (слънчев знак).
 
 За знака {sign_name}: стихия {sign_data['element']}, модалност {sign_data['modality']}, управител {sign_data['ruler']}, период {sign_data['dates']}.
 
-=== НЕБЕТО ДНЕС ===
+=== НЕБЕТО ЗА {date_bg} ===
 {_sky_context_text(sky)}
 
 === ЗАДАЧА ===
@@ -5415,12 +5471,12 @@ def api_admin_templates_preview(payload: dict, admin: dict = Depends(require_adm
         brand=brand_name(), company_name=lg.get("company_name") or "",
         company_id=lg.get("company_id") or "", address=lg.get("address") or "",
         contact=(lg.get("contact") or lg.get("privacy_email") or ""),
-        domain=BRAND_DOMAIN, e_shop_n=lg.get("e_shop_n") or "",
+        domain=BRAND_DOMAIN, e_shop_n=e_shop_number(lg),
         doc_number="0000000000", issued_str=issued.strftime("%d.%m.%Y %H:%M:%S"),
         order_no="ПРИМЕР", trans_ref="pi_preview", items=items,
         net_total=3.33, vat_total=0.67, total=4.00, vat_rate=20,
         payment_method=SALE_PAYMENT_METHOD,
-        qr_data=sale_qr_data(lg.get("e_shop_n") or "", "ПРИМЕР", "pi_preview", issued, 400))
+        qr_data=sale_qr_data(e_shop_number(lg), "ПРИМЕР", "pi_preview", issued, 400))
     subject, body = render_email_template("receipt", unp="0000000000 (ПРИМЕР)")
     send_email(to, subject, body, attachment=("primer-dokument.pdf", pdf_bytes, "application/pdf"),
                html=_email_html(body))
@@ -6422,13 +6478,13 @@ def build_sale_receipt(payment_id: int) -> Tuple[bytes, str, str]:
         company_id=lg.get("company_id") or "",
         address=lg.get("address") or "",
         contact=(lg.get("contact") or lg.get("privacy_email") or ""),
-        domain=BRAND_DOMAIN, e_shop_n=lg.get("e_shop_n") or "",
+        domain=BRAND_DOMAIN, e_shop_n=e_shop_number(lg),
         doc_number=doc_number, issued_str=issued.strftime("%d.%m.%Y %H:%M:%S"),
         order_no=order_no, trans_ref=trans_ref,
         items=items, net_total=(total_cents - vat_cents) / 100.0, vat_total=vat_cents / 100.0,
         total=total_cents / 100.0, vat_rate=saft.VAT_RATE,
         payment_method=SALE_PAYMENT_METHOD,
-        qr_data=sale_qr_data(lg.get("e_shop_n") or "", order_no, trans_ref, issued, total_cents),
+        qr_data=sale_qr_data(e_shop_number(lg), order_no, trans_ref, issued, total_cents),
         logo_path=str(logo) if logo.exists() else None)
     filename = f"{brand_slug()}-dokument-za-prodazhba-{doc_number}.pdf"
     return pdf_bytes, filename, doc_number
@@ -9323,6 +9379,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
     `model=PAID_MODEL` (deepseek-v4-pro), безплатните ползват дефолта (Flash)."""
     import urllib.request
     import urllib.error
+    import http.client
 
     # Граматичните правила се добавят към всяко разчитане, без значение от модела.
     prompt = BG_GRAMMAR_RULES + "\n\n" + prompt
@@ -9389,6 +9446,13 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
             _note_ai_usage(provider, result)   # всеки опит се плаща, и отрязаният
+            # DeepSeek при претоварване връща 200 с {"error": ...} без "choices".
+            # Тук падаше с KeyError и грозен traceback вместо чисто съобщение.
+            if "choices" not in result or not result["choices"]:
+                err = result.get("error")
+                if isinstance(err, dict):
+                    err = err.get("message") or err.get("code")
+                raise AIError(f"{provider} върна грешка: {err or 'отговор без текст'}")
             msg = result["choices"][0]["message"]
             content = msg.get("content") or ""
             # Fallback: ако все пак моделът е мислил и content е празен, вземи
@@ -9416,6 +9480,9 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
         raise AIError(f"{provider} отне прекалено дълго да отговори (над 3 минути). Опитайте отново — генерирането на дълъг текст понякога отнема повече време.")
     except urllib.error.URLError as e:
         raise AIError(f"Няма връзка с {provider}: {e.reason}") from e
+    except http.client.HTTPException as e:
+        # IncompleteRead / RemoteDisconnected — връзката е прекъсната по средата.
+        raise AIError(f"{provider} прекъсна връзката по средата на отговора. Опитайте отново.") from e
 
 
 _call_ai_unlogged = call_ai
@@ -10347,6 +10414,8 @@ async def horoskop_hub(request: Request):
     previews = []
     for sign in ZODIAC_SIGNS:
         cached = get_sign_horoscope(sign["sign"], date_iso)
+        if not cached:
+            _, cached = get_previous_sign_horoscope(sign["sign"], date_iso)
         excerpt = ""
         if cached:
             _, body = split_summary(cached)
@@ -10375,6 +10444,11 @@ async def horoskop_sign(request: Request, sign_slug: str):
     date_bg = now.strftime("%d.%m.%Y")
 
     cached = get_sign_horoscope(sign["sign"], date_iso)
+    stale_date = None
+    if not cached:
+        prev_date, cached = get_previous_sign_horoscope(sign["sign"], date_iso)
+        if prev_date:
+            stale_date = _bg_date(prev_date)
     ctx = _sign_seo_context(request, sign, date_bg)
     ctx.update({
         "sign": sign,
@@ -10383,6 +10457,7 @@ async def horoskop_sign(request: Request, sign_slug: str):
         "date_iso": date_iso,
         "sky": daily_sky(),
         "faq": _SIGN_FAQ,
+        "stale_date": stale_date,
     })
     if cached:
         summary, body = split_summary(cached)
@@ -10400,22 +10475,26 @@ def sofia_today() -> datetime.date:
 
 
 def warm_sign_horoscopes() -> int:
-    """Пуска генерирането за всеки знак без текст за днес. Връща колко са пуснати.
-    Написаните и вече течащите се прескачат — повторното викане е безплатно."""
+    """Пуска генерирането за всеки знак без текст за днес И утре. Връща колко са пуснати.
+    Държим утрешния хороскоп готов още днес (ден напред): дори нощната генерация
+    да се провали, страницата за утре никога не остава празна."""
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
-    date_iso = now.date().isoformat()
-    date_bg = now.strftime("%d.%m.%Y")
+    dates = [now.date(), now.date() + datetime.timedelta(days=1)]
     started = 0
-    for sign in ZODIAC_SIGNS:
-        if get_sign_horoscope(sign["sign"], date_iso):
-            continue
-        cache_key = f"sign:{sign['sign']}:{date_iso}"
-        with _AI_JOBS_LOCK:
-            running = _AI_JOBS.get(cache_key)
-        if running and not running["done"].is_set():
-            continue
-        ai_job(cache_key, lambda s=sign: _generate_sign_horoscope(s, date_bg, date_iso))
-        started += 1
+    for d in dates:
+        date_iso = d.isoformat()
+        date_bg = d.strftime("%d.%m.%Y")
+        for sign in ZODIAC_SIGNS:
+            if get_sign_horoscope(sign["sign"], date_iso):
+                continue
+            cache_key = f"sign:{sign['sign']}:{date_iso}"
+            with _AI_JOBS_LOCK:
+                running = _AI_JOBS.get(cache_key)
+            if running and not running["done"].is_set():
+                continue
+            ai_job(cache_key, lambda s=sign, db=date_bg, di=date_iso:
+                   _generate_sign_horoscope(s, db, di))
+            started += 1
     return started
 
 
@@ -10442,7 +10521,7 @@ async def _horoscope_warm_loop():
         try:
             started = await asyncio.to_thread(run_horoscope_warm)
             if started:
-                log.info("Хороскопи по зодия: пуснати %d за днес", started)
+                log.info("Хороскопи по зодия: пуснати %d (днес + утре)", started)
         except Exception:
             log.exception("Генерирането на хороскопите по зодия не тръгна")
         await asyncio.sleep(HOROSCOPE_WARM_EVERY)
@@ -10453,6 +10532,16 @@ def api_horoskop_warm():
     """Същото като сутрешния цикъл, при нужда на ръка."""
     return {"started": warm_sign_horoscopes(),
             "date": datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y")}
+
+
+def _stale_sign_horoscope(sign: dict, date_iso: str) -> Optional[dict]:
+    """Последният написан хороскоп преди днес — показва се, докато днешният липсва."""
+    prev_date, prev = get_previous_sign_horoscope(sign["sign"], date_iso)
+    if not prev:
+        return None
+    summary, body = split_summary(prev)
+    return {"summary": summary, "body": body, "date": _bg_date(prev_date),
+            "cached": True, "stale": True}
 
 
 @app.get("/api/horoskop/{sign_slug}")
@@ -10479,6 +10568,9 @@ def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": True}
         if ai_job_failed_recently(running):
+            stale = _stale_sign_horoscope(sign, date_iso)
+            if stale:
+                return stale
             return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_sign_horoscope(sign, date_bg, date_iso))
@@ -10487,6 +10579,9 @@ def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
         if cached:
             summary, body = split_summary(cached)
             return {"summary": summary, "body": body, "date": date_bg, "cached": False}
+        stale = _stale_sign_horoscope(sign, date_iso)
+        if stale:
+            return stale
         return {"body": AI_UNAVAILABLE, "date": date_bg, "error": True}
     return {"pending": True, "date": date_bg}
 
