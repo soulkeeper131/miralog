@@ -16,6 +16,8 @@
     <meta property="og:description" content="{{ seo_description }}">
     <meta property="og:url" content="{{ seo_url }}">
     {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    {% if seo_image and seo_image_size %}<meta property="og:image:width" content="{{ seo_image_size[0] }}"><meta property="og:image:height" content="{{ seo_image_size[1] }}"><meta property="og:image:type" content="image/jpeg">{% endif %}
+    {% if seo_image %}<meta property="og:image:alt" content="{{ seo_title }}">{% endif %}
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ seo_title }}">
     <meta name="twitter:description" content="{{ seo_description }}">

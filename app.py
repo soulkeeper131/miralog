@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import jinja2
+import og_cards
 import os, re, sys, json, sqlite3, datetime, urllib.parse, urllib.request, urllib.error, secrets, hashlib, asyncio, threading, time
 from pathlib import Path
 from contextlib import asynccontextmanager, contextmanager
@@ -3335,12 +3336,9 @@ def seo_settings() -> dict:
         values[key] = values[key].replace("{brand}", name)
     # An unset share image follows the logo, uploaded or bundled.
     if not values["seo_og_image"]:
-        logo = brand()["logo"]
-        # The bundled logo is 180x180 — too small for social cards. Ship the
-        # dedicated 1200x630 card instead (an uploaded logo still wins).
-        if logo == "/static/logo-header.png":
-            logo = "/static/og-image.jpg"
-        values["seo_og_image"] = logo
+        # Логото (качено или вградено) е квадратно и малко — във Facebook и
+        # LinkedIn излизаше изрязано. Картата 1200×630 е за това.
+        values["seo_og_image"] = "/static/og-image.jpg"
     return values
 
 _SKY_CACHE_TTL = 600  # секунди — позициите са "в момента", но за лентата е достатъчно точно
@@ -3920,6 +3918,9 @@ def seo_context(request: Request, *, path: str = "/") -> dict:
         "seo_robots": seo["seo_robots"],
         "seo_verification": seo["seo_verification"],
         "seo_image": image,
+        # og:image:width/height — без тях Facebook често не показва картинката
+        # при първото споделяне. Знаем ги само за нашите карти.
+        "seo_image_size": (1200, 630) if ("/og/" in image or image.endswith("/static/og-image.jpg")) else None,
         "seo_url": base + path,
     }
 
@@ -7374,6 +7375,10 @@ def run_scheduled_jobs() -> None:
         run_saft_automation()
     except Exception:
         log.exception("Автоматичният одиторски файл (Н-18) се провали")
+    try:
+        prune_og_cache()
+    except Exception:
+        log.warning("Чистенето на картинките за споделяне не мина", exc_info=True)
     run_db_backup()
     run_digest_emails()
     try:
@@ -7982,14 +7987,21 @@ def api_create_share(person_id: int, data: ShareCreate, request: Request,
     # Споделянето изнася текста навън — като PDF-а и имейла, само при право
     # за модула (отнет или върнат модул не бива да се публикува по линк).
     require_reading_access(user_id, cache_key)
-    token = secrets.token_urlsafe(24)
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT INTO share_links (token, person_id, user_id, cache_key) VALUES (?, ?, ?, ?)",
-            (token, person_id, user_id, cache_key))
-        conn.commit()
+        # Един линк на разчитане: всяко „Сподели“ правеше нов и старите се трупаха.
+        row = conn.execute("SELECT token FROM share_links WHERE person_id = ? AND user_id = ?"
+                           " AND cache_key = ? ORDER BY created_at LIMIT 1",
+                           (person_id, user_id, cache_key)).fetchone()
+        token = row[0] if row else secrets.token_urlsafe(24)
+        if not row:
+            conn.execute(
+                "INSERT INTO share_links (token, person_id, user_id, cache_key) VALUES (?, ?, ?, ?)",
+                (token, person_id, user_id, cache_key))
+            conn.commit()
     base = site_base_url(request)
-    return {"token": token, "url": f"{base}/share/{token}"}
+    return {"token": token, "url": f"{base}/share/{token}",
+            "image": f"{base}/og/share/{token}.jpg?size=story",
+            "title": READING_TITLES.get(reading_base(cache_key), "Разчитане")}
 
 @app.get("/api/share/{token}")
 def api_get_share(token: str):
@@ -8013,7 +8025,8 @@ def api_get_share(token: str):
     title = READING_TITLES.get(title_key, READING_TITLES.get(row["cache_key"], "Разчитане"))
     text = prose or cached["content"]
     return {
-        "person_name": row["person_name"],
+        # Само малкото име: споделеният линк е публичен за всеки, който го има.
+        "person_name": first_name(row["person_name"]),
         "title": title,
         "cache_key": row["cache_key"],
         "summary": summary,
@@ -10822,14 +10835,157 @@ def _share_available(token: str) -> bool:
             and get_ai_cache(row[2], row[1]) is not None)
 
 
+# --- Картинки за споделяне (/og/…) ------------------------------------------
+# Рисуват се на сървъра (og_cards.py) и се пазят на диска; адресът носи
+# версия, защото Facebook, Telegram и LinkedIn кешират картинката по адрес.
+OG_DIR = DB_PATH.parent / "og"
+OG_KEEP_DAYS = 30
+
+
+def og_image_bytes(key: str, builder, size: str) -> bytes:
+    size = size if size in og_cards.SIZES else "og"
+    digest = hashlib.sha1(f"{og_cards.CARD_VERSION}|{key}|{size}".encode()).hexdigest()[:20]
+    path = OG_DIR / f"{digest}.jpg"
+    try:
+        return path.read_bytes()
+    except OSError:
+        pass
+    data = og_cards.render_card(builder(), size)
+    try:
+        OG_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".part")
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except OSError:
+        log.warning("Картинката %s не се записа в кеша", key, exc_info=True)
+    return data
+
+
+def prune_og_cache(now: Optional[float] = None) -> int:
+    """Старите картинки (дневните хороскопи се трупат) — от часовия цикъл."""
+    cutoff = (now or time.time()) - OG_KEEP_DAYS * 86400
+    removed = 0
+    for f in OG_DIR.glob("*.jpg") if OG_DIR.exists() else []:
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def _og_response(data: bytes, max_age: int) -> Response:
+    return Response(content=data, media_type="image/jpeg",
+                    headers={"Cache-Control": f"public, max-age={max_age}"})
+
+
+def _card_footer() -> str:
+    return (brand().get("domain") or BRAND_DOMAIN)
+
+
+def _sign_card(sign: dict) -> tuple:
+    """Дневният хороскоп по зодия: ключът се сменя, щом текстът за деня излезе."""
+    now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
+    date_iso, date_bg = now.date().isoformat(), now.strftime("%d.%m.%Y")
+    cached = get_sign_horoscope(sign["sign"], date_iso)
+    summary, body = split_summary(cached) if cached else ({}, "")
+    summary = summary if isinstance(summary, dict) else {}
+    chips = [f"Настроение: {summary['mood']}" if summary.get("mood") else "",
+             f"Енергия: {summary['energy'].lower()}" if summary.get("energy") else "",
+             f"Фокус: {summary['focus']}" if summary.get("focus") else ""]
+    data = {"kicker": f"Дневен хороскоп · {date_bg}", "title": sign["name"], "glyph": sign["glyph"],
+            "body": _first_sentences(body, 2, 200) if body else
+                    f"Какво носи днешният ден за родените под знака {sign['name']}.",
+            "chips": [c for c in chips if c], "footer": _card_footer()}
+    return f"sign:{sign['sign']}:{date_iso}:{'t' if cached else 'e'}", data
+
+
+@app.get("/og/horoskop/{sign_slug}.jpg")
+async def og_sign_horoscope(sign_slug: str, size: str = "og"):
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такъв знак.")
+    key, data = await asyncio.to_thread(_sign_card, sign)
+    return _og_response(await asyncio.to_thread(og_image_bytes, key, lambda: data, size), 3600)
+
+
+@app.get("/og/zodia/{sign_slug}.jpg")
+async def og_sign_profile(sign_slug: str, size: str = "og"):
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такъв знак.")
+
+    def build():
+        return {"kicker": f"Зодия · {sign['dates']}", "title": sign["name"], "glyph": sign["glyph"],
+                "body": f"{sign['element']} и {sign['modality'].lower()} знак, управляван от "
+                        f"{sign['ruler']}. Характер, любов, работа и пари.",
+                "chips": [], "footer": _card_footer()}
+    return _og_response(await asyncio.to_thread(og_image_bytes, f"zodia:{sign['sign']}", build, size), 86400)
+
+
+@app.get("/og/savmestimost/{pair_slug}.jpg")
+async def og_compatibility(pair_slug: str, size: str = "og"):
+    pair = COMPAT_BY_SLUG.get(pair_slug)
+    if not pair:
+        raise HTTPException(404, "Няма такава двойка.")
+    a, b = pair
+    cached = await asyncio.to_thread(get_compatibility, a["sign"], b["sign"])
+
+    def build():
+        return {"kicker": "Любовна съвместимост", "title": f"{a['name']} и {b['name']}",
+                "glyph": a["glyph"] + b["glyph"],
+                "body": _first_sentences(cached, 2, 200) if cached else
+                        "Любов, комуникация и предизвикателства между двата знака.",
+                "chips": [], "footer": _card_footer()}
+    key = f"compat:{pair_slug}:{'t' if cached else 'e'}"
+    return _og_response(await asyncio.to_thread(og_image_bytes, key, build, size), 86400)
+
+
+@app.get("/og/share/{token}.jpg")
+async def og_share(token: str, size: str = "og"):
+    meta = await asyncio.to_thread(_share_meta, token)
+    if not meta:
+        raise HTTPException(404, "Линкът не е намерен.")
+
+    def build():
+        # Без дата, час и място на раждане — само малкото име и резюмето.
+        return {"kicker": f"Разчитане за {meta['name']}", "title": meta["title"], "glyph": None,
+                "body": meta["description"], "chips": [], "footer": _card_footer()}
+    key = f"share:{token}:{hashlib.sha1((meta['description'] or '').encode()).hexdigest()[:8]}"
+    return _og_response(await asyncio.to_thread(og_image_bytes, key, build, size), 86400)
+
+
+def _share_meta(token: str) -> Optional[dict]:
+    """Заглавие, описание и картинка за прегледа на линка — без JavaScript.
+
+    Facebook, Viber, WhatsApp, Telegram и т.н. не изпълняват JS, а страницата
+    се пълнеше само с него — прегледът беше голо „Споделено разчитане“."""
+    try:
+        d = api_get_share(token)
+    except HTTPException:
+        return None
+    summary = d.get("summary") or {}
+    desc = ""
+    if isinstance(summary, dict) and (summary.get("mood") or summary.get("focus")):
+        desc = " · ".join(x for x in (summary.get("mood"), summary.get("focus")) if x)
+    desc = desc or _first_sentences(d.get("content") or "", 2, 180)
+    return {"title": d["title"], "name": d["person_name"], "description": desc}
+
+
 @app.get("/share/{token}", response_class=HTMLResponse)
 async def share_page(request: Request, token: str):
-    available = await asyncio.to_thread(_share_available, token)
+    meta = await asyncio.to_thread(_share_meta, token)
+    base = public_base_url(request)
+    ctx = {"request": request, "token": token, "share": meta,
+           "share_url": f"{base}/share/{token}",
+           "share_image": f"{base}/og/share/{token}.jpg?v={og_cards.CARD_VERSION}"}
     # Невалиден (или спрян) линк е 404 и за търсачките, не „200 OK“ с грешка.
-    return HTMLResponse(templates.get_template("share.html").render({
-        "request": request,
-        "token": token,
-    }), status_code=200 if available else 404)
+    # noindex и в заглавката: robots.txt не бива да спира /share/ (X и
+    # LinkedIn тогава не взимат прегледа), а лични разчитания нямат място в Google.
+    return HTMLResponse(templates.get_template("share.html").render(ctx),
+                        status_code=200 if meta else 404,
+                        headers={"X-Robots-Tag": "noindex, nofollow"})
 
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy_page(request: Request):
@@ -10971,6 +11127,14 @@ def _split_reading(body_html: str, free: int = None) -> tuple:
     return body_html[:cut], body_html[cut:], len(starts) - free
 
 
+def _own_og_image(ctx: dict, request: Request, path: str, version: str = "") -> None:
+    """Собствената карта на страницата вместо общата картинка; версията в
+    адреса обновява прегледа в мрежите, които кешират по адрес."""
+    v = f"{og_cards.CARD_VERSION}-{version}" if version else str(og_cards.CARD_VERSION)
+    ctx["seo_image"] = f"{public_base_url(request)}{path}?v={v}"
+    ctx["seo_image_size"] = (1200, 630)
+
+
 def _sign_seo_context(request: Request, sign: dict, date_bg: str) -> dict:
     """SEO context for one sign's horoscope page."""
     ctx = seo_context(request, path=f"/horoskop/{sign['slug']}")
@@ -11085,6 +11249,7 @@ async def horoskop_sign(request: Request, sign_slug: str):
         if prev_date:
             stale_date = _bg_date(prev_date)
     ctx = _sign_seo_context(request, sign, date_bg)
+    _own_og_image(ctx, request, f"/og/horoskop/{sign['slug']}.jpg", date_iso)
     ctx.update({
         "sign": sign,
         "signs": ZODIAC_SIGNS,
@@ -11421,6 +11586,7 @@ async def sign_profile_page(request: Request, sign_slug: str):
 
     cached = get_sign_profile(sign["sign"])
     ctx = seo_context(request, path=f"/zodia/{sign_slug}")
+    _own_og_image(ctx, request, f"/og/zodia/{sign_slug}.jpg")
     ctx["seo_title"] = f"Характеристика на {sign['name']} — зодия {sign['name']} | {brand_name()}"
     ctx["seo_description"] = (f"Характеристика на зодия {sign['name']}: характер, силни и слаби страни, любов, работа и пари. "
                               f"Виж какво значи конкретно в твоята натална карта.")
@@ -11530,6 +11696,7 @@ async def compatibility_page(request: Request, pair_slug: str):
     sign_a, sign_b = pair
     cached = get_compatibility(sign_a["sign"], sign_b["sign"])
     ctx = seo_context(request, path=f"/savmestimost/{pair_slug}")
+    _own_og_image(ctx, request, f"/og/savmestimost/{pair_slug}.jpg", "t" if cached else "e")
     ctx["seo_title"] = f"Съвместимост {sign_a['name']} и {sign_b['name']} — по зодии | {brand_name()}"
     ctx["seo_description"] = (f"Съвместимост между {sign_a['name']} и {sign_b['name']}: любов, комуникация и "
                               f"предизвикателства. Виж какво значи конкретно за вашата връзка.")

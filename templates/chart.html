@@ -1647,6 +1647,7 @@
     </div>
 
     <script src="/static/locked.js?v=6"></script>
+    <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=2"></script>
     <script src="/static/modules.js?v=5"></script>
     <script>
@@ -2353,7 +2354,11 @@
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(detailText(data.detail, 'Грешка ' + resp.status));
                 const url = data.url;
-                if (navigator.clipboard && navigator.clipboard.writeText) {
+                if (typeof openShareSheet === 'function') {
+                    // Мрежите, системното „Сподели“ на телефона и картинка за Stories.
+                    await openShareSheet({ url: url, title: data.title || 'Моето разчитане',
+                                           image: data.image, feature: key.split(':')[0] });
+                } else if (navigator.clipboard && navigator.clipboard.writeText) {
                     await navigator.clipboard.writeText(url);
                     uiToast('Линкът за споделяне е копиран', 'ok');
                 } else {

@@ -3,8 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Споделено разчитане — {{ brand().name }}</title>
+    <title>{% if share %}{{ share.title }} — за {{ share.name }}{% else %}Споделено разчитане{% endif %} — {{ brand().name }}</title>
     <meta name="robots" content="noindex">
+    {% if share %}
+    {# Прегледът на линка във Facebook, Viber, WhatsApp, Messenger, Telegram,
+       X и LinkedIn — те не изпълняват JavaScript, затова мета е от сървъра. #}
+    <meta name="description" content="{{ share.description }}">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="{{ brand().name }}">
+    <meta property="og:locale" content="bg_BG">
+    <meta property="og:title" content="{{ share.title }} — за {{ share.name }}">
+    <meta property="og:description" content="{{ share.description }}">
+    <meta property="og:url" content="{{ share_url }}">
+    <meta property="og:image" content="{{ share_image }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:alt" content="{{ share.title }} — {{ brand().name }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ share.title }} — за {{ share.name }}">
+    <meta name="twitter:description" content="{{ share.description }}">
+    <meta name="twitter:image" content="{{ share_image }}">
+    {% endif %}
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>

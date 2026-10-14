@@ -17,6 +17,8 @@
     <meta property="og:description" content="{{ seo_description }}">
     <meta property="og:url" content="{{ seo_url }}">
     {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    {% if seo_image and seo_image_size %}<meta property="og:image:width" content="{{ seo_image_size[0] }}"><meta property="og:image:height" content="{{ seo_image_size[1] }}"><meta property="og:image:type" content="image/jpeg">{% endif %}
+    {% if seo_image %}<meta property="og:image:alt" content="{{ seo_title }}">{% endif %}
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ seo_title }}">
     <meta name="twitter:description" content="{{ seo_description }}">
@@ -103,6 +105,7 @@
             <div class="cta-row">
                 <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
                 <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
+                <button type="button" class="btn btn-ghost share-btn" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="savmestimost">Сподели</button>
             </div>
             <p class="cta-note">Истинската съвместимост зависи от двете пълни карти — не само от Слънцето.</p>
         </div>
@@ -256,5 +259,6 @@
         })();
     </script>
     {% endif %}
+    <script src="/static/share.js?v=1"></script>
 </body>
 </html>
