@@ -1329,7 +1329,7 @@
                     await uiAlert('Профилът е готов и избраните разчитания са '
                         + 'отключени. Това е тестово плащане — истинско не е направено.',
                         { title: 'Готово (тест)' });
-                } else if (wanted.size) {
+                } else if (wanted.size && !data.checkout_error) {
                     // Stripe is not configured on this install: the account is
                     // made, the modules are noted, somebody follows up by hand.
                     await uiAlert('Профилът е готов. Ще се свържем с теб за '

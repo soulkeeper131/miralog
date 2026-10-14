@@ -2909,6 +2909,7 @@ def api_onboard(data: OnboardRequest, request: Request):
             # админа изглеждаше като регистрация без поръчка. Сега клиентът
             # научава, а изборът се запомня, за да плати от картата.
             log.warning("Onboarding checkout за %s се провали: %s", email, e, exc_info=True)
+            report_checkout_failure("регистрация с избрани модули (/start)", e)
             result["checkout_error"] = (
                 "Профилът е готов, но плащането не можа да се подготви. "
                 "Избраните разчитания те чакат в картата — опитай оттам.")
@@ -3065,8 +3066,8 @@ EMAIL_TEMPLATES = {
     "set_password_subject": "Картата ти е готова — задай парола",
     "set_password_body": (
         "Здравей!\n\n"
-        "Плащането мина и наталната ти карта е изчислена.\n"
-        "Задай парола, за да влизаш в профила си:\n\n"
+        "Наталната ти карта е запазена в профила ти.\n"
+        "Задай парола, за да влизаш в него и от друго устройство:\n\n"
         "{link}\n\n"
         "Връзката е валидна 2 часа. Ако изтече, използвай „Забравена парола“ "
         "на страницата за вход.\n\n— {brand}"
@@ -5052,6 +5053,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
             return {"ok": True, "checkout_url": url, "bundle": bundle}
         except Exception as e:
             log.warning("Stripe checkout за пакета се провали: %s", e)
+            report_checkout_failure("покупка на пакета", e)
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
@@ -5097,6 +5099,7 @@ def api_request_feature(feature_key: str, request: Request,
             return {"ok": True, "checkout_url": url, "offer": offer}
         except Exception as e:
             log.warning("Stripe checkout за %s се провали: %s", feature_key, e)
+            report_checkout_failure(f"покупка на модул {feature_key}", e)
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
@@ -5624,6 +5627,24 @@ def notify_owner(kind: str, subject: str, body: str) -> bool:
     except Exception:
         log.warning("Известието „%s“ не тръгна", subject, exc_info=True)
         return False
+
+
+def report_checkout_failure(where: str, error: Exception) -> None:
+    """Stripe не създаде Checkout — клиентът не може да плати.
+
+    Досега това оставаше само в лога, а клиентът виждаше „ще се свържем с
+    теб“, така че плащанията можеха да спрат за дни, без никой да разбере.
+    report_problem праща най-много едно писмо на PROBLEM_COOLDOWN."""
+    try:
+        report_problem(
+            "stripe_checkout",
+            "Плащанията не работят: Stripe отказва Checkout",
+            f"Къде: {where}\nГрешка от Stripe: {type(error).__name__}: {str(error)[:500]}\n\n"
+            "Клиентът вижда „ще се свържем с теб“ и не може да плати. "
+            "Провери Stripe Dashboard → Developers → Logs и ключа STRIPE_SECRET_KEY в Coolify.",
+            code=REQUEST_ID.get())
+    except Exception:
+        log.warning("Докладът за неуспешен Checkout не тръгна", exc_info=True)
 
 
 def report_problem(key: str, title: str, detail: str, *, code: Optional[str] = None) -> bool:
@@ -6628,7 +6649,7 @@ def send_welcome_set_password(user_id: int) -> None:
         return
     try:
         token = create_password_reset(user_id)
-        base = (get_setting("seo_site_url") or "").rstrip("/")
+        base = site_base_url()
         link = base + "/reset-password?token=" + token
         try_send_template(row["email"], "set_password", link=link)
     except Exception as e:
@@ -7225,6 +7246,7 @@ def api_checkout_feature(feature_key: str, request: Request,
             brand=brand_name(),
         )
     except Exception as e:
+        report_checkout_failure(f"покупка на модул {feature_key} (billing)", e)
         raise HTTPException(502, f"Stripe грешка: {e}") from e
     return {"url": url}
 
@@ -10546,8 +10568,12 @@ async def _horoscope_warm_loop():
 
 
 @app.get("/api/horoskop/warm")
-def api_horoskop_warm():
+def api_horoskop_warm(request: Request):
     """Същото като сутрешния цикъл, при нужда на ръка."""
+    # Пуска десетки AI задачи наведнъж — само за админ. Без това всеки можеше
+    # да ги вика и да харчи AI кредити и паметта на контейнера.
+    if not is_admin_request(request):
+        raise HTTPException(404, "Няма такъв ресурс.")
     return {"started": warm_sign_horoscopes(),
             "date": datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y")}
 
@@ -10644,8 +10670,12 @@ async def planet_house_page(request: Request, planet_slug: str, house_num: int):
 
 
 @app.get("/api/dom/warm")
-def api_planet_house_warm():
+def api_planet_house_warm(request: Request):
     """Генерира всички планета×дом комбинации без кеш (120 страници, еднократно)."""
+    # Пуска десетки AI задачи наведнъж — само за админ. Без това всеки можеше
+    # да ги вика и да харчи AI кредити и паметта на контейнера.
+    if not is_admin_request(request):
+        raise HTTPException(404, "Няма такъв ресурс.")
     started = 0
     for p in BODY_PLANETS:
         for h in HOUSES:
@@ -10755,8 +10785,12 @@ def api_planet_sign(planet_slug: str, sign_slug: str, request: Request, refresh:
 
 
 @app.get("/api/planeta/warm")
-def api_planet_warm():
+def api_planet_warm(request: Request):
     """Generate every planet×sign combo that has no cache yet (132 pages, one-off)."""
+    # Пуска десетки AI задачи наведнъж — само за админ. Без това всеки можеше
+    # да ги вика и да харчи AI кредити и паметта на контейнера.
+    if not is_admin_request(request):
+        raise HTTPException(404, "Няма такъв ресурс.")
     started = 0
     for p in PLANETS:
         for s in ZODIAC_SIGNS:
@@ -10806,8 +10840,12 @@ async def sign_profile_page(request: Request, sign_slug: str):
 
 
 @app.get("/api/zodia/warm")
-def api_sign_profile_warm():
+def api_sign_profile_warm(request: Request):
     """Generate every sign profile that has no cache yet (12 pages, one-off)."""
+    # Пуска десетки AI задачи наведнъж — само за админ. Без това всеки можеше
+    # да ги вика и да харчи AI кредити и паметта на контейнера.
+    if not is_admin_request(request):
+        raise HTTPException(404, "Няма такъв ресурс.")
     started = 0
     for s in ZODIAC_SIGNS:
         if get_sign_profile(s["sign"]):
@@ -10915,8 +10953,12 @@ async def compatibility_page(request: Request, pair_slug: str):
 
 
 @app.get("/api/savmestimost/warm")
-def api_compatibility_warm():
+def api_compatibility_warm(request: Request):
     """Генерира всички двойки без кеш (78 страници, еднократно)."""
+    # Пуска десетки AI задачи наведнъж — само за админ. Без това всеки можеше
+    # да ги вика и да харчи AI кредити и паметта на контейнера.
+    if not is_admin_request(request):
+        raise HTTPException(404, "Няма такъв ресурс.")
     started = 0
     for sa, sb, slug in COMPAT_PAIRS:
         if get_compatibility(sa["sign"], sb["sign"]):

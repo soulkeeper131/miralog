@@ -318,3 +318,14 @@ def test_oauth_signup_choice_is_remembered(app, db, user):
     assert app.take_pending_purchase(user["id"])["keys"] == ["moon"]
     res = app.api_remember_pending(app.PendingPurchase(bundle=True), user=(user["id"], user["email"]))
     assert res["bundle"] and len(res["keys"]) >= 2
+
+
+def test_set_password_link_is_absolute_without_site_url(app, db, monkeypatch):
+    """Без seo_site_url линкът в писмото беше „/reset-password?…“ — не се отваря."""
+    sent = []
+    monkeypatch.setattr(app, "try_send_template", lambda to, kind, **kw: sent.append(kw.get("link")))
+    monkeypatch.setattr(app, "IS_PRODUCTION", True)
+    app.set_setting("seo_site_url", "")
+    uid = app.create_user(f"sp-{secrets.token_hex(3)}@example.com", "x")["id"]
+    app.send_welcome_set_password(uid)
+    assert sent and sent[0].startswith("https://"), sent

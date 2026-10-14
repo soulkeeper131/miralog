@@ -243,3 +243,18 @@ def test_failed_checkout_unlocks_nothing(app, db, monkeypatch):
     with sqlite3.connect(app.DB_PATH) as c:
         uid = c.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()[0]
     assert "profile" not in app.unlocked_features(app.get_user_by_id(uid))
+
+
+def test_failed_checkout_alerts_the_owner(app, db, monkeypatch):
+    """Stripe отказваше Checkout дни наред, а собственикът не разбираше:
+    провалът стоеше само в лога, клиентът виждаше „ще се свържем с теб“."""
+    monkeypatch.setattr(app, "MOCK_PAYMENTS", False)
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("No such price")))
+    reported = []
+    monkeypatch.setattr(app, "report_problem",
+                        lambda key, title, detail, code=None: reported.append((key, detail)) or True)
+    _onboard(app, f"f-{secrets.token_hex(3)}@example.com", ["profile"])
+    assert reported and reported[0][0] == "stripe_checkout"
+    assert "No such price" in reported[0][1]

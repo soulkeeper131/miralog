@@ -1,5 +1,14 @@
 {% set gid = ga_id() %}
 {% set fbid = fb_pixel_id() %}
+{# Страниците викат track()/trackPurchase() на места като пренасочването към
+   Stripe. Истинските идват от consent.js в края на <body>; ако той не се
+   зареди (блокер, мрежа), тези празни версии пазят пътя до плащането от
+   TypeError. consent.js ги заменя, когато се зареди. #}
+<script>
+  window.track = window.track || function () {};
+  window.trackPurchase = window.trackPurchase || function () {};
+</script>
+
 
 {% if fbid %}
 <!-- Meta Pixel.
@@ -39,11 +48,18 @@ src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"
   window.GA_ID = '{{ gid }}';
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
+  // Изборът от предишно посещение важи още за първия page_view: consent.js
+  // се зарежда в края на страницата, след config, и до тогава всеки
+  // page_view на съгласил се посетител отиваше като „без съгласие“.
+  var consentGiven = false;
+  try { consentGiven = localStorage.getItem('miralog_consent') === 'granted'; } catch (e) {}
+  var consentState = consentGiven ? 'granted' : 'denied';
   gtag('consent', 'default', {
-    'ad_storage': 'denied',
-    'ad_user_data': 'denied',
-    'ad_personalization': 'denied',
-    'analytics_storage': 'denied'
+    'ad_storage': consentState,
+    'ad_user_data': consentState,
+    'ad_personalization': consentState,
+    'analytics_storage': consentState,
+    'wait_for_update': 500
   });
   gtag('js', new Date());
   gtag('config', '{{ gid }}');

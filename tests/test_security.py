@@ -187,3 +187,16 @@ def test_sentry_scrubbing_removes_personal_data(app, monkeypatch):
     monkeypatch.delenv("SENTRY_DSN", raising=False)
     monkeypatch.delitem(_sys.modules, "sentry_sdk", raising=False)
     importlib.reload(app)
+
+
+@pytest.mark.parametrize("fn", ["api_horoskop_warm", "api_planet_house_warm", "api_planet_warm",
+                                "api_sign_profile_warm", "api_compatibility_warm"])
+def test_warm_endpoints_are_admin_only(app, monkeypatch, fn):
+    """Публичен /warm пускаше десетки AI задачи наведнъж — разход и памет."""
+    from fastapi import HTTPException
+    started = []
+    monkeypatch.setattr(app, "ai_job", lambda key, f: started.append(key))
+    monkeypatch.setattr(app, "is_admin_request", lambda request: False)
+    with pytest.raises(HTTPException) as e:
+        getattr(app, fn)(None)
+    assert e.value.status_code == 404 and not started
