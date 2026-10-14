@@ -494,7 +494,10 @@
         @media (max-width: 600px) {
             .bottom-nav { display: flex; }
         }
-    </style>
+            .time-unknown-row { display: flex; align-items: center; gap: 8px; margin: -4px 0 14px;
+            font-size: .85rem; color: var(--text-muted); cursor: pointer; }
+        .time-unknown-row input { min-width: 16px; min-height: 16px; accent-color: var(--accent); }
+</style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
 </head>
@@ -591,6 +594,11 @@
                         <input type="number" id="addMinute" value="0" min="0" max="59">
                     </div>
                 </div>
+                <label class="time-unknown-row">
+                    <input type="checkbox" id="addTimeUnknown"
+                           onchange="addHour.disabled = addMinute.disabled = this.checked">
+                    <span>Не знам часа на раждане <span class="hint">— без асцендент и домове</span></span>
+                </label>
                 <div class="form-group place-group">
                     <label for="addPlace">Място на раждане</label>
                     <input type="text" id="addPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
@@ -755,7 +763,7 @@
                             <div class="person-info">
                                 <h3>${escapeHtml(p.name)}</h3>
                                 <div class="meta">
-                                    ${p.day}.${p.month}.${p.year}, ${hour}:${minute} ч.
+                                    ${p.day}.${p.month}.${p.year}, ${p.time_unknown ? 'час неизвестен' : hour + ':' + minute + ' ч.'}
                                     • ${p.lat}, ${p.lon}
                                 </div>
                             </div>
@@ -888,6 +896,7 @@
             formData.append('day', document.getElementById('addDay').value);
             formData.append('hour', document.getElementById('addHour').value);
             formData.append('minute', document.getElementById('addMinute').value);
+            formData.append('time_unknown', document.getElementById('addTimeUnknown').checked ? 'true' : 'false');
             formData.append('lat', document.getElementById('addLat').value);
             formData.append('lon', document.getElementById('addLon').value);
             formData.append('timezone', document.getElementById('addTimezone').value.trim() || 'Europe/Sofia');
@@ -942,7 +951,7 @@
             try { localStorage.removeItem('miralog_guest_birth'); } catch (e) {}
             if (!ok) return;
             const fd = new FormData();
-            ['name', 'year', 'month', 'day', 'hour', 'minute', 'lat', 'lon', 'timezone'].forEach(function (k) {
+            ['name', 'year', 'month', 'day', 'hour', 'minute', 'lat', 'lon', 'timezone', 'time_unknown'].forEach(function (k) {
                 if (b[k] != null) fd.append(k, b[k]);
             });
             const resp = await fetch('/api/persons', { method: 'POST', headers: authHeaders(), body: fd });

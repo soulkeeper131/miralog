@@ -72,7 +72,7 @@ Stripe директно), затова счупен webhook не личи вед
 | Социален вход | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` |
 | Следене на грешки | `SENTRY_DSN` |
 | Демо акаунт | `DEMO_PASSWORD` (≥8 знака), `DEMO_EMAIL` |
-| Настройка | `AI_THREAD_LIMIT` (8), `BACKUP_KEEP_DAYS` (7), `TTS_CHUNKS` (5), `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL` |
+| Настройка | `AI_THREAD_LIMIT` (8), `AI_JOB_CONCURRENCY` (4), `BACKUP_KEEP_DAYS` (7), `TTS_CHUNKS` (5), `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL` |
 
 Когато SMTP идва от env, старите SMTP записи в базата се изтриват при
 стартиране, за да няма два източника. Админ → Настройки показва кои
@@ -169,6 +169,8 @@ Expected: 200
 
 `AI_THREAD_LIMIT` (по подразбиране 8) ограничава едновременните тежки заявки
 (AI, PDF, TTS) според тези лимити. На по-голям контейнер може да се вдигне.
+`AI_JOB_CONCURRENCY` (по подразбиране 4) е колко фонови AI генерирания вървят
+наведнъж; останалите чакат реда си, а страницата пита, докато са готови.
 
 ## Бележки
 

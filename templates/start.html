@@ -527,6 +527,11 @@
         .email-toggle.email-only > summary { display: none; }
 
         /* Съгласието с условията: показва се на място, не в модал. */
+        .time-unknown-row {
+            display: flex; align-items: center; gap: 8px; margin: -4px 0 8px;
+            font-size: .85rem; color: var(--text-muted); cursor: pointer;
+        }
+        .time-unknown-row input { min-width: 16px; min-height: 16px; accent-color: var(--accent); }
         .terms-row {
             display: flex; align-items: flex-start; gap: 8px;
             font-size: 0.82rem; color: var(--text-muted); cursor: pointer;
@@ -618,9 +623,13 @@
                         <input type="number" id="fMinute" value="0" min="0" max="59" inputmode="numeric">
                     </div>
                 </div>
-                <p class="hint" style="margin-top:-8px; margin-bottom:16px;">
-                    Ако не знаеш точния час, остави 12:00 — картата ще е вярна,
-                    но асцендентът и домовете ще са приблизителни.
+                <label class="time-unknown-row">
+                    <input type="checkbox" id="fTimeUnknown">
+                    <span>Не знам часа на раждане</span>
+                </label>
+                <p class="hint" style="margin-top:-4px; margin-bottom:16px;">
+                    Без час картата пак е вярна за планетите, но асцендентът и домовете
+                    не се показват и разчитанията не ги тълкуват.
                 </p>
 
                 <div class="form-group place-group">
@@ -831,6 +840,13 @@
         // Birth details, kept in memory so the save step can reuse them.
         let lastBirth = null;
 
+        // „Не знам часа“: полетата за час се заключват, за да не изглежда, че 12:00 е истинско.
+        function syncTimeUnknown() {
+            const off = document.getElementById('fTimeUnknown').checked;
+            ['fHour', 'fMinute'].forEach(id => { document.getElementById(id).disabled = off; });
+        }
+        document.getElementById('fTimeUnknown').addEventListener('change', syncTimeUnknown);
+
         function readBirthForm() {
             const name = document.getElementById('fName').value.trim();
             const day = +document.getElementById('fDay').value;
@@ -842,10 +858,12 @@
                 showBanner('Въведи пълна дата на раждане.', document.getElementById('fDay'));
                 return null;
             }
+            const unknown = document.getElementById('fTimeUnknown').checked;
             return {
                 name, year, month, day,
-                hour: +document.getElementById('fHour').value || 0,
-                minute: +document.getElementById('fMinute').value || 0,
+                hour: unknown ? 12 : (+document.getElementById('fHour').value || 0),
+                minute: unknown ? 0 : (+document.getElementById('fMinute').value || 0),
+                time_unknown: unknown,
             };
         }
 
@@ -902,6 +920,7 @@
             const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
             set('fName', b.name); set('fDay', b.day); set('fMonth', b.month); set('fYear', b.year);
             set('fHour', b.hour); set('fMinute', b.minute); set('fPlace', saved.label || b.place || '');
+            if (b.time_unknown) { document.getElementById('fTimeUnknown').checked = true; syncTimeUnknown(); }
             if (b.lat != null && b.lon != null) {
                 picked = { lat: b.lat, lon: b.lon, timezone: b.timezone || 'Europe/Sofia', label: saved.label || '' };
             }
@@ -966,7 +985,8 @@
             const pad = n => String(n).padStart(2, '0');
             document.getElementById('resultMeta').textContent =
                 `${lastBirth.day}.${lastBirth.month}.${lastBirth.year} г. · ` +
-                `${pad(lastBirth.hour)}:${pad(lastBirth.minute)} ч. · ${picked.label}`;
+                (lastBirth.time_unknown ? 'час неизвестен' : `${pad(lastBirth.hour)}:${pad(lastBirth.minute)} ч.`) +
+                ` · ${picked.label}`;
 
             document.getElementById('resultWheel').innerHTML = data.svg || '';
 

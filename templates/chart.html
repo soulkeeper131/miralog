@@ -1319,10 +1319,16 @@
             <h1>{{ person.name }}</h1>
             <div class="chart-meta">
                 {{ person.day }}.{{ person.month }}.{{ person.year }},
-                {{ person.hour }}:{{ '%02d'|format(person.minute) }} ч.
+                {% if person.time_unknown %}час неизвестен{% else %}{{ person.hour }}:{{ '%02d'|format(person.minute) }} ч.{% endif %}
                 • {{ person.lat }}, {{ person.lon }}
                 • {{ person.timezone }}
             </div>
+            {% if person.time_unknown %}
+            <p class="chart-meta" style="margin-top:6px;opacity:.85">
+                Часът на раждане е неизвестен: колелото е сметнато за 12:00, затова асцендентът
+                и домовете на него са само ориентир. Разчитанията не ги тълкуват.
+            </p>
+            {% endif %}
             <div class="stats">
                 <div class="stat">
                     <div class="stat-label">Форма</div>
@@ -1598,6 +1604,10 @@
                             <input type="number" id="pMinute" value="0" min="0" max="59">
                         </div>
                     </div>
+                    <label style="display:flex;align-items:center;gap:8px;margin:-4px 0 14px;font-size:.85rem;cursor:pointer">
+                        <input type="checkbox" id="pTimeUnknown" onchange="pHour.disabled = pMinute.disabled = this.checked">
+                        <span>Не знам часа му/ѝ на раждане</span>
+                    </label>
                     <div class="form-group place-group">
                         <label for="pPlace">Място на раждане</label>
                         <input type="text" id="pPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
@@ -2974,6 +2984,7 @@
                 partner_name: val('pName') || 'Партньор',
                 partner_year: Number(year), partner_month: Number(month), partner_day: Number(day),
                 partner_hour: Number(val('pHour') || 12), partner_minute: Number(val('pMinute') || 0),
+                partner_time_unknown: document.getElementById('pTimeUnknown').checked,
                 partner_lat: Number(lat), partner_lon: Number(lon),
                 partner_timezone: document.getElementById('pTimezone').value || 'Europe/Sofia',
             };

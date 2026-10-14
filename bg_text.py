@@ -21,7 +21,11 @@ _SAS_SHORT = re.compile(r"\b(С|с)(\s+)(?=[сзшжСЗШЖ])", re.UNICODE)
 # Spacing and punctuation tidy-ups.
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([,.;:!?…])")
 _MULTI_SPACE = re.compile(r"[ \t]{2,}")
-_MISSING_SPACE_AFTER_PUNCT = re.compile(r"([,;:])(?=[^\s\d])")
+# Не след „:“ в „https://“ и не пред затварящ знак: „**Слънце:**“ ставаше
+# „**Слънце: **“ и удебеляването се чупеше.
+_MISSING_SPACE_AFTER_PUNCT = re.compile(r"([,;:])(?=[^\s\d/*)\]»“”\"'_])")
+# Адресите се пазят цели — запетая или двоеточие в тях не е пунктуация.
+_URL = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
 
 
 def _fix_prepositions(text: str) -> str:
@@ -50,8 +54,11 @@ def clean_bg(text: str) -> str:
         if line.strip().startswith("```"):
             out.append(line)
             continue
-        fixed = _fix_prepositions(line)
-        fixed = _fix_punctuation(fixed)
+        parts = _URL.split(line)
+        urls = _URL.findall(line)
+        fixed = _fix_punctuation(_fix_prepositions(parts[0]))
+        for url, rest in zip(urls, parts[1:]):
+            fixed += url + _fix_punctuation(_fix_prepositions(rest))
         out.append(fixed)
     return "\n".join(out)
 

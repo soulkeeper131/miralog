@@ -340,6 +340,11 @@ def init_db():
             """)
             conn.execute("DROP TABLE persons")
             conn.execute("ALTER TABLE persons_new RENAME TO persons")
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(persons)").fetchall()]
+        # Часът на раждане е неизвестен: формите слагаха 12:00 и подканите
+        # тълкуваха асцендента, MC и домовете като точни.
+        if "time_unknown" not in cols:
+            conn.execute("ALTER TABLE persons ADD COLUMN time_unknown INTEGER NOT NULL DEFAULT 0")
         # Settings table (single row of app-wide key/value config, e.g. AI API key)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -1516,6 +1521,57 @@ class BirthDataUpdate(BaseModel):
     lat: float
     lon: float
     timezone: str = "Europe/Sofia"
+    time_unknown: bool = False
+
+
+# При неизвестен час картата се смята за обяд: така Луната е най-много на
+# ~6.5° от истинското си място, а останалите планети почти не мърдат.
+UNKNOWN_TIME = (12, 0)
+
+
+def birth_time(hour: int, minute: int, time_unknown: bool) -> tuple:
+    return UNKNOWN_TIME if time_unknown else (hour, minute)
+
+
+def time_unknown_of(p: dict) -> bool:
+    return bool(p and p.get("time_unknown"))
+
+
+ANGLES = {"Asc", "Desc", "MC", "IC", "Vertex", "Part of Fortune"}
+
+
+def chart_for_prompt(chart_data: dict) -> dict:
+    """Картата, каквато влиза в подканата: при неизвестен час без ъгли, домове
+    и аспекти към ъглите — те са на обедната карта, не на човека."""
+    if not chart_data.get("time_unknown"):
+        return chart_data
+    objects = {}
+    for key, o in (chart_data.get("objects") or {}).items():
+        if o.get("name") in ANGLES:
+            continue
+        objects[key] = {**o, "house_bg": "", "house_number": None}
+    aspects = [a for a in chart_data.get("aspects") or []
+               if a.get("active") not in ANGLES and a.get("passive") not in ANGLES]
+    return {**chart_data, "objects": objects, "aspects": aspects, "houses": [], "diurnal": None}
+
+
+def in_house(o: dict) -> str:
+    """„, 5-ти дом“ — или нищо, когато домът е неизвестен."""
+    return f", {o['house_bg']}" if o and o.get("house_bg") else ""
+
+
+def born_txt(p: dict) -> str:
+    """Датата (и часът, ако е известен) за подканите."""
+    txt = f"{p['day']}.{p['month']}.{p['year']}"
+    return txt if time_unknown_of(p) else f"{txt} в {p['hour']:02d}:{p['minute']:02d}"
+
+
+# Добавя се към всяка подкана за човек с неизвестен час: без това моделът
+# описваше асцендента и домовете на обедната карта като факти.
+TIME_UNKNOWN_NOTE = """
+=== ВАЖНО: ЧАСЪТ НА РАЖДАНЕ Е НЕИЗВЕСТЕН ===
+Картата е сметната за 12:00. Асцендентът, Медиум Коели и домовете НЕ са известни — не ги споменавай и не тълкувай планети по домове. Луната може да е в съседния знак, ако е близо до границата: говори за нея по-внимателно. Работи със знаците на планетите, аспектите между тях, стихиите и качествата.
+"""
 
 def validate_birth(year, month, day, hour, minute, lat, lon, timezone) -> None:
     """Отказва невъзможни рождени данни още при въвеждане.
@@ -1567,6 +1623,7 @@ class LoveMatchRequest(BaseModel):
     partner_lat: Optional[float] = None
     partner_lon: Optional[float] = None
     partner_timezone: Optional[str] = "Europe/Sofia"
+    partner_time_unknown: bool = False
 
     def has_full_chart(self) -> bool:
         return None not in (self.partner_year, self.partner_month, self.partner_day,
@@ -1576,9 +1633,11 @@ class LoveMatchRequest(BaseModel):
         return {
             "name": (self.partner_name or "Партньор").strip() or "Партньор",
             "year": self.partner_year, "month": self.partner_month, "day": self.partner_day,
-            "hour": self.partner_hour or 0, "minute": self.partner_minute or 0,
+            "hour": UNKNOWN_TIME[0] if self.partner_time_unknown else (self.partner_hour or 0),
+            "minute": UNKNOWN_TIME[1] if self.partner_time_unknown else (self.partner_minute or 0),
             "lat": self.partner_lat, "lon": self.partner_lon,
             "timezone": self.partner_timezone or "Europe/Sofia",
+            "time_unknown": self.partner_time_unknown,
         }
 
 class TransitsRequest(BaseModel):
@@ -2305,12 +2364,13 @@ def get_ai_config() -> Tuple[Optional[str], str]:
     return None, provider or "deepseek"
 
 def update_person(person_id: int, user_id: int, data: BirthDataUpdate) -> bool:
+    hour, minute = birth_time(data.hour, data.minute, data.time_unknown)
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             """UPDATE persons SET year=?, month=?, day=?, hour=?, minute=?,
-               lat=?, lon=?, timezone=? WHERE id=? AND user_id=?""",
-            (data.year, data.month, data.day, data.hour, data.minute,
-             data.lat, data.lon, data.timezone, person_id, user_id)
+               lat=?, lon=?, timezone=?, time_unknown=? WHERE id=? AND user_id=?""",
+            (data.year, data.month, data.day, hour, minute,
+             data.lat, data.lon, data.timezone, int(data.time_unknown), person_id, user_id)
         )
         conn.commit()
         return cur.rowcount > 0
@@ -2446,6 +2506,7 @@ def compute_natal(person: dict) -> dict:
         "objects": serialize_objects(natal.objects),
         "aspects": serialize_aspects(natal.aspects),
         "houses": serialize_houses(natal.houses) if hasattr(natal, 'houses') else [],
+        "time_unknown": time_unknown_of(person),
     }
 
 def compute_composite(person1: dict, person2: dict) -> dict:
@@ -2624,7 +2685,9 @@ def natal_to_text(person: dict, chart_data: dict) -> str:
     lines.append("=" * 60)
     lines.append(f"НАТАЛНА КАРТА — {chart_data['native']['name']}")
     lines.append("=" * 60)
-    lines.append(f"Дата и час: {chart_data['native']['datetime']}")
+    lines.append(f"Дата и час: {chart_data['native']['datetime']}"
+                 + (" (часът е неизвестен — асцендентът и домовете не са точни)"
+                    if chart_data.get("time_unknown") else ""))
     lines.append(f"Координати: {chart_data['native']['lat']}, {chart_data['native']['lon']}")
     lines.append(f"Часова зона: {chart_data['native']['timezone']}")
     lines.append(f"Домова система: {chart_data['house_system']}")
@@ -2716,6 +2779,7 @@ class GuestChartRequest(BaseModel):
     lat: float
     lon: float
     timezone: str = "Europe/Sofia"
+    time_unknown: bool = False
 
 
 class MockPayRequest(BaseModel):
@@ -2903,9 +2967,11 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
         person = {
             "name": data.name.strip(),
             "year": data.year, "month": data.month, "day": data.day,
-            "hour": data.hour, "minute": data.minute,
+            "hour": birth_time(data.hour, data.minute, data.time_unknown)[0],
+            "minute": birth_time(data.hour, data.minute, data.time_unknown)[1],
             "lat": data.lat, "lon": data.lon,
             "timezone": data.timezone or "Europe/Sofia",
+            "time_unknown": data.time_unknown,
         }
         chart_data = compute_natal(person)
     except Exception as e:
@@ -2941,6 +3007,7 @@ class OnboardRequest(BaseModel):
     timezone: str = "Europe/Sofia"
     password: Optional[str] = None
     wanted: Optional[list] = None
+    time_unknown: bool = False
 
 
 @app.post("/api/onboard")
@@ -2982,12 +3049,13 @@ def api_onboard(data: OnboardRequest, request: Request):
         hash_password(data.password.strip() if chose_password
                       else secrets.token_urlsafe(32)))
 
+    hour, minute = birth_time(data.hour, data.minute, data.time_unknown)
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             "INSERT INTO persons (user_id, name, year, month, day, hour, minute,"
-            " lat, lon, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " lat, lon, timezone, time_unknown) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user["id"], data.name.strip(), data.year, data.month, data.day,
-             data.hour, data.minute, data.lat, data.lon, data.timezone))
+             hour, minute, data.lat, data.lon, data.timezone, int(data.time_unknown)))
         person_id = cur.lastrowid
         conn.commit()
 
@@ -8469,6 +8537,7 @@ def api_create_person(
     lat: float = Form(...),
     lon: float = Form(...),
     timezone: str = Form("Europe/Sofia"),
+    time_unknown: bool = Form(False),
     user: Tuple[int, str] = Depends(get_current_user),
 ):
     user_id, email = user
@@ -8506,8 +8575,10 @@ def api_create_person(
 
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
-            "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (user_id, name, year, month, day, hour, minute, lat, lon, timezone)
+            "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone,"
+            " time_unknown) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, name, year, month, day, *birth_time(hour, minute, time_unknown),
+             lat, lon, timezone, int(time_unknown))
         )
         conn.commit()
         return {"id": cur.lastrowid, "name": name, "user_id": user_id}
@@ -8566,9 +8637,13 @@ def api_natal_chart_update(
                    data.lat, data.lon, data.timezone)
     if not update_person(person_id, user_id, data):
         raise HTTPException(500, "Данните не можаха да се запазят. Опитай пак.")
-    clear_ai_cache(person_id)
-    p = get_person(person_id, user_id)
-    return compute_natal(p)
+    new = get_person(person_id, user_id)
+    # Платените разчитания се трият само при истинска промяна: „Запази“ без
+    # промяна триеше всичко и пускаше ново генериране на Pro за наша сметка.
+    birth = ("year", "month", "day", "hour", "minute", "lat", "lon", "timezone", "time_unknown")
+    if any(p.get(k) != new.get(k) for k in birth):
+        clear_ai_cache(person_id)
+    return compute_natal(new)
 
 @app.get("/api/persons/{person_id}/natal.txt")
 def api_natal_chart_text(person_id: int,
@@ -8676,8 +8751,16 @@ def build_profile(chart_data: dict) -> dict:
                 house_counts[hn] = house_counts.get(hn, 0) + 1
     emphasised = sorted(house_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
 
+    # Без час на раждане асцендентът, MC и домовете са на обедната карта, не
+    # на човека — не се показват и не влизат в подканите.
+    unknown = bool(chart_data.get("time_unknown"))
+    if unknown:
+        emphasised = []
+
     # Tightest aspects (smallest orb) between the meaningful bodies.
-    aspect_bodies = PERSONAL_PLANETS | {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Asc", "MC"}
+    aspect_bodies = PERSONAL_PLANETS | {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"}
+    if not unknown:
+        aspect_bodies |= {"Asc", "MC"}
     scored = [
         a for a in chart_data.get("aspects", [])
         if a.get("orb") is not None
@@ -8704,19 +8787,24 @@ def build_profile(chart_data: dict) -> dict:
             "name_bg": o["name_bg"],
             "sign_bg": o["sign_bg"],
             "sign_symbol": o["sign_symbol"],
-            "house_bg": o["house_bg"],
+            "house_bg": "" if unknown else o["house_bg"],
             "meaning": o.get("name_meaning", ""),
             "sign_meaning": o.get("sign_meaning", ""),
+            "retrograde": o.get("movement") == "Retrograde",
         }
 
     return {
+        "time_unknown": unknown,
         "core": {
             "sun": point("Sun"),
             "moon": point("Moon"),
-            "ascendant": point("Asc"),
-            "mc": point("MC"),
+            "ascendant": None if unknown else point("Asc"),
+            "mc": None if unknown else point("MC"),
         },
         "personal_planets": [point(n) for n in ("Mercury", "Venus", "Mars") if point(n)],
+        # Подканата питаше за „ретроградна планета“, без да подава нито
+        # ретроградността, нито Юпитер–Плутон — моделът си ги измисляше.
+        "outer_planets": [point(n) for n in ("Jupiter", "Saturn", "Uranus", "Neptune", "Pluto") if point(n)],
         "elements": {
             "counts": {ELEMENTS_BG[k]: v for k, v in elements.items()},
             "dominant": ELEMENTS_BG.get(dominant_el) if dominant_el else None,
@@ -8743,7 +8831,7 @@ def build_profile(chart_data: dict) -> dict:
         "shape_meaning": chart_data.get("shape_meaning"),
         "moon_phase_bg": chart_data.get("moon_phase_bg"),
         "moon_phase_meaning": chart_data.get("moon_phase_meaning"),
-        "diurnal": chart_data.get("diurnal"),
+        "diurnal": None if unknown else chart_data.get("diurnal"),
     }
 
 @app.get("/api/persons/{person_id}/teaser")
@@ -8822,14 +8910,30 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     chart_data = compute_natal(p)
     prof = build_profile(chart_data)
 
+    def where(pt):
+        """„Марс в Овен, 5-ти дом (ретрограден)“ — без дом, ако часът е неизвестен."""
+        txt = f"{pt['name_bg']} в {pt['sign_bg']}"
+        if pt.get("house_bg"):
+            txt += f", {pt['house_bg']}"
+        if pt.get("retrograde"):
+            txt += " (ретрограден)"
+        return txt
+
     def fmt_point(label, pt):
-        return f"{label}: {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}" if pt else f"{label}: няма данни"
+        return f"{label}: {where(pt)}" if pt else None
 
     aspects_txt = "\n".join(
         f"- {a['active_bg']} {a['type_bg']} {a['passive_bg']} (орб {a['orb']}°)"
         for a in prof["key_aspects"]
     )
     houses_txt = ", ".join(f"{h['house']}-ти дом ({h['count']} планети)" for h in prof["emphasised_houses"])
+    unknown = prof["time_unknown"]
+    core_txt = "\n".join(x for x in (
+        fmt_point('Слънце (същност)', prof['core']['sun']),
+        fmt_point('Луна (емоции)', prof['core']['moon']),
+        fmt_point('Асцендент (как те виждат)', prof['core']['ascendant']),
+        fmt_point('Медиум Коели (призвание)', prof['core']['mc'])) if x)
+    retro = [pt["name_bg"] for pt in prof["personal_planets"] + prof["outer_planets"] if pt.get("retrograde")]
     el_txt = ", ".join(f"{k}: {v}" for k, v in prof["elements"]["counts"].items())
     mo_txt = ", ".join(f"{k}: {v}" for k, v in prof["modalities"]["counts"].items())
 
@@ -8837,16 +8941,19 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
 
 Име: {p['name']}
 Малко име (обръщай се само с него): {first_name(p['name'])}
-Роден: {p['day']}.{p['month']}.{p['year']} в {p['hour']:02d}:{p['minute']:02d}
-
+Роден: {p['day']}.{p['month']}.{p['year']}{'' if unknown else f" в {p['hour']:02d}:{p['minute']:02d}"}
+{TIME_UNKNOWN_NOTE if unknown else ''}
 === ЯДРО НА ЛИЧНОСТТА ===
-{fmt_point('Слънце (същност)', prof['core']['sun'])}
-{fmt_point('Луна (емоции)', prof['core']['moon'])}
-{fmt_point('Асцендент (как те виждат)', prof['core']['ascendant'])}
-{fmt_point('Медиум Коели (призвание)', prof['core']['mc'])}
+{core_txt}
 
 === ЛИЧНИ ПЛАНЕТИ ===
-{chr(10).join(f"- {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}" for pt in prof['personal_planets'])}
+{chr(10).join(f"- {where(pt)}" for pt in prof['personal_planets'])}
+
+=== СОЦИАЛНИ И ВИСШИ ПЛАНЕТИ ===
+{chr(10).join(f"- {where(pt)}" for pt in prof['outer_planets'])}
+
+=== РЕТРОГРАДНИ ПЛАНЕТИ ===
+{', '.join(retro) if retro else 'няма'}
 
 === БАЛАНС НА СТИХИИТЕ ===
 {el_txt} — доминира: {prof['elements']['dominant']}
@@ -8855,7 +8962,7 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
 {mo_txt} — доминира: {prof['modalities']['dominant']}
 
 === НАЙ-АКЦЕНТИРАНИ ДОМОВЕ ===
-{houses_txt}
+{houses_txt or 'неизвестни (няма час на раждане)'}
 
 === НАЙ-СИЛНИ АСПЕКТИ (най-малък орб = най-точен и осезаем) ===
 {aspects_txt}
@@ -8863,18 +8970,18 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
 === ДРУГИ ===
 Форма на картата: {prof['shape_bg']}
 Лунна фаза при раждане: {prof['moon_phase_bg']}
-Раждане: {'дневно' if prof['diurnal'] else 'нощно'}
+Раждане: {'неизвестно (няма час)' if prof['diurnal'] is None else 'дневно' if prof['diurnal'] else 'нощно'}
 
 === ЗАДАЧА ===
 Напиши личен портрет в следната структура (обръщай се на "ти", топло и директно):
 
 1. **Кой си ти в едно изречение** — есенцията на характера, уловена кратко и запомнящо се.
-2. **Твоята същност** — Слънце, Луна и Асцендент: кой си отвътре, какво чувстваш и как те виждат другите. Обясни разликите между трите, ако има такива.
+2. **Твоята същност** — {'Слънце и Луна: кой си отвътре и какво чувстваш' if unknown else 'Слънце, Луна и Асцендент: кой си отвътре, какво чувстваш и как те виждат другите'}. Обясни разликите между тях, ако има такива.
 3. **Силните ти страни** — 4-5 конкретни, изведени от реалните аспекти и позиции. За всяка обясни КАК се проявява в ежедневието.
 4. **Слабите ти места** — 3-4 честни, но доброжелателни. Не плаши — обясни какъв е урокът и как се работи с тях.
 5. **Твоят темперамент** — какво значи доминацията на стихията и качеството за начина, по който живееш.
-6. **Къде е фокусът на живота ти** — акцентираните домове и какви теми носят.
-7. **Интересни особености** — 3-4 любопитни детайла от картата: рядка конфигурация, необичайно силен аспект, ретроградна планета, форма на картата, лунна фаза, дневно/нощно раждане. Направи ги наистина интересни, не банални.
+6. **Къде е фокусът на живота ти** — {'най-силните аспекти и социалните/висшите планети: кои теми движат живота ти' if unknown else 'акцентираните домове и какви теми носят'}.
+7. **Интересни особености** — 3-4 любопитни детайла от картата: рядка конфигурация, необичайно силен аспект, ретроградна планета (само от списъка по-горе), форма на картата, лунна фаза{'' if unknown else ', дневно/нощно раждане'}. Направи ги наистина интересни, не банални.
 8. **Какво да развиваш** — 2-3 конкретни насоки за растеж.
 """ + STYLE_RULES
 
@@ -8956,7 +9063,8 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
-    chart_data = compute_natal(p)
+    chart_data = chart_for_prompt(compute_natal(p))
+    unknown = time_unknown_of(p)
     numerology = compute_numerology(p["name"], p["year"], p["month"], p["day"])
     k = build_karmic(chart_data, numerology)
 
@@ -8964,10 +9072,12 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
         if not point:
             return f"{label}: няма данни"
         retro = " (ретрограден)" if point["retrograde"] else ""
-        return f"{label}: {point['name_bg']} в {point['sign_bg']}, {point['house_bg']}{retro}"
+        return f"{label}: {point['name_bg']} в {point['sign_bg']}{in_house(point)}{retro}"
 
-    twelfth_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']}" for o in k["twelfth_house"]) or "празен"
-    retro_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']} ({o['house_bg']})" for o in k["retrogrades"]) or "няма"
+    twelfth_txt = ("неизвестен (няма час на раждане)" if unknown else
+                   ", ".join(f"{o['name_bg']} в {o['sign_bg']}" for o in k["twelfth_house"]) or "празен")
+    retro_txt = ", ".join(f"{o['name_bg']} в {o['sign_bg']}" + (f" ({o['house_bg']})" if o['house_bg'] else "")
+                          for o in k["retrogrades"]) or "няма"
 
     # Aspects touching the karmic points give the reading far more to work with
     # than the bare positions alone.
@@ -8984,10 +9094,10 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     houses_txt = "\n".join(
         f"- {h['number']}-ти дом започва в {h['sign_bg']} {h['sign_longitude']}"
         for h in chart_data.get("houses", [])
-    ) or "няма данни"
+    ) or ("неизвестни (няма час на раждане)" if unknown else "няма данни")
 
     all_positions = "\n".join(
-        f"- {o['name_bg']}: {o['sign_bg']} {o['sign_longitude']}, {o['house_bg']}"
+        f"- {o['name_bg']}: {o['sign_bg']} {o['sign_longitude']}{in_house(o)}"
         + (" (ретрограден)" if o.get("movement") == "Retrograde" else "")
         for o in chart_data.get("objects", {}).values()
     )
@@ -8996,8 +9106,8 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
 
 Име: {p['name']}
 Малко име (обръщай се само с него): {first_name(p['name'])}
-Роден: {p['day']}.{p['month']}.{p['year']} в {p['hour']:02d}:{p['minute']:02d}
-
+Роден: {born_txt(p)}
+{TIME_UNKNOWN_NOTE if unknown else ''}
 === КАРМИЧНИ ТОЧКИ (точно изчислени със Swiss Ephemeris) ===
 {line('Северен възел (посока на растеж)', k['points'].get('True North Node'))}
 {line('Южен възел (наследено от миналото)', k['points'].get('True South Node'))}
@@ -9009,7 +9119,7 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
 Планети в 12-ти дом (домът на подсъзнанието и наследеното): {twelfth_txt}
 Ретроградни планети (енергия, обърната навътре — недовършена работа): {retro_txt}
 Лунна фаза при раждане: {k['moon_phase_bg']}
-Раждане: {'дневно' if k['diurnal'] else 'нощно'}
+Раждане: {'неизвестно (няма час)' if k['diurnal'] is None else 'дневно' if k['diurnal'] else 'нощно'}
 Форма на картата: {chart_data.get('shape_bg', 'няма данни')}
 Число на съдбата (нумерология): {k['life_path']}
 
@@ -9038,11 +9148,11 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
 Напиши задълбочено четене на Акашовите записи в следната структура:
 
 1. **Отваряне на записа** — 2-3 изречения въведение: настройка към момента, спокойно и с уважение. Без театралност.
-2. **Какво носи душата от преди** — Южният възел, 12-ти дом и ретроградните планети: какви модели, дарби и навици идват като наследство. Обвържи ги конкретно с изброените позиции и обясни защо точно този знак и дом дават този модел.
+2. **Какво носи душата от преди** — Южният възел, {'' if unknown else '12-ти дом '}и ретроградните планети: какви модели, дарби и навици идват като наследство. Обвържи ги конкретно с изброените позиции и обясни защо точно {'този знак дава' if unknown else 'този знак и дом дават'} този модел.
 3. **Раната, която се лекува** — Хирон: къде е болката, откъде идва, как се проявява в ежедневието и как точно се превръща в дарба за другите. Ползвай и аспектите към Хирон, ако има такива.
 4. **Договорът на този живот** — Северният възел и Сатурн: към какво се движи душата, каква е задачата ѝ, какви са условията на израстването и какво се иска да бъде оставено зад гърба.
 5. **Силата на трансформацията** — Плутон и Лилит: къде живее най-дълбоката промяна, какво е било потиснато и какво иска да бъде върнато.
-6. **Оста на развитието** — двойката домове на лунните възли: между кои две области от живота се движи растежът и как изглежда балансът между тях.
+6. **Оста на развитието** — {'двойката знаци на лунните възли (домовете не са известни): между кои два начина на живот се движи растежът и как изглежда балансът между тях' if unknown else 'двойката домове на лунните възли: между кои две области от живота се движи растежът и как изглежда балансът между тях'}.
 7. **Кармичните възли** — 3-4 повтарящи се теми, които вероятно се връщат в живота, докато не бъдат осъзнати. За всяка посочи от коя точка в картата произтича.
 8. **Какво иска душата да чуе сега** — 4-5 конкретни насоки за освобождаване и движение напред.
 9. **Затваряне на записа** — 2-3 изречения спокойно обобщение.
@@ -9113,6 +9223,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
 
 
 LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
+SYNASTRY_POINTS = ("Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Asc")
 
 @app.get("/api/lunar-calendar")
 def api_lunar_calendar(year: Optional[int] = None, month: Optional[int] = None,
@@ -9183,7 +9294,7 @@ def build_love_match(person: dict, partner_sign: str) -> dict:
     Only the partner's sign is known here — no birth time — so this compares
     sign to sign rather than computing a full synastry chart.
     """
-    chart_data = compute_natal(person)
+    chart_data = chart_for_prompt(compute_natal(person))
     by_name = {o["name"]: o for o in chart_data["objects"].values()}
 
     pairs = []
@@ -9241,14 +9352,62 @@ def build_love_match(person: dict, partner_sign: str) -> dict:
         "points": pairs,
     }
 
+def _lon_deg(obj) -> Optional[float]:
+    """Absolute ecliptic longitude, parsed from the formatted value."""
+    try:
+        parts = obj["longitude"].replace("°", " ").replace("'", " ").replace('"', " ").split()
+        return float(parts[0]) + float(parts[1]) / 60 + float(parts[2]) / 3600
+    except Exception:
+        return None
+
+
+CROSS_ORBS = {0: ("Съвпад", 8), 60: ("Секстил", 5), 90: ("Квадрат", 6),
+              120: ("Тригон", 7), 180: ("Опозиция", 8)}
+_CROSS_EN = {"Съвпад": "Conjunction", "Секстил": "Sextile", "Квадрат": "Square",
+             "Тригон": "Trine", "Опозиция": "Opposition"}
+
+
+def find_cross_aspects(mine: dict, theirs: dict, a_names, b_names) -> list:
+    """Аспектите между точките на две карти (по име → обект), най-точните първи."""
+    cross = []
+    for a_name in a_names:
+        a = mine.get(a_name)
+        a_deg = _lon_deg(a) if a else None
+        if a_deg is None:
+            continue
+        for b_name in b_names:
+            b = theirs.get(b_name)
+            b_deg = _lon_deg(b) if b else None
+            if b_deg is None:
+                continue
+            sep = abs(a_deg - b_deg) % 360
+            if sep > 180:
+                sep = 360 - sep
+            for angle, (asp_bg, max_orb) in CROSS_ORBS.items():
+                orb = abs(sep - angle)
+                if orb <= max_orb:
+                    cross.append({
+                        "mine_bg": a["name_bg"], "mine_sign_bg": a["sign_bg"],
+                        "mine_symbol": a["sign_symbol"],
+                        "theirs_bg": b["name_bg"], "theirs_sign_bg": b["sign_bg"],
+                        "theirs_symbol": b["sign_symbol"],
+                        "aspect": asp_bg, "orb": round(orb, 1),
+                        "meaning": meaning_aspect(_CROSS_EN[asp_bg]),
+                    })
+                    break
+    cross.sort(key=lambda c: c["orb"])
+    return cross
+
+
 def build_love_match_full(person: dict, partner: dict) -> dict:
     """Compatibility when the partner's full birth data is known.
 
     Compares the two charts placement by placement and reports the real
     cross-aspects between their love-relevant points, not just sign to sign.
     """
-    my_chart = compute_natal(person)
-    their_chart = compute_natal(partner)
+    # Без час: без асцендент и домове (виж chart_for_prompt).
+    my_chart = chart_for_prompt(compute_natal(person))
+    their_chart = chart_for_prompt(compute_natal(partner))
     mine = {o["name"]: o for o in my_chart["objects"].values()}
     theirs = {o["name"]: o for o in their_chart["objects"].values()}
 
@@ -9260,50 +9419,7 @@ def build_love_match_full(person: dict, partner: dict) -> dict:
         "Asc": "Асцендент (първо впечатление)",
     }
 
-    def deg(obj):
-        """Absolute ecliptic longitude, parsed from the formatted value."""
-        try:
-            parts = obj["longitude"].replace("°", " ").replace("'", " ").replace('"', " ").split()
-            return float(parts[0]) + float(parts[1]) / 60 + float(parts[2]) / 3600
-        except Exception:
-            return None
-
-    # Cross-aspects: every love point of one chart against every love point of the other.
-    orbs = {0: ("Съвпад", 8), 60: ("Секстил", 5), 90: ("Квадрат", 6),
-            120: ("Тригон", 7), 180: ("Опозиция", 8)}
-    cross = []
-    for a_name in LOVE_POINTS:
-        a = mine.get(a_name)
-        if not a:
-            continue
-        a_deg = deg(a)
-        if a_deg is None:
-            continue
-        for b_name in LOVE_POINTS:
-            b = theirs.get(b_name)
-            if not b:
-                continue
-            b_deg = deg(b)
-            if b_deg is None:
-                continue
-            sep = abs(a_deg - b_deg) % 360
-            if sep > 180:
-                sep = 360 - sep
-            for angle, (asp_bg, max_orb) in orbs.items():
-                orb = abs(sep - angle)
-                if orb <= max_orb:
-                    cross.append({
-                        "mine_bg": a["name_bg"], "mine_sign_bg": a["sign_bg"],
-                        "mine_symbol": a["sign_symbol"],
-                        "theirs_bg": b["name_bg"], "theirs_sign_bg": b["sign_bg"],
-                        "theirs_symbol": b["sign_symbol"],
-                        "aspect": asp_bg, "orb": round(orb, 1),
-                        "meaning": meaning_aspect(
-                            {"Съвпад": "Conjunction", "Секстил": "Sextile", "Квадрат": "Square",
-                             "Тригон": "Trine", "Опозиция": "Opposition"}[asp_bg]),
-                    })
-                    break
-    cross.sort(key=lambda c: c["orb"])
+    cross = find_cross_aspects(mine, theirs, LOVE_POINTS, LOVE_POINTS)
 
     my_sun = mine.get("Sun")
     their_sun = theirs.get("Sun")
@@ -9383,8 +9499,9 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
     full = data.has_full_chart()
     if full:
         cache_key = (f"love-full:{data.partner_year}-{data.partner_month}-{data.partner_day}"
-                     f"-{data.partner_hour}-{data.partner_minute}"
-                     f"-{round(data.partner_lat or 0, 3)}-{round(data.partner_lon or 0, 3)}")
+                     + ("-nt" if data.partner_time_unknown else
+                        f"-{data.partner_hour}-{data.partner_minute}")
+                     + f"-{round(data.partner_lat or 0, 3)}-{round(data.partner_lon or 0, 3)}")
     else:
         if data.partner_sign not in ZODIAC_ORDER:
             raise HTTPException(400, "Изберете зодия или въведете пълни данни за партньора.")
@@ -9401,7 +9518,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 
     if full:
         partner_txt = "\n".join(
-            f"- {pt['label']}: {pt['name_bg']} в {pt['sign_bg']}, {pt['house_bg']}"
+            f"- {pt['label']}: {pt['name_bg']} в {pt['sign_bg']}{in_house(pt)}"
             for pt in m["partner_points"]
         )
         cross_txt = "\n".join(
@@ -9423,7 +9540,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 Стихии: {m['elements']}
 Качества: {m['modalities']}
 
-Имаш пълните рождени данни и на двамата, затова говори конкретно за техните карти — не общо за зодиите."""
+Имаш рождените данни и на двамата, затова говори конкретно за техните карти — не общо за зодиите.{chr(10) + "Часът на раждане на партньора е неизвестен — неговият асцендент и домове не са известни." if data.partner_time_unknown else ""}"""
     else:
         points_txt = "\n".join(
             f"- {pt['label']}: твоят {pt['name_bg']} е в {pt['sign_bg']} → {pt['aspect']} спрямо {m['partner']['sign_bg']}"
@@ -9450,7 +9567,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
     prompt = f"""Ти си професионален астролог, специализиран в отношения. Направи ЛЮБОВЕН ХОРОСКОП — анализ на съвместимостта между двама души.
 
 Малко име (обръщай се само с него): {first_name(p['name'])}
-
+{"Твоят час на раждане е неизвестен — асцендентът и домовете ти не се ползват; не ги споменавай." if time_unknown_of(p) else ""}
 {context}
 
 === ЗАДАЧА ===
@@ -9521,48 +9638,62 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
-    # Compute the composite chart
+    # Досега в подканата влизаха аспектите вътре в композитната карта, подадени
+    # като „аспекти между тях“. Тук са истинските: планетите на единия спрямо
+    # планетите на другия. Композитната карта остава отделно, с името си.
+    c1 = chart_for_prompt(compute_natal(p1))
+    c2 = chart_for_prompt(compute_natal(p2))
+    o1 = {o["name"]: o for o in c1["objects"].values()}
+    o2 = {o["name"]: o for o in c2["objects"].values()}
+    cross = find_cross_aspects(o1, o2, SYNASTRY_POINTS, SYNASTRY_POINTS)[:20]
+    n1, n2 = first_name(p1["name"]), first_name(p2["name"])
+
+    def placements(objs):
+        return "\n".join(
+            f"- {objs[n]['name_bg']} в {objs[n]['sign_bg']}{'' if n == 'Asc' else in_house(objs[n])}"
+            + (" (ретрограден)" if objs[n].get("movement") == "Retrograde" else "")
+            for n in SYNASTRY_POINTS if n in objs)
+
+    cross_txt = "\n".join(
+        f"- {c['mine_bg']} на {n1} ({c['mine_sign_bg']}) {c['aspect']} {c['theirs_bg']} на {n2} "
+        f"({c['theirs_sign_bg']}), орб {c['orb']}°"
+        for c in cross) or "няма аспекти в рамките на орба"
+
     composite = compute_composite(p1, p2)
-
-    # Build prompt
-    planets1 = []
-    planets2 = []
-    for oid, obj in composite["objects"].items():
-        name = obj.get("name_bg", obj.get("name", ""))
-        s = f"{name} в {obj.get('sign_bg', obj.get('sign', ''))} ({obj.get('sign_longitude', '')})"
-        planets1.append(s)
-        planets2.append(s)
-
-    aspects_text = []
-    for a in composite.get("aspects", []):
-        aspects_text.append(f"{a.get('active_bg', a.get('active', ''))} {a.get('type_bg', a.get('type', ''))} {a.get('passive_bg', a.get('passive', ''))}")
+    comp = {o["name"]: o for o in composite["objects"].values()}
+    comp_txt = ", ".join(f"{comp[n]['name_bg']} в {comp[n]['sign_bg']}"
+                         for n in ("Sun", "Moon", "Venus", "Mars") if n in comp)
+    unknown_txt = "\n".join(
+        f"Часът на раждане на {n} е неизвестен — асцендентът и домовете му/ѝ не се ползват; не ги споменавай. "
+        f"Луната на {n} може да е до ~7° встрани, затова аспектите ѝ са приблизителни."
+        for n, pp in ((n1, p1), (n2, p2)) if time_unknown_of(pp))
 
     prompt = f"""Ти си професионален астролог. Направи интерпретация на съвместимостта между двама души на български език.
 
-ПЪРВИ ЧОВЕК:
-Малко име (използвай само него): {first_name(p1['name'])}
-Дата на раждане: {p1['year']}-{p1['month']:02d}-{p1['day']:02d} {p1['hour']:02d}:{p1['minute']:02d}
+ПЪРВИ ЧОВЕК: {n1}, роден(а) {born_txt(p1)}
+{placements(o1)}
 
-ВТОРИ ЧОВЕК:
-Малко име (използвай само него): {first_name(p2['name'])}
-Дата на раждане: {p2['year']}-{p2['month']:02d}-{p2['day']:02d} {p2['hour']:02d}:{p2['minute']:02d}
+ВТОРИ ЧОВЕК: {n2}, роден(а) {born_txt(p2)}
+{placements(o2)}
+{unknown_txt}
+=== АСПЕКТИ МЕЖДУ ДВЕТЕ КАРТИ (планета на {n1} спрямо планета на {n2}; по-малък орб = по-силно) ===
+{cross_txt}
 
-Форма на съвместимостта: {composite.get('shape_bg', composite.get('shape', 'N/A'))}
-Лунна фаза: {composite.get('moon_phase_bg', composite.get('moon_phase', 'N/A'))}
-
-Основни аспекти между тях:
-{chr(10).join(aspects_text) if aspects_text else "Няма данни"}
+=== КОМПОЗИТНА КАРТА (средните точки на двете карти — картата на самата връзка) ===
+{comp_txt or "няма данни"}
+Форма: {composite.get('shape_bg') or 'няма данни'}
 
 Моля, направи пълна интерпретация включваща:
 1. **Обща характеристика на връзката** — каква е динамиката между двамата
-2. **Емоционална съвместимост** — как се разбират на чувствено ниво
-3. **Комуникация и интелектуална връзка** — как общуват и мислят заедно
+2. **Емоционална съвместимост** — как се разбират на чувствено ниво (Луните и Венерите)
+3. **Комуникация и интелектуална връзка** — как общуват и мислят заедно (Меркурий)
 4. **Силни страни на връзката** — какво ги сближава и прави добър екип
 5. **Предизвикателства** — къде може да има търкания и как да ги преодолеят
-6. **Романтична и физическа химия**
-7. **Дългосрочен потенциал** — какво показват аспектите за бъдещето им
+6. **Романтична и физическа химия** — Венера и Марс
+7. **Дългосрочен потенциал** — Сатурн, Юпитер и композитната карта
 
-Обърни се директно към тях (използвай имената им).
+Всяко твърдение да стъпва на конкретен аспект или позиция от списъците по-горе.
+Обръщай се към двамата заедно на „вие“ и ги наричай само с малките им имена ({n1} и {n2}).
 """ + STYLE_RULES
 
     # Любовният хороскоп има 7 секции — 3000 токена често не стигаха.
@@ -9864,6 +9995,7 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(re
 
     native = make_subject(p)
     natal = charts.Natal(native)
+    unknown = time_unknown_of(p)
 
     def active_pairs(day: datetime.date) -> dict:
         dt = datetime.datetime(day.year, day.month, day.day, 12, 0, tzinfo=tz)
@@ -9875,6 +10007,10 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(re
             if a["type"] not in MAJOR_ASPECT_TYPES:
                 continue
             if a["active"] not in PERIOD_TRANSIT_BODIES:
+                continue
+            # Без час асцендентът и MC са на обедната карта — транзитите към
+            # тях не са на човека.
+            if unknown and a["passive"] in ANGLES:
                 continue
             key = (a["active"], a["type"], a["passive"])
             pairs[key] = a
@@ -9932,10 +10068,12 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
     lines = []
     for day in days:
         parts = []
+        # С българските имена: досега моделът получаваше „Saturn Square Moon“
+        # и понякога ги пренасяше в текста така.
         for a in day.get("entering", []):
-            parts.append(f"започва {a['active']} {a['type']} {a['passive']} (натал)")
+            parts.append(f"започва транзитен {a['active_bg']} {a['type_bg']} натален {a['passive_bg']}")
         for a in day.get("leaving", []):
-            parts.append(f"приключва {a['active']} {a['type']} {a['passive']} (натал)")
+            parts.append(f"приключва транзитен {a['active_bg']} {a['type_bg']} натален {a['passive_bg']}")
         lines.append(f"- {day['date']}: " + "; ".join(parts))
 
     prompt = f"""Ти си професионален астролог. Направи РАЗЧИТАНЕ НА ПЕРИОД за конкретен човек, СТРИКТНО базирано на точните транзитни данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни какво ОЗНАЧАВАТ.
@@ -9943,7 +10081,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
 Име: {p['name']}
 Малко име (обръщай се само с него): {first_name(p['name'])}
 Период: {data.start_date} до {data.end_date}
-
+{"Часът на раждане е неизвестен — не споменавай асцендент, MC или домове." if time_unknown_of(p) else ""}
 === ТРАНЗИТНИ СЪБИТИЯ ПО ДНИ ===
 {chr(10).join(lines)}
 
@@ -10479,13 +10617,13 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
         try:
             by_name = {o["name"]: o for o in compute_natal(person)["objects"].values()}
             for label, name in (("Слънце", "Sun"), ("Луна", "Moon"), ("Асцендент", "Asc")):
-                if name in by_name:
+                if name in by_name and not (name == "Asc" and time_unknown_of(person)):
                     facts.append((label, by_name[name]["sign"]))
         except Exception:
             pass
 
-    birth = f"{person['day']}.{person['month']}.{person['year']} г., " \
-            f"{person['hour']:02d}:{person['minute']:02d} ч."
+    birth = f"{person['day']}.{person['month']}.{person['year']} г., " + \
+        ("час неизвестен" if time_unknown_of(person) else f"{person['hour']:02d}:{person['minute']:02d} ч.")
     subtitle = reading_subtitle(cache_key)
     subtitle = f"{subtitle} · {birth}" if subtitle else birth
 
