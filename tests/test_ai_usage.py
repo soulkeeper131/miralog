@@ -109,7 +109,8 @@ def test_openai_cached_tokens_are_separated(app, monkeypatch):
 
 def test_a_failed_call_is_recorded_too(app, monkeypatch):
     import urllib.error
-    _provider(monkeypatch, urllib.error.URLError("няма мрежа"))
+    # Мрежовата грешка се опитва три пъти (временна) — и трите са неуспешни.
+    _provider(monkeypatch, *[urllib.error.URLError("няма мрежа")] * 3)
     with pytest.raises(app.AIError):
         app.call_ai("key", "deepseek", "подкана")
     row = _rows(app)[0]

@@ -9601,6 +9601,12 @@ _AI_JOBS_LOCK = threading.Lock()
 
 AI_RETRY_AFTER = 60      # сек.: след неуспех нов опит се разрешава след толкова
 AI_JOB_KEEP = 3600       # сек.: приключилите задачи се пазят толкова, после се чистят
+# Колко генерирания вървят наведнъж. Без граница 20 посетители на SEO страници
+# пускаха 20 нишки с по една заявка до 3 минути — доставчикът връщаше 429, а
+# при 512 MB RAM контейнерът се задъхваше. Останалите чакат реда си
+# (страницата и без това пита на няколко секунди).
+AI_JOB_CONCURRENCY = max(1, int(os.getenv("AI_JOB_CONCURRENCY", "4") or 4))
+_AI_JOB_SLOTS = threading.BoundedSemaphore(AI_JOB_CONCURRENCY)
 
 
 def ai_job_failed_recently(job: Optional[dict]) -> bool:
@@ -9634,7 +9640,8 @@ def ai_job(cache_key: str, fn):
     def _work():
         started = time.monotonic()
         try:
-            fn()
+            with _AI_JOB_SLOTS:
+                fn()
             log.info("AI задача %s готова за %.1fs", cache_key, time.monotonic() - started)
         except AINotConfigured as e:
             job["error"] = str(e)
@@ -9994,6 +10001,41 @@ BG_GRAMMAR_RULES = """=== ЕЗИКОВИ ПРАВИЛА (задължителн�
 8. Избягвай двойно членуване и несъгласувани окончания.
 Накрая прочети текста веднъж само за граматика и поправи всяка грешка."""
 
+AI_TRANSIENT_CODES = {429, 500, 502, 503, 504, 529}
+AI_RETRY_DELAYS = (3, 8)   # секунди преди втория и третия опит
+
+
+def _ai_request_json(req) -> dict:
+    """Заявка към доставчика с повторен опит при временни грешки.
+
+    429 (претоварен), 5xx, прекъсната връзка и отговор, който не е JSON
+    (DeepSeek при натоварване) минаваха направо за грешка, а клиентът
+    виждаше „не се получи“ след първия неуспех. Таймаутът (180 s) не се
+    повтаря — вече е чакал достатъчно."""
+    import http.client
+    attempts = len(AI_RETRY_DELAYS) + 1
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                raw = resp.read()
+            try:
+                return json.loads(raw)
+            except ValueError as e:
+                raise AIError("Доставчикът върна отговор, който не е JSON.") from e
+        except urllib.error.HTTPError as e:
+            if e.code not in AI_TRANSIENT_CODES or i == attempts - 1:
+                raise
+            log.warning("AI доставчикът върна %s — нов опит след %s s", e.code, AI_RETRY_DELAYS[i])
+        except (urllib.error.URLError, http.client.HTTPException, ConnectionError, AIError) as e:
+            if isinstance(e, urllib.error.URLError) and isinstance(getattr(e, "reason", None), TimeoutError):
+                raise
+            if i == attempts - 1:
+                raise
+            log.warning("AI заявката прекъсна (%s) — нов опит след %s s", type(e).__name__, AI_RETRY_DELAYS[i])
+        time.sleep(AI_RETRY_DELAYS[i])
+    raise AIError("AI доставчикът не отговори.")
+
+
 def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             model: Optional[str] = None) -> str:
     """Call the configured AI provider's chat completion endpoint and return the text.
@@ -10029,10 +10071,16 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
                 },
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                result = json.loads(resp.read())
-                _note_ai_usage(provider, result)
-                return clean_bg(result["content"][0]["text"])
+            result = _ai_request_json(req)
+            _note_ai_usage(provider, result)
+            # Без тази проверка отрязан текст минаваше за успех и влизаше в кеша.
+            if result.get("stop_reason") == "max_tokens":
+                raise AIError(f"{provider} отряза отговора (max_tokens).")
+            blocks = result.get("content") or []
+            text = blocks[0].get("text", "") if blocks and isinstance(blocks[0], dict) else ""
+            if not text.strip():
+                raise AIError(f"{provider} върна празен отговор.")
+            return clean_bg(text)
 
         if provider == "deepseek":
             url = "https://api.deepseek.com/chat/completions"
@@ -10066,8 +10114,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
                 },
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                result = json.loads(resp.read())
+            result = _ai_request_json(req)
             _note_ai_usage(provider, result)   # всеки опит се плаща, и отрязаният
             # DeepSeek при претоварване връща 200 с {"error": ...} без "choices".
             # Тук падаше с KeyError и грозен traceback вместо чисто съобщение.
@@ -10232,7 +10279,10 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             model: Optional[str] = None) -> str:
     """call_ai с отчет: токени и цена в ai_usage, ред в лога с времето.
     Подканата не се записва — в нея са рождените данни на клиента."""
-    used = model or resolve_ai_model(provider)
+    # Същото правило като в _call_ai_unlogged: Pro е само на DeepSeek. Досега
+    # при Anthropic/OpenAI отчетът пишеше „deepseek-v4-pro“ и цената на DeepSeek.
+    used = (None if model == PAID_MODEL and provider != "deepseek" else model) \
+        or resolve_ai_model(provider)
     started = time.monotonic()
     parts: list = []
     sink_token = _AI_USAGE_SINK.set(parts)
@@ -11469,6 +11519,10 @@ def api_planet_house(planet_slug: str, house_num: int, request: Request, refresh
         cached = get_planet_house(planet["key"], house["key"])
         if cached:
             return {"body": cached, "cached": True}
+        # Пауза след грешка: без нея всяка проверка на страницата (на 3 s)
+        # пускаше ново генериране — до 80 опита на посетител при срив на AI.
+        if ai_job_failed_recently(running):
+            return {"body": AI_UNAVAILABLE, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_planet_house(planet, house))
     if job["done"].is_set():
@@ -11534,6 +11588,10 @@ def api_planet_sign(planet_slug: str, sign_slug: str, request: Request, refresh:
         cached = get_planet_sign(planet["key"], sign["sign"])
         if cached:
             return {"body": cached, "cached": True}
+        # Пауза след грешка: без нея всяка проверка на страницата (на 3 s)
+        # пускаше ново генериране — до 80 опита на посетител при срив на AI.
+        if ai_job_failed_recently(running):
+            return {"body": AI_UNAVAILABLE, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_planet_sign(planet, sign))
     if job["done"].is_set():
@@ -11638,6 +11696,10 @@ def api_sign_profile(sign_slug: str, request: Request, refresh: bool = False):
         cached = get_sign_profile(sign["sign"])
         if cached:
             return {"body": cached, "cached": True}
+        # Пауза след грешка: без нея всяка проверка на страницата (на 3 s)
+        # пускаше ново генериране — до 80 опита на посетител при срив на AI.
+        if ai_job_failed_recently(running):
+            return {"body": AI_UNAVAILABLE, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_sign_profile(sign))
     if job["done"].is_set():
@@ -11753,6 +11815,10 @@ def api_compatibility(pair_slug: str, request: Request, refresh: bool = False):
         cached = get_compatibility(sign_a["sign"], sign_b["sign"])
         if cached:
             return {"body": cached, "cached": True}
+        # Пауза след грешка: без нея всяка проверка на страницата (на 3 s)
+        # пускаше ново генериране — до 80 опита на посетител при срив на AI.
+        if ai_job_failed_recently(running):
+            return {"body": AI_UNAVAILABLE, "error": True}
 
     job = ai_job(cache_key, lambda: _generate_compatibility(sign_a, sign_b))
     if job["done"].is_set():

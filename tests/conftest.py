@@ -27,6 +27,8 @@ import app as app_module                        # noqa: E402
 app_module.init_db()
 # Известията тръгват във фонова нишка; в тестовете — веднага, за да се видят.
 app_module.NOTIFY_ASYNC = False
+# Повторният опит към AI доставчика чака секунди — в тестовете без чакане.
+app_module.AI_RETRY_DELAYS = (0, 0)
 
 
 @pytest.fixture(autouse=True)
