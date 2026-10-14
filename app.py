@@ -2040,7 +2040,9 @@ def get_ai_cache(person_id: int, cache_key: str) -> Optional[dict]:
             "SELECT content, generated_at FROM ai_cache WHERE person_id = ? AND cache_key = ?",
             (person_id, cache_key)
         ).fetchone()
-        return {"content": row[0], "generated_at": row[1]} if row else None
+        # Празен текст е неуспешно генериране, не разчитане: досега той стоеше
+        # в кеша завинаги и платеното разчитане оставаше „не се получи“.
+        return {"content": row[0], "generated_at": row[1]} if row and (row[0] or "").strip() else None
 
 def set_ai_cache(person_id: int, cache_key: str, content: str) -> None:
     with sqlite3.connect(DB_PATH) as conn:
@@ -8273,18 +8275,7 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
 8. **Какво да развиваш** — 2-3 конкретни насоки за растеж.
 """ + STYLE_RULES
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
-            set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
+    return start_paid_reading(person_id, cache_key, prompt, max_tokens=6000)
 
 KARMIC_POINTS = ("True North Node", "True South Node", "Chiron", "Saturn", "Pluto", "True Lilith")
 
@@ -8459,18 +8450,7 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
 - Бъди щедър в дължината: това е основният текст на раздела, разгърни всяка секция пълноценно.
 """ + STYLE_RULES
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=7000, model=PAID_MODEL)
-            set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
+    return start_paid_reading(person_id, cache_key, prompt, max_tokens=7000)
 
 @app.get("/api/persons/{person_id}/numerology")
 def api_numerology(person_id: int, user: Tuple[int, str] = Depends(require_feature("numerology"))):
@@ -8524,18 +8504,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
 6. **Как числата си взаимодействат** — хармония или напрежение между тях
 """ + STYLE_RULES
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
-            set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
+    return start_paid_reading(person_id, cache_key, prompt, max_tokens=6000)
 
 
 LOVE_POINTS = ("Sun", "Moon", "Venus", "Mars", "Asc")
@@ -8894,18 +8863,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
 Бъди честен: ако комбинацията е трудна, кажи го, но покажи и как се работи с нея. Не превръщай всичко в розово.
 """ + STYLE_RULES
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
-            set_ai_cache(data.person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
+    return start_paid_reading(data.person_id, cache_key, prompt, max_tokens=6000)
 
 
 @app.post("/api/synastry")
@@ -8952,7 +8910,9 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
                 set_ai_cache(person_id, cache_key, other["content"])
                 cached = other
         if cached:
-            return {"interpretation": cached["content"], "cached": True}
+            # Без cache_key бутоните PDF/аудио/споделяне липсваха при второ отваряне.
+            return {"interpretation": cached["content"], "cached": True,
+                    "generated_at": cached["generated_at"], "cache_key": cache_key}
 
     # Compute the composite chart
     composite = compute_composite(p1, p2)
@@ -8998,20 +8958,10 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
 Обърни се директно към тях (използвай имената им).
 """ + STYLE_RULES
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            # Любовният хороскоп има 7 секции — 3000 токена често не стигаха
-            # и текстът спираше по средата. Повече място = по-малко продължения.
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000, model=PAID_MODEL)
-            set_ai_cache(person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
+    # Любовният хороскоп има 7 секции — 3000 токена често не стигаха.
+    # Записва се и при другия човек, за да е готово и от неговата страница.
+    return start_paid_reading(person_id, cache_key, prompt, max_tokens=6000,
+                              save_to=[data.person2_id])
 
 @app.post("/api/transits")
 def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
@@ -9095,6 +9045,59 @@ def ai_job(cache_key: str, fn):
             job["done"].set()
     threading.Thread(target=_run, daemon=True).start()
     return job
+
+# --- Платените разчитания: във фона, проверени, без двойни генерирания -------
+# Профил, акашови записи, нумерология, любов, синастрия и период се пишеха в
+# самата заявка — Pro модел, до 7000 токена, понякога два опита. Проксито
+# прекъсваше дългите (клиентът виждаше грешка след вече платено и таксувано
+# разчитане), презареждането пускаше второ платено генериране, а 8 такива
+# наведнъж запушваха нишките на целия сайт. Сега вървят като дневния хороскоп:
+# адресът връща {pending:true}, а страницата пита, докато текстът не е готов.
+
+MIN_READING_CHARS = 400    # по-кратко от това е отрязан или празен отговор
+MIN_READING_SECTIONS = 2   # подканите искат номерирани раздели с **заглавия**
+
+
+def check_reading(text: str) -> str:
+    """Разчитането е годно за кеша — иначе AIError и нищо не се записва.
+
+    Кешът е завинаги: отрязан, празен или „мисловен“ отговор, записан веднъж,
+    се показваше на платилия клиент без начин да се поправи."""
+    text = (text or "").strip()
+    if len(text) < MIN_READING_CHARS:
+        raise AIError(f"Разчитането е твърде кратко ({len(text)} знака) — не се записва.")
+    if text.count("**") < 2 * MIN_READING_SECTIONS:
+        raise AIError("Разчитането няма очакваните раздели — не се записва.")
+    return text
+
+
+def start_paid_reading(person_id: int, cache_key: str, prompt: str, *,
+                       max_tokens: int, model: Optional[str] = PAID_MODEL,
+                       save_to: Optional[list] = None) -> dict:
+    """Пуска платеното разчитане във фона (ако вече не тече) и казва какво става.
+
+    Задачата е на човек и разчитане, така че два раздела или презареждане
+    чакат едно и също генериране, вместо да плащат второ. `save_to` са
+    допълнителни хора, при които да се запише същият текст (синастрията)."""
+    job_key = f"reading:{person_id}:{cache_key}"
+    with _AI_JOBS_LOCK:
+        running = _AI_JOBS.get(job_key)
+    if running and not running["done"].is_set():
+        return {"pending": True, "cache_key": cache_key}
+    if ai_job_failed_recently(running):
+        return {"interpretation": AI_UNAVAILABLE, "error": True, "cache_key": cache_key}
+    ai_key, provider = get_ai_config()
+    if not ai_key:
+        return {"interpretation": AI_UNAVAILABLE, "error": True}
+
+    def _generate():
+        text = check_reading(call_ai(ai_key, provider, prompt, max_tokens=max_tokens, model=model))
+        for pid in [person_id] + list(save_to or []):
+            set_ai_cache(pid, cache_key, text)
+
+    ai_job(job_key, _generate)
+    return {"pending": True, "cache_key": cache_key}
+
 
 @app.get("/api/persons/{person_id}/daily-horoscope")
 def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
@@ -9339,18 +9342,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
 6. **Обобщение** — 2-3 изречения есенция на периода.
 """ + STYLE_RULES
 
-    ai_key, provider = get_ai_config()
-    if ai_key:
-        try:
-            interpretation = call_ai(ai_key, provider, prompt, max_tokens=6000)
-            set_ai_cache(data.person_id, cache_key, interpretation)
-            return {"interpretation": interpretation, "cached": False, "cache_key": cache_key}
-        except AIError as e:
-            return {"interpretation": ai_failure_message(e)}
-        except Exception as e:
-            return {"interpretation": ai_failure_message(e)}
-
-    return {"interpretation": AI_UNAVAILABLE}
+    return start_paid_reading(data.person_id, cache_key, prompt, max_tokens=6000)
 
 class AIError(Exception):
     """Raised with a user-facing Bulgarian explanation of what went wrong with an AI call."""
@@ -9477,11 +9469,11 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
                 raise AIError(f"{provider} върна грешка: {err or 'отговор без текст'}")
             msg = result["choices"][0]["message"]
             content = msg.get("content") or ""
-            # Fallback: ако все пак моделът е мислил и content е празен, вземи
-            # разсъждението, за да не се губи генерираният текст.
-            if not content and msg.get("reasoning_content"):
-                content = msg["reasoning_content"]
+            # Само „мисли“ без отговор не е разчитане: досега те се записваха
+            # в кеша като готов текст. Празен отговор е грешка, не успех.
             finish = result["choices"][0].get("finish_reason")
+            if not content.strip() and finish != "length":
+                raise AIError(f"{provider} върна празен отговор (finish={finish}).")
             # Единственият надежден признак за отрязване е finish_reason ==
             # "length". Регенерирането е скъпо (двоен лимит = още толкова
             # токени), затова се пуска само за него.
@@ -9495,6 +9487,10 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
                     log.info("AI отговорът завършва на %r (finish=%s) — приемаме го.",
                              last, finish)
                 break
+        else:
+            # И вторият опит с двоен лимит е отрязан — недовършен текст не е
+            # годен за кеша (пази се завинаги и се показва на платилия).
+            raise AIError(f"{provider} отряза отговора и при двоен лимит.")
         return clean_bg(content)
     except urllib.error.HTTPError as e:
         raise AIError(_explain_http_error(provider, e)) from e

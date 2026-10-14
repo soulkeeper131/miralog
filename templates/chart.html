@@ -1646,7 +1646,7 @@
 
     </div>
 
-    <script src="/static/locked.js"></script>
+    <script src="/static/locked.js?v=3"></script>
     <script src="/static/ui.js?v=2"></script>
     <script src="/static/modules.js?v=2"></script>
     <script>
@@ -2491,7 +2491,7 @@
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/profile/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, { headers: authHeaders() });
+                const resp = await readingFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadProfileAI(true)') +
@@ -2519,7 +2519,7 @@
                 // Генерирането тече в background нишка — poll-ваме докато е готово,
                 // за да не блокираме заявката и да не получаваме 504 от проксито.
                 let tries = 0;
-                while (data.pending && tries < 40) {
+                while (data.pending && tries < 100) {   // ~5 мин: Pro за платилите понякога пише повече от 2 мин
                     await new Promise(r => setTimeout(r, 3000));
                     resp = await guardedFetch('/api/persons/{{ person.id }}/daily-horoscope', { headers: authHeaders() });
                     data = await resp.json();
@@ -2675,7 +2675,7 @@
             unlockPanel(el);
             try {
                 const url = '/api/period-interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, {
+                const resp = await readingFetch(url, {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person_id: {{ person.id }}, start_date: start, end_date: end })
@@ -2774,7 +2774,7 @@
             aiEl.innerHTML = crystalLoader('Разчитаме...');
             try {
                 const url = '/api/persons/{{ person.id }}/numerology/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, { headers: authHeaders() });
+                const resp = await readingFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     aiEl.innerHTML = cachedBadge(data, 'loadNumerologyAI(true)') +
@@ -2886,7 +2886,7 @@
             el.innerHTML = crystalLoader('Разчитаме съвместимостта...');
             try {
                 const url = '/api/synastry/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, {
+                const resp = await readingFetch(url, {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person1_id: {{ person.id }}, person2_id: otherId }),
@@ -3275,7 +3275,7 @@
             unlockPanel(el);
             try {
                 const url = '/api/love-match/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, {
+                const resp = await readingFetch(url, {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify(lovePayload)
@@ -3365,7 +3365,7 @@
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/akashic/interpretation' + (refresh ? '?refresh=true' : '');
-                const resp = await guardedFetch(url, { headers: authHeaders() });
+                const resp = await readingFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
                     el.innerHTML = cachedBadge(data, 'loadAkashicAI(true)') +

@@ -334,7 +334,7 @@
         </div>
     </div>
 
-    <script src="/static/locked.js"></script>
+    <script src="/static/locked.js?v=3"></script>
     <script src="/static/ui.js?v=2"></script>
     <script>
         function crystalLoader(text) {
@@ -583,7 +583,7 @@
             box.innerHTML = crystalLoader('Разчитаме картите...');
 
             try {
-                const resp = await guardedFetch('/api/synastry/interpretation', {
+                const resp = await readingFetch('/api/synastry/interpretation', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person1_id: synastryPerson1Id, person2_id: synastryPerson2Id })

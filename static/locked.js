@@ -24,6 +24,37 @@ async function guardedFetch(url, options) {
     return resp;
 }
 
+// Платените разчитания се пишат във фона: адресът връща {pending:true},
+// докато текстът не е готов. Питаме отново, докато не дойде — първата заявка
+// може да носи refresh (само за админ), повторните не, за да не рестартират.
+// Връща обект с .ok/.status/.json(), за да не се пипа кодът, който го ползва.
+async function readingFetch(url, options) {
+    const pollUrl = url.replace(/([?&])refresh=true&?/, '$1').replace(/[?&]$/, '');
+    const deadline = Date.now() + 8 * 60 * 1000;
+    let current = url;
+    for (;;) {
+        const resp = await guardedFetch(current, options);
+        if (!resp.ok) return resp;
+        const raw = await resp.text();
+        let data;
+        try { data = JSON.parse(raw); }
+        catch (e) {
+            // HTML от проксито при прекъсната връзка — разчитането продължава
+            // на сървъра и ще е готово при следващо отваряне.
+            throw new Error('Връзката прекъсна, но разчитането продължава. Отвори го пак след минута.');
+        }
+        if (!data.pending) {
+            if (data.error) throw new Error(data.interpretation || 'Разчитането не се получи. Опитай пак след малко.');
+            return { ok: true, status: 200, json: async () => data };
+        }
+        if (Date.now() > deadline) {
+            throw new Error('Разчитането отнема повече от обичайното. Отвори го пак след няколко минути — ще те чака готово.');
+        }
+        current = pollUrl;
+        await new Promise(r => setTimeout(r, 3000));
+    }
+}
+
 function money(cents, currency) {
     const value = (Number(cents) || 0) / 100;
     const symbol = (currency || 'EUR') === 'EUR' ? '€' : currency;
