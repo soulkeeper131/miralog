@@ -11,6 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# edge-tts гони промените по гласовата услуга на Microsoft: на 13.10.2026
+# версия 7.2.8 започна да получава 403 и гласовото четене спря. Отделен слой,
+# за да се обнови само тя — промяна в requirements.txt би преинсталирала
+# всичко останало до последните версии.
+RUN pip install --no-cache-dir "edge-tts==7.3.1"
+
 # Copy app. A glob rather than a list of names: every module added later
 # ships automatically, instead of the build succeeding and the container
 # then dying on ModuleNotFoundError.

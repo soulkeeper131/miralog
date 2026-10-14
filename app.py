@@ -8149,10 +8149,6 @@ def _text_to_audio(text: str, path: str) -> None:
     chunks = _split_for_tts(text, TTS_CHUNKS)
 
     async def _gen():
-        if len(chunks) == 1:
-            await edge_tts.Communicate(text, "bg-BG-KalinaNeural").save(path)
-            return
-
         async def one(idx: int, part: str) -> bytes:
             buf = bytearray()
             async for item in edge_tts.Communicate(part, "bg-BG-KalinaNeural").stream():
@@ -8160,13 +8156,22 @@ def _text_to_audio(text: str, path: str) -> None:
                     buf.extend(item["data"])
             return bytes(buf)
 
+        # И краткият текст минава през stream(): save() създава файла още преди
+        # да се свърже и при отказ оставяше празен mp3, който после се връщаше
+        # като готов — човекът слушаше тишина без никаква грешка.
         blobs = await asyncio.gather(*(one(i, c) for i, c in enumerate(chunks)))
+        if not any(blobs):
+            raise RuntimeError("Синтезът не върна звук.")
         # Записва се наведнъж, за да не остане половин файл, ако нещо гръмне.
         tmp = path + ".part"
-        with open(tmp, "wb") as fh:
-            for b in blobs:
-                fh.write(b)
-        os.replace(tmp, path)
+        try:
+            with open(tmp, "wb") as fh:
+                for b in blobs:
+                    fh.write(b)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
 
     asyncio.run(_gen())
 
@@ -8199,14 +8204,29 @@ def api_reading_audio(person_id: int, key: str,
     digest = hashlib.sha1(speech.encode("utf-8")).hexdigest()[:10]
     mp3_path = audio_dir / f"{person_id}_{safe}_{digest}.mp3"
 
-    if not mp3_path.exists():
+    # Празен файл е остатък от неуспешен синтез (при аварията на 13–14.10 така
+    # се запомниха празни mp3) — смята се за липсващ и се прави наново.
+    if not mp3_path.exists() or mp3_path.stat().st_size == 0:
         # Старите версии на същото разчитане вече не трябват на никого.
         for stale in audio_dir.glob(f"{person_id}_{safe}_*.mp3"):
             try:
                 stale.unlink()
             except OSError:
                 pass
-        _text_to_audio(speech, str(mp3_path))
+        try:
+            _text_to_audio(speech, str(mp3_path))
+        except Exception as e:
+            # Гласът идва от услуга на Microsoft — когато я сменят, тук идва 403.
+            # Това не е срив на сайта: казваме го на човека и известяваме собственика.
+            log.warning("Гласовото четене не тръгна: %s: %s", type(e).__name__, e)
+            report_problem("tts", "Гласовото четене не работи",
+                           f"{type(e).__name__}: {str(e)[:300]}\n\n"
+                           "Гласът идва от безплатната услуга на Microsoft (edge-tts). "
+                           "Най-честата причина е промяна от тяхна страна — помага "
+                           "обновяване на edge-tts до последната версия.",
+                           code=REQUEST_ID.get())
+            raise HTTPException(503, "Гласовото четене временно не работи. Опитай пак "
+                                     "след малко — разчитането е налично за четене и като PDF.")
 
     # FileResponse стриймва файла и поддържа Range — превъртането в плейъра не
     # тегли всичко отначало, а и mp3-то не минава цялото през паметта.
