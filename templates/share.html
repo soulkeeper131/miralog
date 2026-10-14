@@ -67,7 +67,7 @@
                     (data.content_html
                         ? '<div class="content content-html">' + data.content_html + '</div>'
                         : '<div class="content">' + escapeHtml(data.content || '') + '</div>') +
-                    '<div class="cta"><a href="/register">Създай своята карта</a></div>';
+                    '<div class="cta"><a href="/start">Създай своята карта</a></div>';
             } catch (e) {
                 root.innerHTML = '<p class="err">' + escapeHtml(e.message) + '</p>';
             }
@@ -78,6 +78,6 @@
             return d.innerHTML;
         }
     </script>
-<script src="/static/consent.js?v=4"></script>
+<script src="/static/consent.js?v=5"></script>
 </body>
 </html>

@@ -381,13 +381,13 @@
                     Ключовете за AI, SMTP настройките, пакетите и потребителите се
                     управляват от админ панела.
                 </div>
-                <a class="admin-link" id="adminLink" href="/admin">⚙ Отвори админ панела</a>
+                <a class="admin-link" id="adminLink" href="https://{{ admin_host }}/admin">⚙ Отвори админ панела</a>
             </div>
         </div>
     </div>
 
     <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=4"></script>
+    <script src="/static/modules.js?v=5"></script>
     <script>
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -519,7 +519,8 @@
                 renderPlan(acc);
                 if (acc.is_admin) {
                     document.getElementById('adminSection').hidden = false;
-                    document.getElementById('adminLink').href = '/admin';
+                    // Панелът е само на админ поддомейна — /admin тук дава 404.
+                    document.getElementById('adminLink').href = 'https://{{ admin_host }}/admin?token=' + encodeURIComponent(getToken ? getToken() : '');
                 }
                 revealSettings();
                 const paid = new URLSearchParams(location.search).get('paid');
@@ -713,6 +714,6 @@
         }
         loadDocuments();
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
 </body>
 </html>

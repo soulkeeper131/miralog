@@ -206,9 +206,11 @@
     if (current() === 'granted') grant();
     else if (current() === 'denied') revoke();
 
+    // show(false) изрично: като обработчик show получава събитието, а то
+    // е „истина“ — банерът излизаше при всяко зареждане, и след „Приемам“.
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', show);
+        document.addEventListener('DOMContentLoaded', function () { show(false); });
     } else {
-        show();
+        show(false);
     }
 })();

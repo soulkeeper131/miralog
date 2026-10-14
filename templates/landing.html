@@ -65,12 +65,7 @@
 {% include "_analytics.html" %}
 </head>
 <body>
-    <nav class="site-nav" aria-label="Основна навигация">
-        <a href="/horoskop">Дневен хороскоп</a>
-        <a href="/natalna-karta">Натална карта</a>
-        <a href="/lyubovna-savmestimost">Любовна съвместимост</a>
-        <a href="/akashovi-zapisi">Акашови записи</a>
-    </nav>
+    {% include "_site_nav.html" %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
     <main>
@@ -566,6 +561,6 @@
             window.location.replace('/dashboard');
         }
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
 </body>
 </html>

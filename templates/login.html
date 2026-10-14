@@ -325,6 +325,8 @@
         /* With no providers configured the form is the only way in, so the
            disclosure must not hide it. */
         .email-toggle.email-only > summary { display: none; }
+        .home-link { color: inherit; text-decoration: none; display: block; }
+        .oauth-terms { font-size: .78rem; opacity: .75; text-align: center; margin: 10px 0 0; line-height: 1.5; }
 </style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
@@ -332,9 +334,11 @@
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
-        <img class="logo-img" src="{{ brand().logo }}" alt="{{ brand().name }}">
-        <h1>{{ brand().name }}</h1>
-        <p class="subtitle">Влезте в своя астрологичен профил</p>
+        <a href="/" class="home-link" aria-label="Към началната страница">
+            <img class="logo-img" src="{{ brand().logo }}" alt="{{ brand().name }}">
+            <h1>{{ brand().name }}</h1>
+        </a>
+        <p class="subtitle">Влез в своя астрологичен профил</p>
 
         <div class="card">
             <div id="error" class="error-msg"></div>
@@ -363,6 +367,7 @@
                 </a>
                 {% endif %}
             </div>
+            <p class="oauth-terms">Продължавайки с Google или Facebook, приемаш <a href="/terms" target="_blank">Общите условия</a> и <a href="/privacy" target="_blank">Политиката за поверителност</a>.</p>
             <div class="oauth-split" role="separator"><span>или с имейл</span></div>
             {% endif %}
             <details class="email-toggle{% if not (oauth_providers().google or oauth_providers().facebook) %} email-only{% endif %}"{% if not (oauth_providers().google or oauth_providers().facebook) %} open{% endif %}>
@@ -371,7 +376,7 @@
                 <div class="form-group">
                     <label for="email">Имейл</label>
                     <input type="email" id="email" name="email" required
-                           placeholder="вашият@имейл.com" autocomplete="email">
+                           placeholder="име@поща.bg" autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="password">Парола</label>
@@ -394,7 +399,7 @@
         </div>
 
         <div class="footer">
-            Нямаш акаунт? <a href="/register">Регистрация</a><br>
+            Нямаш акаунт? <a href="/start">Създай безплатна карта</a><br>
             <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
         </div>
     </div>
@@ -525,6 +530,6 @@
             }
         });
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
 </body>
 </html>

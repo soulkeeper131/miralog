@@ -133,7 +133,9 @@
                 ? '/api/features/bundle/request'
                 : '/api/features/' + encodeURIComponent(key) + '/request';
 
-            const resp = await fetch(url, { method: 'POST', headers: authHeaders() });
+            // След плащане обратно тук, не в Настройки.
+            const back = '?return_to=' + encodeURIComponent(location.pathname);
+            const resp = await fetch(url + back, { method: 'POST', headers: authHeaders() });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
                 const detail = data.detail;

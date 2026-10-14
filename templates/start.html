@@ -867,6 +867,52 @@
             return true;
         }
 
+        /* Картата на госта не бива да изчезва при презареждане, при „имейлът
+           е зает → вход“ или при грешка с Google: началната обещава, че
+           данните остават в браузъра. Пазят се 7 дни и се трият, щом картата
+           влезе в профил (тук или от таблото). */
+        const GUEST_KEY = 'miralog_guest_birth';
+        function saveGuestBirth(birth, label) {
+            try { localStorage.setItem(GUEST_KEY, JSON.stringify({ birth: birth, label: label || '', at: Date.now() })); }
+            catch (e) { /* private mode */ }
+        }
+        function loadGuestBirth() {
+            try {
+                const v = JSON.parse(localStorage.getItem(GUEST_KEY) || 'null');
+                if (v && v.birth && Date.now() - (v.at || 0) < 7 * 864e5) return v;
+            } catch (e) { /* повреден запис */ }
+            return null;
+        }
+        function clearGuestBirth() { try { localStorage.removeItem(GUEST_KEY); } catch (e) {} }
+
+        // Пуска се след като обработчикът на формата е закачен (по-долу) —
+        // иначе браузърът сам изпраща формата и презарежда страницата.
+        setTimeout(function restoreGuest() {
+            if (new URLSearchParams(location.search).get('claim') === '1') return;
+            let token = null;
+            try { token = localStorage.getItem('miralog_token'); } catch (e) {}
+            if (token) {
+                const el = document.getElementById('banner');
+                el.innerHTML = '<div class="banner">Вече си в профила си. Нова карта добавяш от '
+                    + '<a href="/dashboard">таблото</a> — там са и картите ти.</div>';
+            }
+            const saved = loadGuestBirth();
+            if (!saved) return;
+            const b = saved.birth;
+            const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+            set('fName', b.name); set('fDay', b.day); set('fMonth', b.month); set('fYear', b.year);
+            set('fHour', b.hour); set('fMinute', b.minute); set('fPlace', saved.label || b.place || '');
+            if (b.lat != null && b.lon != null) {
+                picked = { lat: b.lat, lon: b.lon, timezone: b.timezone || 'Europe/Sofia', label: saved.label || '' };
+            }
+            // Вписаният не минава пак през гост-пътя — данните само чакат във формата.
+            if (!token && picked) {
+                document.getElementById('startForm').requestSubmit
+                    ? document.getElementById('startForm').requestSubmit()
+                    : document.getElementById('submitBtn').click();
+            }
+        }, 0);
+
         document.getElementById('startForm').addEventListener('submit', async e => {
             e.preventDefault();
             clearBanner();
@@ -902,6 +948,7 @@
                     return;
                 }
                 renderGuestChart(data);
+                saveGuestBirth(lastBirth, picked && picked.label);
                 window.track('generate_lead', { lead_source: 'guest_chart' });
             } catch (err) {
                 showBanner('Връзката се разпадна. Опитай пак.');
@@ -1066,6 +1113,7 @@
                         });
                     } catch (e) { /* изборът не е критичен — картата е готова */ }
                 }
+                clearGuestBirth();
                 window.location.href = '/chart/' + data.id + '?token=' + encodeURIComponent(token);
             } catch (e) {
                 uiAlert(e.message, { title: 'Картата не се запази', tone: 'danger' });
@@ -1268,6 +1316,18 @@
             }
             if (!lastBirth) { location.reload(); return; }
 
+            // ЗЗП чл. 57 т. 13 — същото съгласие като при „Отключи“ и в избора
+            // на модули. Без него отказът от 14-дневното право не важи.
+            if (wanted.size && typeof uiConfirm === 'function') {
+                const agreed = await uiConfirm(
+                    'Избраните разчитания се генерират веднага след плащането. Съгласен ли си ' +
+                    'изпълнението да започне сега и потвърждаваш ли, че с това губиш ' +
+                    'правото си на 14-дневен отказ по чл. 57, т. 13 от ЗЗП?',
+                    { title: 'Съгласие за незабавно изпълнение',
+                      ok: 'Съгласен съм, продължи', cancel: 'Отказ' });
+                if (!agreed) return;
+            }
+
             const btn = document.getElementById('saveBtn');
             const original = btn.textContent;
             btn.disabled = true;
@@ -1302,6 +1362,7 @@
 
                 // The cookie must be replaced too — a leftover one from an
                 // earlier account would outlive this session.
+                clearGuestBirth();   // картата вече е в профила
                 if (data.token) {
                     localStorage.setItem('miralog_token', data.token);
                     document.cookie = 'miralog_token=' + encodeURIComponent(data.token)
@@ -1353,6 +1414,6 @@
         });
 
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
 </body>
 </html>

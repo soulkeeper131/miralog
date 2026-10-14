@@ -741,7 +741,7 @@
                     listEl.innerHTML = `
                         <div class="empty">
                             <p>Все още няма добавени хора.</p>
-                            <p>Добавете първия човек, за да видите наталната му карта.</p>
+                            <p>Добави първия човек, за да видиш наталната му карта.</p>
                         </div>`;
                     return;
                 }
@@ -901,7 +901,8 @@
                 if (resp.status === 401) { logout(); return; }
                 if (!resp.ok) {
                     const data = await resp.json().catch(() => ({}));
-                    throw new Error(data.detail || 'Грешка при добавяне');
+                    const d = data.detail;
+                    throw new Error(typeof d === 'string' ? d : (d && d.message) || 'Грешка при добавяне');
                 }
                 closeAddModal();
                 fetchPersons();
@@ -925,8 +926,35 @@
         });
 
         // --- Init ---
-        fetchPersons();
+        fetchPersons().then(offerGuestChart);
+
+        /* Карта, направена на /start преди вход (напр. „имейлът е зает →
+           вход“): досега се губеше и трябваше да се въвежда наново. */
+        async function offerGuestChart() {
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem('miralog_guest_birth') || 'null'); } catch (e) {}
+            if (!saved || !saved.birth || Date.now() - (saved.at || 0) > 7 * 864e5) return;
+            const b = saved.birth;
+            const when = b.day + '.' + b.month + '.' + b.year;
+            const ok = await uiConfirm('Имаш карта от преди малко — ' + (b.name || 'без име') + ', ' + when
+                + (saved.label ? ', ' + saved.label : '') + '. Да я запазим в профила ти?',
+                { title: 'Запази картата', ok: 'Запази', cancel: 'Не, благодаря' });
+            try { localStorage.removeItem('miralog_guest_birth'); } catch (e) {}
+            if (!ok) return;
+            const fd = new FormData();
+            ['name', 'year', 'month', 'day', 'hour', 'minute', 'lat', 'lon', 'timezone'].forEach(function (k) {
+                if (b[k] != null) fd.append(k, b[k]);
+            });
+            const resp = await fetch('/api/persons', { method: 'POST', headers: authHeaders(), body: fd });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                const d = data.detail;
+                uiAlert(typeof d === 'string' ? d : (d && d.message) || 'Картата не се запази.', { title: 'Не се получи' });
+                return;
+            }
+            fetchPersons();
+        }
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
 </body>
 </html>

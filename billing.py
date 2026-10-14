@@ -86,6 +86,8 @@ def create_subscription_checkout(
             "metadata": {"user_id": str(user_id), "plan_key": "full"},
         },
         "allow_promotion_codes": True,
+        # Страницата за плащане на български, независимо от езика на браузъра.
+        "locale": "bg",
     }
     if customer_id:
         params["customer"] = customer_id
@@ -134,6 +136,8 @@ def create_feature_checkout(
             "feature_key": feature_key,
         },
         "allow_promotion_codes": True,
+        # Страницата за плащане на български, независимо от езика на браузъра.
+        "locale": "bg",
     }
     _add_metadata(params, extra_metadata)
     if customer_id:
@@ -195,6 +199,8 @@ def create_features_checkout(
             **({"bundle": "1"} if bundle else {}),
         },
         "allow_promotion_codes": True,
+        # Страницата за плащане на български, независимо от езика на браузъра.
+        "locale": "bg",
     }
     _add_metadata(params, extra_metadata)
     if customer_id:

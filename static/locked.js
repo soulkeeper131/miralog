@@ -295,7 +295,9 @@ async function requestUnlock(btn, featureKey, retry) {
             if (!agreed) { btn.disabled = false; btn.textContent = original; return; }
         }
 
-        const resp = await fetch('/api/features/' + encodeURIComponent(featureKey) + '/request', {
+        // След плащане обратно на тази страница (картата), не в Настройки.
+        const resp = await fetch('/api/features/' + encodeURIComponent(featureKey) + '/request'
+                                 + '?return_to=' + encodeURIComponent(location.pathname), {
             method: 'POST', headers: authHeaders(),
         });
         const data = await resp.json().catch(() => ({}));

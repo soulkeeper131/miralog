@@ -72,6 +72,7 @@
     </style>
 </head>
 <body>
+    {% include "_site_nav.html" %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
     <main>
@@ -312,7 +313,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
     {% if not body_html or stale_date %}
     <script>
         (async function() {

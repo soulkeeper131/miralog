@@ -1,0 +1,20 @@
+{# Общото меню на публичните страници. Досега само началната имаше меню, а
+   никоя страница нямаше „Вход“. Стилът (.site-nav) е в _critical.html. #}
+<nav class="site-nav" aria-label="Основна навигация">
+    <a href="/horoskop">Дневен хороскоп</a>
+    <a href="/natalna-karta">Натална карта</a>
+    <a href="/lyubovna-savmestimost">Любовна съвместимост</a>
+    <a href="/akashovi-zapisi">Акашови записи</a>
+    <a href="/login" class="site-nav-account" data-track="nav_account">Вход</a>
+</nav>
+<script>
+    // Вписаният вижда „Моят профил“ вместо „Вход“.
+    (function () {
+        try {
+            if (localStorage.getItem('miralog_token')) {
+                var a = document.querySelector('.site-nav-account');
+                if (a) { a.textContent = 'Моят профил'; a.href = '/dashboard'; }
+            }
+        } catch (e) { /* private mode */ }
+    })();
+</script>

@@ -2049,10 +2049,12 @@ def require_feature(feature: str):
             if not name:
                 message = "Тази възможност не е достъпна в момента."
             elif not offer:
-                message = f"„{name}“ не е включена в пакета ти."
+                message = f"„{name}“ още не е отключено в профила ти."
             else:
-                message = (f"„{name}“ не е включена в пакета ти, "
-                           f"но можеш да я отключиш еднократно.")
+                # Без род и без „пакет“: модулите са в различен род, а
+                # „пакет“ клиентите нямат — купуват еднократно.
+                message = (f"„{name}“ още не е отключено в профила ти. "
+                           f"Можеш да го отключиш с еднократно плащане.")
             # Пакетът пътува заедно с офертата: това е моментът, в който
             # човекът вече е решил, че иска точно това разчитане. Ако другите
             # му излизат по-евтино наведнъж, редно е да го знае сега, а не да
@@ -3100,7 +3102,7 @@ def api_register(data: AuthRequest, request: Request):
     """Create an account. Each user only ever sees their own people."""
     email = (data.email or "").strip().lower()
     if not valid_email(email):
-        raise HTTPException(400, "Моля, въведете валиден имейл адрес.")
+        raise HTTPException(400, "Въведи валиден имейл адрес.")
     check_new_password(data.password or "")
     rate_limit("signup", client_ip(request))
     if get_user_by_email(email):
@@ -5402,8 +5404,8 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 "currency": offer["currency"],
             })
         base = site_base_url(request)
-        success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=BUNDLE_PRICE_CENTS, currency=(items[0]["currency"] if items else "EUR"))
-        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        success = stripe_success_url(f"{base}{purchase_return_path(request)}?paid=1", amount_cents=BUNDLE_PRICE_CENTS, currency=(items[0]["currency"] if items else "EUR"))
+        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}{purchase_return_path(request)}?paid=0"
         tracking = checkout_tracking(request)
         try:
             url = billing.create_features_checkout(
@@ -5451,8 +5453,8 @@ def api_request_feature(feature_key: str, request: Request,
 
     if billing.stripe_enabled():
         base = site_base_url(request)
-        success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
-        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        success = stripe_success_url(f"{base}{purchase_return_path(request)}?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
+        cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}{purchase_return_path(request)}?paid=0"
         tracking = checkout_tracking(request)
         try:
             url = billing.create_feature_checkout(
@@ -6388,6 +6390,21 @@ def _strip_stripe(obj):
     if isinstance(obj, list):
         return [_strip_stripe(v) for v in obj]
     return obj
+
+_RETURN_PATH = re.compile(r"^/(chart/\d+|settings)$")
+
+
+def purchase_return_path(request: Optional[Request]) -> str:
+    """Къде да се върне клиентът след Stripe: страницата, от която е купил.
+
+    Досега всяка покупка водеше в Настройки, далеч от разчитането. Приемат се
+    само картата и настройките — там modules.js потвърждава плащането."""
+    try:
+        wanted = (request.query_params.get("return_to") or "").strip() if request is not None else ""
+    except Exception:
+        wanted = ""
+    return wanted if _RETURN_PATH.match(wanted) else "/settings"
+
 
 def stripe_success_url(default_path: str, amount_cents: Optional[int] = None, currency: str = "") -> str:
     """Success URL for Checkout, always carrying the session id.

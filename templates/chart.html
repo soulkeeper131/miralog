@@ -1310,7 +1310,7 @@
     <div class="container">
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
-            <a href="/" class="back-link">← Всички хора</a>
+            <a href="/dashboard" class="back-link">← Моите карти</a>
             <button class="nav-modules" onclick="openModulePicker()"
                     aria-label="Добави разчитания">✦ Добави<span class="nav-modules-long"> разчитания</span></button>
         </div>
@@ -1350,7 +1350,7 @@
                 aria-label="Предишни менюта" hidden>‹</button>
         <div class="tabs" id="tabStrip">
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
-            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">Астро портрет</div>
+            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile" data-feature="profile">Астро портрет</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope" data-feature="horoscope">Дневен хороскоп</div>
@@ -1646,9 +1646,9 @@
 
     </div>
 
-    <script src="/static/locked.js?v=5"></script>
+    <script src="/static/locked.js?v=6"></script>
     <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=4"></script>
+    <script src="/static/modules.js?v=5"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -3375,7 +3375,7 @@
             }
         }
     </script>
-    <script src="/static/consent.js?v=4"></script>
+    <script src="/static/consent.js?v=5"></script>
 
     <div id="floating-player" class="floating-player" style="display:none" role="region" aria-label="Аудио плейър">
         <div class="fp-head">
