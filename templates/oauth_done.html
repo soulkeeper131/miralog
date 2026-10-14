@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex,nofollow">
     <title>Влизане — {{ brand().name }}</title>
+    {% include "_analytics.html" %}
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <script>
         (function() {
@@ -111,7 +112,17 @@
             });
         })();
         {% else %}
+        {% if ga_event %}
+        // gtag още не е заредил (зарежда се след load) — събитието чака в
+        // dataLayer и тръгва, ако страницата живее достатъчно. Кратка пауза,
+        // за да не се губи при мигновеното пренасочване.
+        window.track({{ ga_event | tojson }}, { method: {{ ga_method | tojson }} });
+        setTimeout(function () {
+            finishLogin({{ token | tojson }}, {{ email | tojson }}, {{ next_url | tojson }});
+        }, 800);
+        {% else %}
         finishLogin({{ token | tojson }}, {{ email | tojson }}, {{ next_url | tojson }});
+        {% endif %}
         {% endif %}
     </script>
     <noscript>

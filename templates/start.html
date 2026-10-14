@@ -902,7 +902,7 @@
                     return;
                 }
                 renderGuestChart(data);
-                window.track('generate_natal_chart');
+                window.track('generate_lead', { lead_source: 'guest_chart' });
             } catch (err) {
                 showBanner('Връзката се разпадна. Опитай пак.');
             } finally {
@@ -1050,7 +1050,7 @@
                 });
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(data.detail || 'Грешка при запис.');
-                if (typeof track === 'function') track('sign_up', { method: 'oauth' });
+                // sign_up/login се пращат от oauth_done (там се знае дали акаунтът е нов).
                 // Избраните модули не бива да се губят по пътя през Google:
                 // картата ще отвори избора с тях отметнати.
                 const wantedKeys = (pending.wanted || []).filter(Boolean);
@@ -1316,11 +1316,14 @@
                 }
 
                 // Picked modules go straight to Stripe; otherwise to the chart.
+                // Регистрацията с имейл е основният път, а не пращаше sign_up.
+                window.track('sign_up', { method: password ? 'email' : 'email_no_password' });
+
                 if (data.checkout_url) {
-                    const p = {};
-                    if (data.amount_cents > 0) p.value = data.amount_cents / 100;
-                    if (data.currency) p.currency = data.currency;
-                    window.track('begin_checkout', p);
+                    window.trackPurchase('begin_checkout', {
+                        price_cents: data.amount_cents, currency: data.currency,
+                        items: data.ga_items || [],
+                    });
                     window.location.href = data.checkout_url; return;
                 }
 
@@ -1350,6 +1353,6 @@
         });
 
     </script>
-    <script src="/static/consent.js"></script>
+    <script src="/static/consent.js?v=4"></script>
 </body>
 </html>

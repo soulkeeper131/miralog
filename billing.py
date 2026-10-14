@@ -35,6 +35,16 @@ def webhook_secret_present() -> bool:
     return bool(STRIPE_WEBHOOK_SECRET)
 
 
+def _add_metadata(params: dict, extra: Optional[dict]) -> None:
+    """Допълнителни ключове към metadata (напр. ga_cid за GA4 от сървъра).
+
+    Stripe приема само низове до 500 знака; празните се пропускат, за да не
+    се появяват като "" в Dashboard."""
+    for key, value in (extra or {}).items():
+        if value:
+            params.setdefault("metadata", {})[key] = str(value)[:500]
+
+
 def get_stripe():
     """Lazy-import stripe so the app still boots when the package is unused."""
     if not STRIPE_SECRET_KEY:
@@ -97,6 +107,7 @@ def create_feature_checkout(
     success_url: str,
     cancel_url: str,
     brand: str = "АстроКарта",
+    extra_metadata: Optional[dict] = None,
 ) -> str:
     """Return a Checkout Session URL for a one-off feature unlock."""
     stripe = get_stripe()
@@ -124,6 +135,7 @@ def create_feature_checkout(
         },
         "allow_promotion_codes": True,
     }
+    _add_metadata(params, extra_metadata)
     if customer_id:
         params["customer"] = customer_id
     else:
@@ -142,6 +154,7 @@ def create_features_checkout(
     cancel_url: str,
     brand: str = "АстроКарта",
     bundle: bool = False,
+    extra_metadata: Optional[dict] = None,
 ) -> str:
     """Checkout for several one-off unlocks at once.
 
@@ -183,6 +196,7 @@ def create_features_checkout(
         },
         "allow_promotion_codes": True,
     }
+    _add_metadata(params, extra_metadata)
     if customer_id:
         params["customer"] = customer_id
     else:

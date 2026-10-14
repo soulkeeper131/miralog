@@ -86,21 +86,25 @@
         sign_up: 'CompleteRegistration',
         login: 'Login',                    // custom — Meta няма стандартен еквивалент
         view_item: 'ViewContent',
-        generate_natal_chart: 'Lead',      // безплатна натална карта = мек lead
+        generate_lead: 'Lead',             // гост-карта на /start = мек lead
+        generate_natal_chart: null,        // запазената карта — само GA4, Lead вече е пратен
         generate_synastry: 'ViewContent',  // преглед/генериране на синастрия
         generate_numerology: 'ViewContent',// преглед/генериране на нумерология
         click_cta: 'ClickCTA',             // custom
     };
 
     window.track = function (name, params) {
-        if (current() !== 'granted') return;
         params = params || {};
 
+        // GA4 получава събитието винаги: Consent Mode само решава дали е с
+        // бисквитки или анонимен пинг. Досега посетител, който не е отговорил
+        // на банера (повечето), не пращаше нито едно събитие.
         if (typeof window.gtag === 'function') {
             window.gtag('event', name, params);
         }
 
-        if (typeof window.fbq === 'function') {
+        // Meta няма анонимен режим — само след съгласие.
+        if (current() === 'granted' && typeof window.fbq === 'function') {
             var fbName = Object.prototype.hasOwnProperty.call(FB_EVENTS, name)
                 ? FB_EVENTS[name] : name;
             if (fbName) {
@@ -134,8 +138,13 @@
         if (info.price_cents != null) params.value = +(info.price_cents / 100).toFixed(2);
         params.currency = info.currency || 'EUR';
         if (info.transaction_id) params.transaction_id = info.transaction_id;
-        if (info.name) params.item_name = info.name;
-        if (info.keys) params.items = info.keys;
+        // GA4 иска items като обекти; низовете се отхвърляха и отчетът по
+        // модули оставаше празен.
+        var items = info.items || (info.keys || []).map(function (k) {
+            return { item_id: k, item_name: k, quantity: 1 };
+        });
+        if (items.length) params.items = items;
+        if (info.name) params.item_name = info.name;   // за Meta (content_name)
         // Meta dedup: транзакцията е най-стабилният уникален ключ.
         if (info.transaction_id) params.event_id = info.transaction_id;
         window.track(kind, params);
@@ -158,8 +167,9 @@
         wrap.setAttribute('aria-label', 'Съгласие за аналитика');
         wrap.innerHTML =
             '<div class="consent-text">' +
-                '<strong>Използваме аналитика</strong>, за да разберем как се ползва ' +
-                'сайтът и да го подобряваме. Ако откажеш, нищо не се събира. ' +
+                '<strong>Бисквитки за аналитика и реклама.</strong> С тях разбираме как се ' +
+                'ползва сайтът и откъде идват посетителите. Ако откажеш, не записваме ' +
+                'бисквитки — Google получава само анонимни сигнали без идентификатор. ' +
                 '<a href="/privacy">Подробности</a>' +
             '</div>' +
             '<div class="consent-actions">' +
@@ -169,8 +179,12 @@
         return wrap;
     }
 
-    function show() {
-        if (decided()) return;
+    // Политиката обещава, че изборът може да се промени — бутонът там вика това.
+    window.reopenConsent = function () { show(true); };
+
+    function show(force) {
+        if (decided() && !force) return;
+        if (document.querySelector('.consent')) return;
         var el = build();
         document.body.appendChild(el);
         document.body.classList.add('consent-open');

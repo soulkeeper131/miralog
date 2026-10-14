@@ -509,7 +509,7 @@
                 localStorage.setItem('miralog_token', data.token);
                 localStorage.setItem('miralog_email', data.user.email);
                 document.cookie = 'miralog_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=2592000';
-                window.track('login');
+                window.track('login', { method: 'email' });
                 if (data.user.role === 'admin') {
                     const onAdminHost = window.location.hostname === '{{ admin_host }}';
                     const target = onAdminHost ? '/admin' : ('https://{{ admin_host }}/admin?token=' + encodeURIComponent(data.token));
@@ -525,6 +525,6 @@
             }
         });
     </script>
-    <script src="/static/consent.js"></script>
+    <script src="/static/consent.js?v=4"></script>
 </body>
 </html>

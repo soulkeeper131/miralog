@@ -1646,9 +1646,9 @@
 
     </div>
 
-    <script src="/static/locked.js?v=3"></script>
+    <script src="/static/locked.js?v=4"></script>
     <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=2"></script>
+    <script src="/static/modules.js?v=3"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -2987,20 +2987,13 @@
             // Returning from Stripe after an onboarding purchase. The webhook
             // that grants the modules can land a beat after the redirect, so
             // the success note leaves room for a reload.
-            const paid = new URLSearchParams(location.search).get('paid');
-            if (paid === '1') {
+            // С session_id връщането от Stripe го поема modules.js: проверява
+            // плащането, показва съобщението и праща покупката с реалната сума.
+            // Тук бяха второ съобщение и втора покупка (Meta ги броеше две).
+            const q = new URLSearchParams(location.search);
+            const paid = q.get('paid');
+            if (paid === '1' && !q.get('session_id')) {
                 uiToast('Плащането е прието. Ако модулите още са заключени, презареди след няколко секунди.', 'ok');
-                if (typeof window.track === 'function') {
-                    const q = new URLSearchParams(location.search);
-                    const cents = parseInt(q.get('amount_cents') || '0', 10);
-                    const cur = q.get('currency') || '';
-                    const sid = q.get('session_id') || '';
-                    const p = {};
-                    if (cents > 0) p.value = cents / 100;
-                    if (cur) p.currency = cur;
-                    if (sid) p.transaction_id = sid;
-                    window.track('purchase', p);
-                }
             } else if (paid === '0') {
                 uiToast('Плащането беше отказано.', 'err');
             }
@@ -3382,7 +3375,7 @@
             }
         }
     </script>
-    <script src="/static/consent.js"></script>
+    <script src="/static/consent.js?v=4"></script>
 
     <div id="floating-player" class="floating-player" style="display:none" role="region" aria-label="Аудио плейър">
         <div class="fp-head">

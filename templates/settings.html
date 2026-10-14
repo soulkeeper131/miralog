@@ -276,6 +276,7 @@
         .admin-link:hover { background: var(--accent-hover); }
     </style>
 {% include "_analytics.html" %}
+    <link rel="stylesheet" href="/static/consent.css">
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -386,7 +387,7 @@
     </div>
 
     <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=2"></script>
+    <script src="/static/modules.js?v=3"></script>
     <script>
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -712,6 +713,6 @@
         }
         loadDocuments();
     </script>
-    <script src="/static/consent.js"></script>
+    <script src="/static/consent.js?v=4"></script>
 </body>
 </html>

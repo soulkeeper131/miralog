@@ -263,13 +263,37 @@ async function requestUnlock(btn, featureKey, retry) {
             }
         }
 
+        // ЗЗП чл. 57 т. 13 — същото съгласие като в избора на модули; без
+        // него отказът от 14-дневното право в условията не важи.
+        if (typeof uiConfirm === 'function') {
+            const agreed = await uiConfirm(
+                'Разчитането се генерира веднага след плащането. Съгласен ли си ' +
+                'изпълнението да започне сега и потвърждаваш ли, че с това губиш ' +
+                'правото си на 14-дневен отказ по чл. 57, т. 13 от ЗЗП?',
+                { title: 'Съгласие за незабавно изпълнение',
+                  ok: 'Съгласен съм, продължи', cancel: 'Отказ' });
+            if (!agreed) { btn.disabled = false; btn.textContent = original; return; }
+        }
+
         const resp = await fetch('/api/features/' + encodeURIComponent(featureKey) + '/request', {
             method: 'POST', headers: authHeaders(),
         });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.detail || ('Грешка ' + resp.status));
+        if (!resp.ok) {
+            const d = data.detail;
+            throw new Error(typeof d === 'string' ? d : (d && d.message) || ('Грешка ' + resp.status));
+        }
         if (data.already && retry) { retry(); return; }
         if (data.checkout_url) {
+            // Основното място за покупка не пращаше begin_checkout изобщо.
+            if (typeof trackPurchase === 'function' && data.offer) {
+                trackPurchase('begin_checkout', {
+                    price_cents: data.offer.price_cents, currency: data.offer.currency,
+                    name: data.offer.name,
+                    items: [{ item_id: featureKey, item_name: data.offer.name, item_category: 'module',
+                              price: data.offer.price_cents / 100, quantity: 1 }],
+                });
+            }
             window.location.href = data.checkout_url;
             return;
         }

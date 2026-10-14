@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import jinja2
 import os, re, sys, json, sqlite3, datetime, urllib.parse, urllib.request, urllib.error, secrets, hashlib, asyncio, threading, time
 from pathlib import Path
 from contextlib import asynccontextmanager, contextmanager
@@ -1068,6 +1069,24 @@ templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or 
 templates.env.globals["fb_pixel_id"] = lambda: (seo_settings().get("fb_pixel_id") or "").strip()
 # Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
 templates.env.globals["admin_host"] = ADMIN_HOST
+
+
+@jinja2.pass_context
+def _analytics_ctx(ctx) -> dict:
+    """За _analytics.html: без проследяване на админ поддомейна (админът
+    пълнеше GA4 със собствените си прегледи) и user_id за вписаните — само
+    вътрешният номер, без имейл, за да се свързват устройствата в GA4."""
+    request = ctx.get("request")
+    if request is None:
+        return {"enabled": True, "user_id": None}
+    try:
+        host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    except Exception:
+        host = ""
+    return {"enabled": host != ADMIN_HOST, "user_id": _user_id_for_log(request)}
+
+
+templates.env.globals["analytics_ctx"] = _analytics_ctx
 # Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
 templates.env.globals["main_domain"] = BRAND_DOMAIN
 
@@ -2895,6 +2914,10 @@ def api_onboard(data: OnboardRequest, request: Request):
             cur = (items[0]["currency"] if items else "EUR")
             result["amount_cents"] = total
             result["currency"] = cur
+            result["ga_items"] = [{"item_id": i["key"], "item_name": i["name"],
+                                   "item_category": "bundle" if is_bundle else "module",
+                                   "price": round(int(i["amount_cents"]) / 100, 2), "quantity": 1}
+                                  for i in items]
             result["checkout_url"] = billing.create_features_checkout(
                 customer_email=email,
                 customer_id=None,
@@ -2903,6 +2926,7 @@ def api_onboard(data: OnboardRequest, request: Request):
                 success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}&amount_cents={total}&currency={cur}",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
                 brand=brand_name(),
+                extra_metadata=checkout_tracking(request),
                 bundle=is_bundle,
             )
         except Exception as e:
@@ -5050,6 +5074,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 success_url=success,
                 cancel_url=cancel,
                 brand=brand_name(),
+                extra_metadata=checkout_tracking(request),
                 bundle=True,
             )
             return {"ok": True, "checkout_url": url, "bundle": bundle}
@@ -5097,6 +5122,7 @@ def api_request_feature(feature_key: str, request: Request,
                 success_url=success,
                 cancel_url=cancel,
                 brand=brand_name(),
+                extra_metadata=checkout_tracking(request),
             )
             return {"ok": True, "checkout_url": url, "offer": offer}
         except Exception as e:
@@ -5148,6 +5174,8 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             for key, default in EMAIL_TEMPLATES.items()
         },
         "seo": seo_settings(),
+        # Тайният ключ за GA4 от сървъра не се връща — само дали е зададен.
+        "ga_api_secret_set": bool(ga_api_secret()),
         "brand": {key: (get_setting(key) or default)
                   for key, default in BRAND_DEFAULTS.items()},
         # Secrets are never echoed back — only whether one is stored, so the
@@ -5216,6 +5244,9 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     for key, value in (payload.get("seo") or {}).items():
         if key in SEO_DEFAULTS:
             set_setting(key, str(value or "").strip())
+    # Празно поле = „не пипай“ (стойността не се показва, за да се редактира).
+    if str(payload.get("ga_api_secret") or "").strip():
+        set_setting("ga_api_secret", str(payload["ga_api_secret"]).strip())
 
     # A blank brand field means "go back to the default", so it is stored empty
     # and brand() falls through — that is why this does not skip empty values.
@@ -6165,6 +6196,83 @@ def payment_items(payment_id: int) -> list:
             "SELECT * FROM payment_items WHERE payment_id = ? ORDER BY id", (payment_id,))]
 
 
+# --- GA4 от сървъра (Measurement Protocol) ------------------------------------
+# Покупката идваше само от браузъра: губеше се при затворен раздел, блокер или
+# ако gtag не е заредил преди презареждането. Сървърът я праща при първото
+# потвърждение на плащането с client_id от бисквитката _ga на купувача — тя
+# съществува само след съгласие, така че без съгласие нищо не тръгва. GA4
+# брои една покупка на transaction_id, затова двете пращания не се дублират.
+GA_MP_URL = "https://www.google-analytics.com/mp/collect"
+
+
+def ga_api_secret() -> str:
+    return (os.environ.get("GA_API_SECRET") or get_setting("ga_api_secret") or "").strip()
+
+
+def ga_client_id_from_request(request: Optional[Request]) -> str:
+    """„GA1.1.123.456“ от бисквитката _ga → „123.456“ (client_id за GA4)."""
+    try:
+        raw = (request.cookies.get("_ga") or "") if request is not None else ""
+    except Exception:
+        return ""
+    parts = raw.split(".")
+    if len(parts) >= 4 and parts[-2].isdigit() and parts[-1].isdigit():
+        return f"{parts[-2]}.{parts[-1]}"
+    return ""
+
+
+def checkout_tracking(request: Optional[Request]) -> dict:
+    """Какво пътува в Stripe metadata, за да може сървърът да прати покупката."""
+    return {"ga_cid": ga_client_id_from_request(request)}
+
+
+def ga4_items(meta: dict, keys: list) -> list:
+    """Редовете на поръчката като GA4 items — с цена, не само ключове."""
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+    amounts = {}
+    for part in (meta.get("feature_amounts") or "").split(","):
+        key, _, cents = part.partition(":")
+        if key.strip() and cents.strip().isdigit():
+            amounts[key.strip()] = int(cents)
+    items = []
+    for key in keys:
+        item = {"item_id": key, "item_name": names.get(key, key),
+                "item_category": "bundle" if meta.get("bundle") else "module", "quantity": 1}
+        if key in amounts:
+            item["price"] = round(amounts[key] / 100, 2)
+        items.append(item)
+    return items
+
+
+def send_ga4_event(client_id: str, name: str, params: dict, *, user_id: Optional[int] = None) -> bool:
+    """Събитие към GA4 през Measurement Protocol, във фона. True = пуснато."""
+    measurement_id = (seo_settings().get("analytics_id") or "").strip()
+    secret = ga_api_secret()
+    if not (measurement_id and secret and client_id):
+        return False
+    body = {"client_id": client_id,
+            "events": [{"name": name, "params": dict(params, engagement_time_msec=1)}]}
+    if user_id:
+        body["user_id"] = str(user_id)
+    url = (f"{GA_MP_URL}?measurement_id={urllib.parse.quote(measurement_id)}"
+           f"&api_secret={urllib.parse.quote(secret)}")
+
+    def _post():
+        try:
+            req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                resp.read()
+        except Exception as e:
+            log.warning("GA4 %s не тръгна: %s", name, e)
+
+    if NOTIFY_ASYNC:
+        threading.Thread(target=_post, daemon=True).start()
+    else:
+        _post()
+    return True
+
+
 def fulfill_checkout_session(session: dict) -> None:
     """Apply a completed Stripe Checkout session to the local DB.
 
@@ -6272,6 +6380,10 @@ def fulfill_checkout_session(session: dict) -> None:
         audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}",
               user_id=user_id, actor="stripe")
         notify_payment(user_id, amount, currency, keys, session_id)
+        send_ga4_event(meta.get("ga_cid") or "", "purchase", {
+            "transaction_id": session_id, "value": round(amount / 100, 2),
+            "currency": currency, "items": ga4_items(meta, keys),
+        }, user_id=user_id)
 
     # Електронен документ (Н-18, чл. 52о) и фактура — точно веднъж, във фона,
     # за да не чака клиентът (и Stripe) пощенския сървър. Номерът вече е
@@ -6973,6 +7085,7 @@ def _oauth_link_or_create(provider: str, provider_user_id: str,
         audit("sign_up", f"Регистрация през {provider}: {email}",
               user_id=user["id"], actor=email)
         notify_new_user(user["id"], email, provider.capitalize())
+        user = dict(user, _new_account=True)   # за sign_up в GA4 на oauth_done
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -7113,6 +7226,9 @@ def api_oauth_callback(provider: str, request: Request,
         "email": user["email"],
         "next_url": saved["next"],
         "totp_challenge": None,
+        # GA4: вход/регистрация през Google/Facebook минаваха неотчетени.
+        "ga_event": "sign_up" if user.get("_new_account") else "login",
+        "ga_method": provider,
     }))
 
 
@@ -7246,6 +7362,7 @@ def api_checkout_feature(feature_key: str, request: Request,
             success_url=success,
             cancel_url=cancel,
             brand=brand_name(),
+            extra_metadata=checkout_tracking(request),
         )
     except Exception as e:
         report_checkout_failure(f"покупка на модул {feature_key} (billing)", e)
@@ -7308,6 +7425,7 @@ def api_billing_session(session_id: str,
             "currency": (raw.get("currency") or "eur").upper(),
             "keys": keys,
             "name": ", ".join(names.get(k, k) for k in keys),
+            "items": ga4_items(meta, keys),
         } if paid else None,
     }
 

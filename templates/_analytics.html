@@ -1,5 +1,6 @@
-{% set gid = ga_id() %}
-{% set fbid = fb_pixel_id() %}
+{% set actx = analytics_ctx() %}
+{% set gid = ga_id() if actx.enabled else "" %}
+{% set fbid = fb_pixel_id() if actx.enabled else "" %}
 {# Страниците викат track()/trackPurchase() на места като пренасочването към
    Stripe. Истинските идват от consent.js в края на <body>; ако той не се
    зареди (блокер, мрежа), тези празни версии пазят пътя до плащането от
@@ -37,9 +38,7 @@ window.addEventListener('load', function () {
   document.head.appendChild(t);
 });
 </script>
-<noscript><img height="1" width="1" style="display:none" alt=""
-src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"
-/></noscript>
+{# Без <noscript> пиксел: той пращаше PageView без съгласие. #}
 <!-- End Meta Pixel -->
 {% endif %}
 
@@ -62,7 +61,7 @@ src="https://www.facebook.com/tr?id={{ fbid }}&ev=PageView&noscript=1"
     'wait_for_update': 500
   });
   gtag('js', new Date());
-  gtag('config', '{{ gid }}');
+  gtag('config', '{{ gid }}'{% if actx.user_id %}, { 'user_id': '{{ actx.user_id }}' }{% endif %});
 
   // gtag loads after `load` so it never blocks the main thread. The consent
   // layer above keeps it dormant until the visitor opts in.

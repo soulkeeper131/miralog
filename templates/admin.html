@@ -2127,6 +2127,10 @@
                             '<input type="text" id="seoAnalyticsId" placeholder="G-XXXXXXXXXX" value="' +
                             escapeHtml(seo.analytics_id || '') + '">' +
                             '<div class="hint">Измервателен ID (G-…). Празно = аналитиката е изключена.</div></div>' +
+                        '<div class="form-group"><label for="seoGaSecret">GA4 Measurement Protocol API secret</label>' +
+                            '<input type="password" id="seoGaSecret" autocomplete="off" placeholder="' +
+                            (d.ga_api_secret_set ? 'запазен — въведи нов, за да го смениш' : 'не е зададен') + '">' +
+                            '<div class="hint">GA4 → Администриране → Потоци от данни → уеб → Measurement Protocol API secrets. С него покупките стигат до GA4 и когато клиентът затвори страницата.</div></div>' +
                         '<div class="form-group"><label for="seoFbPixel">Facebook Pixel ID</label>' +
                             '<input type="text" id="seoFbPixel" placeholder="напр. 1234567890" value="' +
                             escapeHtml(seo.fb_pixel_id || '') + '">' +
@@ -2384,6 +2388,7 @@
                         analytics_id: document.getElementById('seoAnalyticsId').value.trim(),
                         fb_pixel_id: document.getElementById('seoFbPixel').value.trim(),
                     },
+                    ga_api_secret: document.getElementById('seoGaSecret').value.trim(),
                 }, 'SEO настройките са запазени.');
             });
 

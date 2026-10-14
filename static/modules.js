@@ -133,31 +133,35 @@
                 ? '/api/features/bundle/request'
                 : '/api/features/' + encodeURIComponent(key) + '/request';
 
-            // Fired before the redirect, while we still know what is being
-            // bought — after the jump to Stripe this page is gone.
-            if (typeof trackPurchase === 'function') {
-                const meta = lastFeatures && (lastFeatures.catalogue || [])
-                    .find(function (c) { return c.key === key; });
-                const bundleInfo = key === 'bundle' && lastFeatures && lastFeatures.bundle;
-                trackPurchase('begin_checkout', bundleInfo ? {
-                    price_cents: bundleInfo.price_cents,
-                    currency: bundleInfo.currency,
-                    name: bundleInfo.name,
-                    keys: bundleInfo.keys,
-                } : {
-                    price_cents: meta && meta.offer && meta.offer.price_cents,
-                    currency: meta && meta.offer && meta.offer.currency,
-                    name: meta && meta.name,
-                    keys: [key],
-                });
-            }
-
             const resp = await fetch(url, { method: 'POST', headers: authHeaders() });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) {
                 const detail = data.detail;
                 throw new Error(typeof detail === 'string' ? detail
                     : (detail && detail.message) || ('Грешка ' + resp.status));
+            }
+            // Само ако наистина тръгваме към Stripe — иначе отчетът броеше
+            // „започнато плащане“ и при отказ от сървъра.
+            if (data.checkout_url && typeof trackPurchase === 'function') {
+                const meta = lastFeatures && (lastFeatures.catalogue || [])
+                    .find(function (c) { return c.key === key; });
+                const bundleInfo = key === 'bundle' && lastFeatures && lastFeatures.bundle;
+                const names = {};
+                ((lastFeatures && lastFeatures.catalogue) || []).forEach(function (c) { names[c.key] = c.name; });
+                trackPurchase('begin_checkout', bundleInfo ? {
+                    price_cents: bundleInfo.price_cents,
+                    currency: bundleInfo.currency,
+                    name: bundleInfo.name,
+                    items: (bundleInfo.keys || []).map(function (k) {
+                        return { item_id: k, item_name: names[k] || k, item_category: 'bundle', quantity: 1 };
+                    }),
+                } : {
+                    price_cents: meta && meta.offer && meta.offer.price_cents,
+                    currency: meta && meta.offer && meta.offer.currency,
+                    name: meta && meta.name,
+                    items: [{ item_id: key, item_name: (meta && meta.name) || key, item_category: 'module',
+                              price: meta && meta.offer ? meta.offer.price_cents / 100 : undefined, quantity: 1 }],
+                });
             }
             if (data.checkout_url) { window.location.href = data.checkout_url; return; }
             if (data.already) { btn.textContent = 'Отключено'; return; }
@@ -342,8 +346,10 @@
               { headers: authHeaders() })
             .then(function (r) { return r.json().then(function (d) { return {ok: r.ok, d: d}; }); })
             .then(function (res) {
-                cleanUrl();
                 if (res.ok && res.d.paid) {
+                    // session_id се маха чак след потвърждение: иначе
+                    // „Опресни след малко“ не проверяваше плащането пак.
+                    cleanUrl();
                     if (typeof invalidateFeatures === 'function') invalidateFeatures();
                     // The server tells us what was actually charged, so the
                     // reports can total revenue rather than only count sales.
@@ -358,6 +364,9 @@
                     uiToast('Плащането още се потвърждава. Опресни след малко.', 'ok');
                 }
             })
-            .catch(function () { cleanUrl(); });
+            .catch(function () {
+                // Мрежова грешка: session_id остава, за да провери пак при опресняване.
+                if (typeof uiToast === 'function') uiToast('Плащането още се потвърждава. Опресни след малко.', 'ok');
+            });
     });
 })();
