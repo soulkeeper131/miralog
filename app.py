@@ -580,6 +580,8 @@ def init_db():
             # всички издадени дотогава токени спират да важат. Токен без
             # версия се чете като 0, затова деплоят не изхвърля никого.
             ("token_version", "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"),
+            # Откъде е дошъл акаунтът: start (с карта), register, google, facebook…
+            ("signup_method", "ALTER TABLE users ADD COLUMN signup_method TEXT"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
@@ -628,6 +630,44 @@ def init_db():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_time ON page_views(viewed_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path)")
+        # За отчетите: откъде идва посещението и от какво устройство. visitor
+        # е дневен хеш (сол + IP + браузър), сменя се всеки ден и не позволява
+        # човек да бъде разпознат в друг ден; самите IP и браузър не се пазят.
+        pv_cols = [r[1] for r in conn.execute("PRAGMA table_info(page_views)").fetchall()]
+        for col in ("referrer", "utm_source", "utm_medium", "utm_campaign", "device", "visitor"):
+            if col not in pv_cols:
+                conn.execute(f"ALTER TABLE page_views ADD COLUMN {col} TEXT")
+
+        # Събития за отчетите: гост-карта, заключен модул, отворено разчитане,
+        # PDF, аудио, споделяне… meta е JSON. Само добавяне, никога промяна.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at TEXT NOT NULL,
+                event TEXT NOT NULL,
+                user_id INTEGER,
+                visitor TEXT,
+                feature TEXT,
+                meta TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_event_time ON events(event, at)")
+        # Всеки създаден Stripe Checkout — за изоставените плащания. ref
+        # пътува в metadata и при плащане редът се отбелязва като платен.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS checkout_sessions (
+                ref TEXT PRIMARY KEY,
+                user_id INTEGER,
+                keys TEXT,
+                amount_cents INTEGER,
+                currency TEXT,
+                source TEXT,
+                created_at TEXT NOT NULL,
+                paid_at TEXT,
+                payment_id INTEGER
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_checkout_sessions_time ON checkout_sessions(created_at)")
         # Един ред на AI извикване: токени, цена по тарифата в този час, и за
         # какво е било — клиентско разчитане, SEO страница, фоново, админ.
         conn.execute("""
@@ -1210,8 +1250,9 @@ async def cache_static(request: Request, call_next):
 
 
 # --- Проследяване на прегледите (обобщена анонимна статистика) ---
-# Записваме само път + час + (опц.) user_id. Без IP, без User-Agent, без cookie
-# фингерпринт — GDPR-щадящо. Админ поддомейнът и ботовете се пропускат, за да
+# Записваме път, час, (опц.) user_id, домейна на препращащата страница, UTM,
+# вид устройство и дневен анонимен хеш (visitor_hash). IP и User-Agent не се
+# пазят, бисквитка няма — GDPR-щадящо. Админ поддомейнът и ботовете се пропускат, за да
 # не раздуват числата.
 _BOT_UA = (
     "bot", "crawl", "spider", "slurp", "baidu", "yandex", "ahrefs", "semrush",
@@ -1256,22 +1297,117 @@ async def track_page_views(request: Request, call_next):
             except Exception:
                 user_id = None
         now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+        q = request.query_params
+        extra = {
+            "referrer": _referrer_host(request),
+            "utm_source": (q.get("utm_source") or "")[:60] or None,
+            "utm_medium": (q.get("utm_medium") or "")[:60] or None,
+            "utm_campaign": (q.get("utm_campaign") or "")[:80] or None,
+            "device": _device_class(ua),
+            "visitor": visitor_hash(request),
+        }
         # Записът е в собствена нишка и страницата не го чака: досега всяка
         # HTML заявка пишеше в SQLite направо в event loop-а и при заета база
         # (AI запис, backup) целият сайт спираше до 5 секунди.
-        PAGE_VIEW_WRITER.submit(_record_page_view, path, user_id, now)
+        PAGE_VIEW_WRITER.submit(_record_page_view, path, user_id, now, extra)
     except Exception:
         pass  # статистиката никога не трябва да чупи страница
     return response
 
 
-def _record_page_view(path: str, user_id: Optional[int], now: str) -> None:
+def _record_page_view(path: str, user_id: Optional[int], now: str,
+                      extra: Optional[dict] = None) -> None:
+    extra = extra or {}
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
-                "INSERT INTO page_views (path, user_id, viewed_at) VALUES (?, ?, ?)",
-                (path, user_id, now),
+                "INSERT INTO page_views (path, user_id, viewed_at, referrer, utm_source,"
+                " utm_medium, utm_campaign, device, visitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (path, user_id, now, extra.get("referrer"), extra.get("utm_source"),
+                 extra.get("utm_medium"), extra.get("utm_campaign"), extra.get("device"),
+                 extra.get("visitor")),
             )
+    except Exception:
+        pass
+
+
+def visitor_hash(request: Optional[Request]) -> Optional[str]:
+    """Анонимен идентификатор за деня: сол (SECRET_KEY + дата) + IP + браузър.
+
+    Брои уникалните посетители и ги свързва във фунията в рамките на деня,
+    без бисквитка и без да пази IP или User-Agent. Сменя се всеки ден, така
+    че човек не може да бъде проследен от ден на ден."""
+    if request is None:
+        return None
+    try:
+        day = datetime.datetime.now(ZoneInfo("Europe/Sofia")).date().isoformat()
+        raw = f"{SECRET_KEY}:{day}:{client_ip(request)}:{request.headers.get('user-agent') or ''}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    except Exception:
+        return None
+
+
+def _device_class(ua: str) -> str:
+    ua = (ua or "").lower()
+    if "ipad" in ua or "tablet" in ua or ("android" in ua and "mobile" not in ua):
+        return "tablet"
+    if "mobi" in ua or "iphone" in ua or "android" in ua:
+        return "mobile"
+    return "desktop"
+
+
+# Връщане от Stripe/Google не е източник на трафик — иначе „stripe.com“
+# излизаше като канал, от който идват клиентите.
+_IGNORED_REFERRERS = ("stripe.com", "accounts.google.", "facebook.com/dialog", "localhost")
+
+
+def _referrer_host(request: Request) -> Optional[str]:
+    """Само домейнът на препращащата страница; собственият сайт не е източник."""
+    ref = request.headers.get("referer") or ""
+    if not ref:
+        return None
+    try:
+        host = (urllib.parse.urlparse(ref).hostname or "").lower()
+    except Exception:
+        return None
+    if host.startswith("www."):
+        host = host[4:]
+    own = (BRAND_DOMAIN or "").lower()
+    if not host or host == own or host.endswith("." + own) or any(x in ref for x in _IGNORED_REFERRERS):
+        return None
+    return host[:80]
+
+
+# Позволените събития от страницата (POST /api/events) — нищо друго не се пише.
+CLIENT_EVENTS = {"locked_view", "share_click", "picker_open"}
+
+
+def reading_base(cache_key: str) -> str:
+    """„horoscope:2026-10-14“ → „horoscope“, „love-full:…“ → „love“: модулът зад ключа."""
+    base = (cache_key or "").split(":", 1)[0]
+    return {"love-full": "love", "synastry": "love"}.get(base, base)
+
+
+def record_event(event: str, *, user_id: Optional[int] = None, request: Optional[Request] = None,
+                 feature: Optional[str] = None, meta: Optional[dict] = None) -> None:
+    """Събитие за отчетите. Никога не хвърля и никога не бави заявката."""
+    try:
+        row = (datetime.datetime.utcnow().isoformat(timespec="seconds"), event[:40],
+               user_id, visitor_hash(request), (feature or None) and str(feature)[:40],
+               json.dumps(meta, ensure_ascii=False)[:1000] if meta else None)
+    except Exception:
+        return
+    if NOTIFY_ASYNC:
+        PAGE_VIEW_WRITER.submit(_insert_event, row)
+    else:
+        _insert_event(row)
+
+
+def _insert_event(row: tuple) -> None:
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("INSERT INTO events (at, event, user_id, visitor, feature, meta)"
+                         " VALUES (?, ?, ?, ?, ?, ?)", row)
     except Exception:
         pass
 
@@ -1595,6 +1731,7 @@ RATE_LIMITS = {
     "reset_ip": (10, 3600),      # писма за нова парола от един IP на час
     "reset_email": (3, 3600),    # писма за нова парола до един адрес на час
     "geocode": (60, 600),        # търсения на място без вход от един IP за 10 мин
+    "events": (120, 600),        # събития от страницата (заключен модул и т.н.)
 }
 RATE_HITS: dict = {}
 _RATE_LOCK = threading.Lock()
@@ -2559,6 +2696,7 @@ def api_login(data: AuthRequest, request: Request):
     _login_clear(key)
     token = create_token(user["id"], user["email"])
     audit("login", f"Вход: {user['email']}", user_id=user["id"], actor=user["email"])
+    note_login(user["id"])
     return {
         "token": token,
         "user": {"id": user["id"], "email": user["email"], "role": user.get("role")}
@@ -2753,6 +2891,7 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
     # Изчислението е тежко и не иска вход — без таван един скрипт би заел
     # процесора за всички останали.
     rate_limit("guest_chart", client_ip(request))
+    record_event("guest_chart", request=request)
     if not (data.name or "").strip():
         raise HTTPException(400, "Моля, въведи име.")
     validate_birth(data.year, data.month, data.day, data.hour, data.minute,
@@ -2856,6 +2995,7 @@ def api_onboard(data: OnboardRequest, request: Request):
     # Това е най-честият път за регистрация — от началната страница, а не от
     # /register. Известието стоеше само на другите два и затова не тръгваше.
     audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
+    note_signup(user["id"], "start")
     notify_new_user(user["id"], email, "натална карта")
 
     if not chose_password:
@@ -2918,6 +3058,7 @@ def api_onboard(data: OnboardRequest, request: Request):
                                    "item_category": "bundle" if is_bundle else "module",
                                    "price": round(int(i["amount_cents"]) / 100, 2), "quantity": 1}
                                   for i in items]
+            tracking = checkout_tracking(request)
             result["checkout_url"] = billing.create_features_checkout(
                 customer_email=email,
                 customer_id=None,
@@ -2926,9 +3067,11 @@ def api_onboard(data: OnboardRequest, request: Request):
                 success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}&amount_cents={total}&currency={cur}",
                 cancel_url=f"{base}/chart/{person_id}?paid=0",
                 brand=brand_name(),
-                extra_metadata=checkout_tracking(request),
+                extra_metadata=tracking,
                 bundle=is_bundle,
             )
+            record_checkout(tracking, user_id=user["id"], keys=[i["key"] for i in items],
+                            amount_cents=total, currency=cur, source="start")
         except Exception as e:
             # Мълчаливият провал беше по-лош от самата грешка: човекът се
             # озоваваше на картата си, без изобщо да го питат за пари, а от
@@ -2967,6 +3110,7 @@ def api_register(data: AuthRequest, request: Request):
     grant_signup_features(user["id"])
     token = create_token(user["id"], user["email"])
     audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
+    note_signup(user["id"], "register")
     notify_new_user(user["id"], email, "имейл и парола")
     try_send_template(
         email, "welcome",
@@ -4505,6 +4649,201 @@ def api_admin_ai_usage(days: int = 30, admin: dict = Depends(require_admin)):
     }
 
 
+# --- Отчети за собственика: какво се случва и къде се губят клиентите -------
+EUR_PER_USD = 0.92   # само за прибл. марж (AI цените са в USD); не е счетоводен курс
+_REAL_SALE = "voided_at IS NULL AND COALESCE(method, '') NOT IN ('тест', 'еднократно')"
+
+
+def _report_window(days: int, now: Optional[datetime.datetime] = None):
+    # +1 s: краят на периода е изключен, а записите от тази секунда са негови.
+    now = (now or datetime.datetime.utcnow()) + datetime.timedelta(seconds=1)
+    days = max(1, min(int(days or 30), 366))
+    start = now - datetime.timedelta(days=days)
+    prev = start - datetime.timedelta(days=days)
+    iso = lambda d: d.isoformat(timespec="seconds")
+    return days, iso(prev), iso(start), iso(now)
+
+
+def _funnel(conn, since: str, until: str) -> dict:
+    one = lambda sql, *a: conn.execute(sql, a).fetchone()[0] or 0
+    rng = "datetime({col}) >= datetime(?) AND datetime({col}) < datetime(?)"
+    pv = rng.format(col="viewed_at")
+    ev = rng.format(col="at")
+    return {
+        "visitors": one(f"SELECT COUNT(DISTINCT visitor) FROM page_views WHERE {pv}", since, until),
+        "page_views": one(f"SELECT COUNT(*) FROM page_views WHERE {pv}", since, until),
+        "guest_charts": one(f"SELECT COUNT(*) FROM events WHERE event = 'guest_chart' AND {ev}", since, until),
+        "signups": one("SELECT COUNT(*) FROM users WHERE role != 'admin' AND "
+                       + rng.format(col="created_at"), since, until),
+        "locked_viewers": one("SELECT COUNT(DISTINCT COALESCE(user_id, visitor)) FROM events"
+                              f" WHERE event = 'locked_view' AND {ev}", since, until),
+        "checkouts": one("SELECT COUNT(*) FROM checkout_sessions WHERE "
+                         + rng.format(col="created_at"), since, until),
+        "orders": one(f"SELECT COUNT(*) FROM payments WHERE {_REAL_SALE} AND "
+                      + rng.format(col="paid_at"), since, until),
+        "buyers": one(f"SELECT COUNT(DISTINCT user_id) FROM payments WHERE {_REAL_SALE} AND "
+                      + rng.format(col="paid_at"), since, until),
+        "revenue_cents": one(f"SELECT COALESCE(SUM(amount_cents), 0) FROM payments WHERE {_REAL_SALE} AND "
+                             + rng.format(col="paid_at"), since, until),
+        "refunds_cents": one("SELECT COALESCE(SUM(amount_cents), 0) FROM payment_refunds WHERE "
+                             + rng.format(col="refunded_at"), since, until),
+    }
+
+
+def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> dict:
+    """Всичко за таба „Отчети“ и за сутрешното писмо — само четене."""
+    days, prev_start, start, until = _report_window(days, now)
+    rng = "datetime({col}) >= datetime(?) AND datetime({col}) < datetime(?)"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = lambda sql, *a: [dict(r) for r in conn.execute(sql, a)]
+        cur, prev = _funnel(conn, start, until), _funnel(conn, prev_start, start)
+
+        names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+        names["bundle"] = "Пакет — всички модули"
+        by_module = rows(
+            "SELECT i.feature_key AS key, COUNT(*) AS orders, SUM(i.amount_cents) AS amount_cents"
+            " FROM payment_items i JOIN payments p ON p.id = i.payment_id"
+            f" WHERE p.{_REAL_SALE} AND "
+            + rng.format(col="p.paid_at") + " GROUP BY i.feature_key ORDER BY amount_cents DESC",
+            start, until)
+        for r in by_module:
+            r["name"] = names.get(r["key"], r["key"])
+        by_month = rows(
+            "SELECT strftime('%Y-%m', datetime(paid_at, '+3 hours')) AS month, COUNT(*) AS orders,"
+            " SUM(amount_cents) AS amount_cents FROM payments"
+            f" WHERE {_REAL_SALE} AND datetime(paid_at) >= datetime('now', '-13 months')"
+            " GROUP BY month ORDER BY month DESC LIMIT 13")
+        refunds_by_month = {r["month"]: r["amount_cents"] for r in rows(
+            "SELECT strftime('%Y-%m', datetime(refunded_at, '+3 hours')) AS month,"
+            " SUM(amount_cents) AS amount_cents FROM payment_refunds GROUP BY month")}
+        for r in by_month:
+            r["refunds_cents"] = refunds_by_month.get(r["month"], 0)
+            r["net_cents"] = (r["amount_cents"] or 0) - r["refunds_cents"]
+
+        # Изоставени: създаден Checkout, неплатен след час.
+        cutoff = (datetime.datetime.fromisoformat(until) - datetime.timedelta(hours=1)).isoformat(timespec="seconds")
+        abandoned = rows(
+            "SELECT c.created_at, c.keys, c.amount_cents, c.currency, c.source, u.email, c.user_id"
+            " FROM checkout_sessions c LEFT JOIN users u ON u.id = c.user_id"
+            " WHERE c.paid_at IS NULL AND datetime(c.created_at) < datetime(?) AND "
+            + rng.format(col="c.created_at") + " ORDER BY c.created_at DESC LIMIT 50",
+            cutoff, start, until)
+        for r in abandoned:
+            r["names"] = ", ".join(names.get(k, k) for k in (r["keys"] or "").split(",") if k)
+        abandoned_count = conn.execute(
+            "SELECT COUNT(*) FROM checkout_sessions WHERE paid_at IS NULL AND datetime(created_at) < datetime(?)"
+            " AND " + rng.format(col="created_at"), (cutoff, start, until)).fetchone()[0]
+
+        locked = rows(
+            "SELECT e.feature AS key, COUNT(*) AS views, COUNT(DISTINCT COALESCE(e.user_id, e.visitor)) AS people,"
+            " COUNT(DISTINCT CASE WHEN fp.user_id IS NOT NULL THEN e.user_id END) AS bought"
+            " FROM events e LEFT JOIN feature_purchases fp ON fp.user_id = e.user_id"
+            " AND fp.feature_key = e.feature AND fp.price_cents > 0"
+            " WHERE e.event = 'locked_view' AND " + rng.format(col="e.at")
+            + " GROUP BY e.feature ORDER BY people DESC", start, until)
+        for r in locked:
+            r["name"] = names.get(r["key"], r["key"])
+
+        usage = rows(
+            "SELECT event, feature AS key, COUNT(*) AS times, COUNT(DISTINCT user_id) AS people"
+            " FROM events WHERE event IN ('module_view','pdf','audio','email_reading','share','picker_open')"
+            " AND " + rng.format(col="at") + " GROUP BY event, feature ORDER BY times DESC", start, until)
+        for r in usage:
+            r["name"] = names.get(r["key"], r["key"] or "")
+
+        sources = rows(
+            "SELECT COALESCE(utm_source, referrer, '(директно / неизвестно)') AS source,"
+            " COALESCE(utm_medium, CASE WHEN referrer IS NULL THEN '' ELSE 'referral' END) AS medium,"
+            " COUNT(DISTINCT visitor) AS visitors, COUNT(*) AS views FROM page_views"
+            " WHERE " + rng.format(col="viewed_at") + " GROUP BY source, medium ORDER BY visitors DESC LIMIT 20",
+            start, until)
+        devices = rows(
+            "SELECT COALESCE(device, '(стари записи)') AS device, COUNT(DISTINCT visitor) AS visitors,"
+            " COUNT(*) AS views FROM page_views WHERE " + rng.format(col="viewed_at")
+            + " GROUP BY device ORDER BY views DESC", start, until)
+        signup_methods = rows(
+            "SELECT COALESCE(signup_method, '(преди отчетите)') AS method, COUNT(*) AS users FROM users"
+            " WHERE role != 'admin' AND " + rng.format(col="created_at") + " GROUP BY method ORDER BY users DESC",
+            start, until)
+        # Пътищата с номера (/chart/123, /share/xyz) се събират в един ред.
+        raw_pages = rows(
+            "SELECT path, COUNT(*) AS views, COUNT(DISTINCT visitor) AS visitors FROM page_views"
+            " WHERE " + rng.format(col="viewed_at") + " GROUP BY path", start, until)
+        pages = {}
+        for r in raw_pages:
+            key = re.sub(r"/(chart|share|reset-password)/[^/]+", r"/\1/…", r["path"])
+            agg = pages.setdefault(key, {"path": key, "views": 0, "visitors": 0})
+            agg["views"] += r["views"]
+            agg["visitors"] += r["visitors"] or 0
+        top_pages = sorted(pages.values(), key=lambda r: -r["views"])[:20]
+
+        buyers_all = rows(
+            "SELECT p.user_id, COUNT(*) AS orders, MIN(datetime(p.paid_at)) AS first_paid,"
+            " u.created_at FROM payments p LEFT JOIN users u ON u.id = p.user_id"
+            f" WHERE p.{_REAL_SALE} GROUP BY p.user_id")
+        repeat_buyers = sum(1 for r in buyers_all if r["orders"] > 1)
+        new_buyers = [r for r in buyers_all if r["first_paid"] and start <= r["first_paid"].replace(" ", "T") < until]
+        waits = []
+        for r in new_buyers:
+            try:
+                created = datetime.datetime.fromisoformat(str(r["created_at"]).replace(" ", "T")[:19])
+                paid = datetime.datetime.fromisoformat(r["first_paid"].replace(" ", "T")[:19])
+                waits.append(max(0.0, (paid - created).total_seconds() / 86400))
+            except Exception:
+                pass
+        waits.sort()
+        median_days = round(waits[len(waits) // 2], 1) if waits else None
+
+        ai = conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) AS total,"
+            " COALESCE(SUM(CASE WHEN source = 'client' THEN cost_usd END), 0) AS clients"
+            " FROM ai_usage WHERE " + rng.format(col="at"), (start, until)).fetchone()
+        ai_paying = conn.execute(
+            "SELECT COALESCE(SUM(a.cost_usd), 0) FROM ai_usage a WHERE a.source = 'client' AND "
+            + rng.format(col="a.at") + f" AND a.user_id IN (SELECT user_id FROM payments WHERE {_REAL_SALE})",
+            (start, until)).fetchone()[0]
+
+    def rate(a, b):
+        return round(100.0 * a / b, 1) if b else None
+
+    net_cents = cur["revenue_cents"] - cur["refunds_cents"]
+    ai_eur_cents = round(ai["total"] * EUR_PER_USD * 100)
+    return {
+        "days": days, "since": start, "until": until,
+        "funnel": cur, "previous": prev,
+        "conversion": {
+            "visit_to_chart": rate(cur["guest_charts"], cur["visitors"]),
+            "visit_to_signup": rate(cur["signups"], cur["visitors"]),
+            "signup_to_buyer": rate(cur["buyers"], cur["signups"]),
+            "checkout_to_paid": rate(cur["orders"], cur["checkouts"]),
+        },
+        "revenue": {
+            "gross_cents": cur["revenue_cents"], "refunds_cents": cur["refunds_cents"],
+            "net_cents": net_cents,
+            "avg_order_cents": round(cur["revenue_cents"] / cur["orders"]) if cur["orders"] else None,
+            "by_module": by_module, "by_month": by_month,
+        },
+        "abandoned": {"count": abandoned_count, "rate": rate(abandoned_count, cur["checkouts"]),
+                      "recent": abandoned},
+        "locked": locked, "usage": usage,
+        "sources": sources, "devices": devices, "signup_methods": signup_methods, "top_pages": top_pages,
+        "customers": {"buyers_ever": len(buyers_all), "repeat_buyers": repeat_buyers,
+                      "new_buyers": len(new_buyers), "median_days_to_first_purchase": median_days},
+        "ai": {"cost_usd": round(ai["total"], 4), "clients_usd": round(ai["clients"], 4),
+               "paying_clients_usd": round(ai_paying, 4),
+               "per_buyer_usd": round(ai_paying / cur["buyers"], 4) if cur["buyers"] else None,
+               "margin_cents_approx": net_cents - ai_eur_cents, "eur_per_usd": EUR_PER_USD},
+    }
+
+
+@app.get("/api/admin/reports")
+def api_admin_reports(days: int = 30, admin: dict = Depends(require_admin)):
+    """Таб „Отчети“: фуния, приходи, изоставени плащания, заключени модули,
+    използване, източници, купувачи, AI разход спрямо приходите."""
+    return build_reports(days)
+
+
 # --- Одиторски файл по Н-18 (Приложение № 38): генериране и автоматизация ---
 SAFT_DIR = DB_PATH.parent / "saft"
 SAFT_DEADLINE_DAY = 15      # до 15-о число на следващия месец (чл. 52т, ал. 3)
@@ -5065,6 +5404,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
         base = site_base_url(request)
         success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=BUNDLE_PRICE_CENTS, currency=(items[0]["currency"] if items else "EUR"))
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        tracking = checkout_tracking(request)
         try:
             url = billing.create_features_checkout(
                 customer_email=email,
@@ -5074,9 +5414,12 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
                 success_url=success,
                 cancel_url=cancel,
                 brand=brand_name(),
-                extra_metadata=checkout_tracking(request),
+                extra_metadata=tracking,
                 bundle=True,
             )
+            record_checkout(tracking, user_id=user_id, keys=[i["key"] for i in items],
+                            amount_cents=sum(int(i["amount_cents"]) for i in items),
+                            currency=(items[0]["currency"] if items else "EUR"), source="bundle")
             return {"ok": True, "checkout_url": url, "bundle": bundle}
         except Exception as e:
             log.warning("Stripe checkout за пакета се провали: %s", e)
@@ -5110,6 +5453,7 @@ def api_request_feature(feature_key: str, request: Request,
         base = site_base_url(request)
         success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+        tracking = checkout_tracking(request)
         try:
             url = billing.create_feature_checkout(
                 customer_email=email,
@@ -5122,8 +5466,11 @@ def api_request_feature(feature_key: str, request: Request,
                 success_url=success,
                 cancel_url=cancel,
                 brand=brand_name(),
-                extra_metadata=checkout_tracking(request),
+                extra_metadata=tracking,
             )
+            record_checkout(tracking, user_id=user_id, keys=[feature_key],
+                            amount_cents=offer["price_cents"], currency=offer["currency"],
+                            source="module")
             return {"ok": True, "checkout_url": url, "offer": offer}
         except Exception as e:
             log.warning("Stripe checkout за %s се провали: %s", feature_key, e)
@@ -5801,6 +6148,17 @@ def build_daily_summary(day: datetime.date) -> str:
             + in_day.format(col="at") + " GROUP BY source ORDER BY 2 DESC", rng).fetchall()
         signs_ready = conn.execute(
             "SELECT COUNT(*) FROM sign_horoscope WHERE date = ?", (today.isoformat(),)).fetchone()[0]
+        # Фуния за деня и за предишния ден — за сравнението.
+        prev_rng = ((start - datetime.timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S"), rng[0])
+        funnel, funnel_prev = _funnel(conn, *rng), _funnel(conn, *prev_rng)
+        abandoned = conn.execute(
+            "SELECT u.email, c.keys, c.amount_cents FROM checkout_sessions c"
+            " LEFT JOIN users u ON u.id = c.user_id WHERE c.paid_at IS NULL AND "
+            + in_day.format(col="c.created_at") + " ORDER BY c.created_at", rng).fetchall()
+        locked_top = conn.execute(
+            "SELECT feature, COUNT(DISTINCT COALESCE(user_id, visitor)) FROM events"
+            " WHERE event = 'locked_view' AND " + in_day.format(col="at")
+            + " GROUP BY feature ORDER BY 2 DESC LIMIT 3", rng).fetchall()
     errors, warnings = _log_problem_counts(day)
 
     lines = [f"Обобщение за {day:%d.%m.%Y}", ""]
@@ -5826,6 +6184,25 @@ def build_daily_summary(day: datetime.date) -> str:
     else:
         lines.append("- Няма плащания")
     lines.append(f"- От началото на месеца: {month / 100:.2f} EUR")
+    if funnel["refunds_cents"]:
+        lines.append(f"- Върнати пари: {funnel['refunds_cents'] / 100:.2f} EUR")
+    lines.append("")
+
+    def _cmp(key):
+        cur, prev = funnel[key], funnel_prev[key]
+        return f"{cur}" + (f" (предния ден {prev})" if prev != cur else "")
+    lines.append("Фуния")
+    lines.append(f"- Посетители {_cmp('visitors')} → гост-карти {_cmp('guest_charts')} → "
+                 f"регистрации {_cmp('signups')} → започнали плащане {_cmp('checkouts')} → "
+                 f"платили {_cmp('orders')}")
+    if locked_top:
+        lines.append("- Най-гледани заключени модули: " + ", ".join(
+            f"{names.get(k, k)} ({n})" for k, n in locked_top))
+    if abandoned:
+        lines.append(f"- Започнали плащане, без да платят: {len(abandoned)}")
+        for email, keys, amount in abandoned[:10]:
+            mods = ", ".join(names.get(k, k) for k in (keys or "").split(",") if k)
+            lines.append(f"  · {email or '?'} — {mods} — {(amount or 0) / 100:.2f} EUR")
     lines.append("")
     lines.append("AI")
     labels = {"client": "клиенти", "seo": "SEO", "background": "фонови", "admin": "админ"}
@@ -5878,6 +6255,26 @@ def try_send_template(to: str, kind: str, **fields) -> bool:
     except Exception as e:
         log.warning("Неуспешен %s имейл до %s: %s", kind, to, e)
         return False
+
+def note_login(user_id: int) -> None:
+    """users.last_login — колоната я имаше, но никой не я пишеше."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
+    except Exception:
+        pass
+
+
+def note_signup(user_id: int, method: str) -> None:
+    """Откъде е дошъл акаунтът: start (с карта), register, google, facebook."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE users SET signup_method = COALESCE(signup_method, ?),"
+                         " last_login = COALESCE(last_login, CURRENT_TIMESTAMP) WHERE id = ?",
+                         (method, user_id))
+    except Exception:
+        pass
+
 
 def audit(event: str, detail: str = "", *, user_id: Optional[int] = None,
           actor: str = "system") -> None:
@@ -6222,8 +6619,38 @@ def ga_client_id_from_request(request: Optional[Request]) -> str:
 
 
 def checkout_tracking(request: Optional[Request]) -> dict:
-    """Какво пътува в Stripe metadata, за да може сървърът да прати покупката."""
-    return {"ga_cid": ga_client_id_from_request(request)}
+    """Какво пътува в Stripe metadata: client_id за GA4 и номер на опита за
+    плащане (checkout_ref) — с него платеното се отличава от изоставеното."""
+    return {"ga_cid": ga_client_id_from_request(request),
+            "checkout_ref": secrets.token_urlsafe(12)}
+
+
+def record_checkout(tracking: dict, *, user_id: int, keys: list, amount_cents: int,
+                    currency: str, source: str) -> None:
+    """Създаден Stripe Checkout — за отчета „изоставени плащания“."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO checkout_sessions (ref, user_id, keys, amount_cents,"
+                " currency, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (tracking.get("checkout_ref"), user_id, ",".join(keys), int(amount_cents or 0),
+                 (currency or "EUR").upper(), source,
+                 datetime.datetime.utcnow().isoformat(timespec="seconds")))
+    except Exception:
+        log.warning("Опитът за плащане не се записа", exc_info=True)
+
+
+def mark_checkout_paid(meta: dict, payment_id: Optional[int]) -> None:
+    ref = (meta or {}).get("checkout_ref")
+    if not ref:
+        return
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE checkout_sessions SET paid_at = COALESCE(paid_at, ?),"
+                         " payment_id = COALESCE(payment_id, ?) WHERE ref = ?",
+                         (datetime.datetime.utcnow().isoformat(timespec="seconds"), payment_id, ref))
+    except Exception:
+        log.warning("Опитът за плащане не се отбеляза като платен", exc_info=True)
 
 
 def ga4_items(meta: dict, keys: list) -> list:
@@ -6380,6 +6807,7 @@ def fulfill_checkout_session(session: dict) -> None:
         audit("feature_unlocked", f"Модули отключени: {', '.join(keys)}",
               user_id=user_id, actor="stripe")
         notify_payment(user_id, amount, currency, keys, session_id)
+        mark_checkout_paid(meta, pay_id)
         send_ga4_event(meta.get("ga_cid") or "", "purchase", {
             "transaction_id": session_id, "value": round(amount / 100, 2),
             "currency": currency, "items": ga4_items(meta, keys),
@@ -7084,6 +7512,7 @@ def _oauth_link_or_create(provider: str, provider_user_id: str,
         grant_signup_features(user["id"])
         audit("sign_up", f"Регистрация през {provider}: {email}",
               user_id=user["id"], actor=email)
+        note_signup(user["id"], provider)
         notify_new_user(user["id"], email, provider.capitalize())
         user = dict(user, _new_account=True)   # за sign_up в GA4 на oauth_done
 
@@ -7217,6 +7646,7 @@ def api_oauth_callback(provider: str, request: Request,
     token = create_token(user["id"], user["email"])
     audit("login", f"Вход през {provider}: {user['email']}",
           user_id=user["id"], actor=user["email"])
+    note_login(user["id"])
 
     # The token is handed to the page rather than put in the URL, where it
     # would land in history and in any referrer header.
@@ -7283,6 +7713,7 @@ def api_auth_totp(data: TotpChallengeRequest):
     token = create_token(user["id"], user["email"])
     audit("login", f"Вход през {entry['provider']} с 2FA: {user['email']}",
           user_id=user["id"], actor=user["email"])
+    note_login(user["id"])
     return {"token": token, "email": user["email"], "next": entry["next"]}
 
 
@@ -7350,6 +7781,7 @@ def api_checkout_feature(feature_key: str, request: Request,
     base = site_base_url(request)
     success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
     cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
+    tracking = checkout_tracking(request)
     try:
         url = billing.create_feature_checkout(
             customer_email=email,
@@ -7362,8 +7794,11 @@ def api_checkout_feature(feature_key: str, request: Request,
             success_url=success,
             cancel_url=cancel,
             brand=brand_name(),
-            extra_metadata=checkout_tracking(request),
+            extra_metadata=tracking,
         )
+        record_checkout(tracking, user_id=user_id, keys=[feature_key],
+                        amount_cents=offer["price_cents"], currency=offer["currency"],
+                        source="billing")
     except Exception as e:
         report_checkout_failure(f"покупка на модул {feature_key} (billing)", e)
         raise HTTPException(502, f"Stripe грешка: {e}") from e
@@ -7498,10 +7933,29 @@ def api_account_digest(data: DigestUpdate, user: Tuple[int, str] = Depends(get_c
         conn.commit()
     return {"ok": True, "digest_opt_in": bool(data.digest_opt_in)}
 
+class ClientEvent(BaseModel):
+    event: str
+    feature: Optional[str] = None
+
+
+@app.post("/api/events")
+def api_client_event(data: ClientEvent, request: Request):
+    """Събития, които сървърът не вижда: заключен модул, показан от самата
+    страница (повечето заключени табове не викат сървъра), отворен избор на
+    модули, натиснато „Сподели“. Само позволените; лимит по IP."""
+    if data.event not in CLIENT_EVENTS:
+        raise HTTPException(400, "Непознато събитие.")
+    rate_limit("events", client_ip(request))
+    feature = (data.feature or "")[:40] or None
+    record_event(data.event, user_id=_user_id_for_log(request), request=request, feature=feature)
+    return {"ok": True}
+
+
 @app.post("/api/persons/{person_id}/share")
 def api_create_share(person_id: int, data: ShareCreate, request: Request,
                      user: Tuple[int, str] = Depends(get_current_user)):
     user_id, _ = user
+    record_event("share", user_id=user_id, request=request, feature=reading_base(data.cache_key))
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
@@ -8331,6 +8785,7 @@ def api_profile_interpretation(person_id: int, refresh: bool = False,
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
@@ -8467,6 +8922,7 @@ def api_akashic_interpretation(person_id: int, refresh: bool = False,
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
@@ -8595,6 +9051,7 @@ def api_numerology_interpretation(person_id: int, refresh: bool = False, user: T
     if not refresh:
         cached = get_ai_cache(person_id, cache_key)
         if cached:
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
@@ -8906,6 +9363,7 @@ def api_love_match_interpretation(data: LoveMatchRequest, refresh: bool = False,
     if not refresh:
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
@@ -9029,6 +9487,7 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
                 cached = other
         if cached:
             # Без cache_key бутоните PDF/аудио/споделяне липсваха при второ отваряне.
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
@@ -9254,6 +9713,7 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
         cached = get_ai_cache(person_id, cache_key)
         if cached:
             summary, body = split_summary(cached["content"])
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": body, "summary": summary,
                     "date": date_bg, "cached": True, "cache_key": cache_key}
         # Няма кеш, а предишен опит е завършил с грешка — покажи я, не рестартирай.
@@ -9421,6 +9881,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
     if not refresh:
         cached = get_ai_cache(data.person_id, cache_key)
         if cached:
+            record_event("module_view", user_id=user_id, feature=reading_base(cache_key))
             return {"interpretation": cached["content"], "cached": True,
                     "generated_at": cached["generated_at"], "cache_key": cache_key}
 
@@ -9974,6 +10435,7 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
 def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(get_current_user)):
     """Download one cached reading as a PDF."""
     user_id, _ = user
+    record_event("pdf", user_id=user_id, feature=reading_base(key))
     person = get_person(person_id, user_id)
     if not person:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
@@ -10087,6 +10549,7 @@ def _audio_lock(person_id: int) -> threading.Lock:
 def api_reading_audio(person_id: int, key: str,
                       user: Tuple[int, str] = Depends(get_current_user_flex)):
     """Чете кеширано разчитане на глас (mp3, български)."""
+    record_event("audio", user_id=user[0], feature=reading_base(key))
     user_id, _ = user
     person = get_person(person_id, user_id)
     if not person:
@@ -10156,6 +10619,7 @@ class EmailReadingRequest(BaseModel):
 def api_email_reading(person_id: int, data: EmailReadingRequest,
                       user: Tuple[int, str] = Depends(get_current_user)):
     """Email one cached reading as a PDF attachment."""
+    record_event("email_reading", user_id=user[0], feature=reading_base(data.key))
     user_id, email = user
     person = get_person(person_id, user_id)
     if not person:

@@ -446,7 +446,15 @@
             .stat-value { font-size: 1.45rem; }
             .btn-row .btn { flex: 1 1 auto; }
         }
-    </style>
+            .funnel { display: grid; gap: 6px; margin-bottom: 8px; }
+        .funnel-row { display: grid; grid-template-columns: minmax(130px, 200px) 1fr minmax(190px, auto); gap: 10px; align-items: center; }
+        .funnel-label { font-size: .9rem; }
+        .funnel-bar { background: rgba(124, 58, 237, .12); border-radius: 6px; height: 14px; overflow: hidden; }
+        .funnel-bar span { display: block; height: 100%; background: #7c3aed; border-radius: 6px; }
+        .funnel-num { font-variant-numeric: tabular-nums; text-align: right; font-size: .9rem; }
+        .funnel-num small { display: block; opacity: .7; font-size: .75rem; }
+        @media (max-width: 600px) { .funnel-row { grid-template-columns: 1fr; } .funnel-num { text-align: left; } }
+</style>
 {% include "_analytics.html" %}
 </head>
 <body>
@@ -467,6 +475,7 @@
         <div id="panel" hidden>
             <div class="tabs" role="tablist">
                 <div class="tab active" role="tab" tabindex="0" data-tab="overview">Обзор</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="reports">Отчети</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="users">Потребители</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="plans">Пакети</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="payments">Плащания</div>
@@ -568,6 +577,22 @@
                         <button class="btn btn-ghost btn-sm" id="auditNextBtn">По-стари ›</button>
                     </div>
                     <div id="auditBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-reports">
+                <div class="section">
+                    <h2>Отчети</h2>
+                    <p class="hint">Къде се губят клиентите, какво купуват и ползват, откъде идват. Приходите са без тестовите плащания, анулираните и отключванията от админа. Посетителите, източниците, заключените модули и изоставените плащания се броят от пускането на тази версия.</p>
+                    <div class="toolbar">
+                        <select id="repDays" style="max-width:200px;">
+                            <option value="7">Последните 7 дни</option>
+                            <option value="30" selected>Последните 30 дни</option>
+                            <option value="90">Последните 90 дни</option>
+                            <option value="365">Последната година</option>
+                        </select>
+                    </div>
+                    <div id="repBody"></div>
                 </div>
             </div>
 
@@ -726,6 +751,7 @@
             audit: loadAudit,
             logs: loadLogs,
             ai: loadAiUsage,
+            reports: loadReports,
         };
         const loaded = {};
         function showTab(name, tabEl) {
@@ -900,6 +926,106 @@
             }
         }
         document.getElementById('aiDays').addEventListener('change', loadAiUsage);
+
+        /* ---------- Отчети ---------- */
+        const REP_EVENTS = { module_view: 'Отворено разчитане', pdf: 'Свален PDF', audio: 'Гласово четене',
+                             email_reading: 'Пратено по имейл', share: 'Споделено', picker_open: 'Отворен избор на модули' };
+        const REP_SOURCES = { start: 'с карта (/start)', register: '/register', google: 'Google', facebook: 'Facebook' };
+        const REP_CHECKOUT = { start: 'при регистрация', bundle: 'пакет', module: 'модул', billing: 'модул (стар път)' };
+        function eur(cents) { return money(Number(cents) || 0, 'EUR'); }
+        function delta(cur, prev) {
+            cur = Number(cur) || 0; prev = Number(prev) || 0;
+            if (!prev) return cur ? 'нови за периода' : 'без промяна';
+            const d = Math.round(100 * (cur - prev) / prev);
+            return (d > 0 ? '▲ ' : d < 0 ? '▼ ' : '') + Math.abs(d) + '% спрямо предишния период';
+        }
+        function pct(v) { return v === null || v === undefined ? '—' : v + '%'; }
+        // Като aiTable, но числови са само колоните от `numFrom` нататък.
+        function repTable(head, rows, cells, numFrom) {
+            if (!rows.length) return '<div class="empty">Няма данни за периода.</div>';
+            return '<div class="table-wrap"><table><thead><tr>' +
+                head.map(function(h, i) { return '<th' + (i >= numFrom ? ' class="num"' : '') + '>' + escapeHtml(h) + '</th>'; }).join('') +
+                '</tr></thead><tbody>' + rows.map(function(r) {
+                    return '<tr>' + cells(r).map(function(c, i) {
+                        return '<td' + (i >= numFrom ? ' class="num"' : '') + '>' + escapeHtml(String(c)) + '</td>';
+                    }).join('') + '</tr>';
+                }).join('') + '</tbody></table></div>';
+        }
+        // Времената в базата са UTC — показваме ги по София.
+        function sofia(iso) {
+            if (!iso) return '';
+            const d = new Date(String(iso).replace(' ', 'T') + 'Z');
+            return isNaN(d) ? String(iso) : d.toLocaleString('bg-BG', { timeZone: 'Europe/Sofia', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+        async function loadReports() {
+            const el = document.getElementById('repBody');
+            el.innerHTML = '<div class="hint">Зареждане…</div>';
+            try {
+                const d = await api('/api/admin/reports?days=' + document.getElementById('repDays').value);
+                const f = d.funnel || {}, p = d.previous || {}, c = d.conversion || {}, r = d.revenue || {};
+                let html = '<div class="stats">';
+                html += statCard('Посетители', num(f.visitors), delta(f.visitors, p.visitors));
+                html += statCard('Регистрации', num(f.signups), delta(f.signups, p.signups));
+                html += statCard('Поръчки', num(f.orders), delta(f.orders, p.orders));
+                html += statCard('Приход (нето)', eur(r.net_cents), 'Средна поръчка ' + (r.avg_order_cents ? eur(r.avg_order_cents) : '—') + (r.refunds_cents ? ' · върнати ' + eur(r.refunds_cents) : ''));
+                html += statCard('Изоставени плащания', num((d.abandoned || {}).count), pct((d.abandoned || {}).rate) + ' от започнатите');
+                html += '</div>';
+
+                const steps = [
+                    ['Посетители', f.visitors], ['Гост-карта на /start', f.guest_charts], ['Регистрации', f.signups],
+                    ['Видели заключен модул', f.locked_viewers], ['Започнали плащане', f.checkouts], ['Платили (поръчки)', f.orders],
+                ];
+                const top = Math.max.apply(null, steps.map(function(s) { return Number(s[1]) || 0; }).concat([1]));
+                html += '<h3 style="margin:18px 0 8px;">Фуния</h3><div class="funnel">' + steps.map(function(s, i) {
+                    const v = Number(s[1]) || 0, prevV = i ? (Number(steps[i - 1][1]) || 0) : 0;
+                    const conv = i && prevV ? ' · ' + Math.round(100 * v / prevV) + '% от предходната стъпка' : '';
+                    return '<div class="funnel-row"><div class="funnel-label">' + escapeHtml(s[0]) + '</div>' +
+                        '<div class="funnel-bar"><span style="width:' + Math.max(2, Math.round(100 * v / top)) + '%"></span></div>' +
+                        '<div class="funnel-num">' + num(v) + '<small>' + conv + '</small></div></div>';
+                }).join('') + '</div>' +
+                '<div class="hint">Посещение → гост-карта ' + pct(c.visit_to_chart) + ' · посещение → регистрация ' + pct(c.visit_to_signup) +
+                ' · регистрация → купувач ' + pct(c.signup_to_buyer) + ' · започнато → платено ' + pct(c.checkout_to_paid) + '</div>';
+
+                const ab = (d.abandoned || {}).recent || [];
+                html += '<h3 style="margin:18px 0 8px;">Изоставени плащания</h3>' +
+                    '<div class="hint">Отворили са страницата на Stripe и не са платили (след 1 час). Добри кандидати за лично писмо.</div>' +
+                    repTable(['Кога', 'Клиент', 'Какво', 'Сума', 'Откъде'], ab, function(x) {
+                        return [sofia(x.created_at), x.email || ('#' + x.user_id), x.names || x.keys, eur(x.amount_cents), REP_CHECKOUT[x.source] || x.source || ''];
+                    }), 3;
+
+                html += '<h3 style="margin:18px 0 8px;">Приходи по модул</h3>' +
+                    repTable(['Модул', 'Продажби', 'Приход'], r.by_module || [], function(x) { return [x.name, num(x.orders), eur(x.amount_cents)]; }), 1;
+                html += '<h3 style="margin:18px 0 8px;">Приходи по месец</h3>' +
+                    repTable(['Месец', 'Поръчки', 'Продажби', 'Върнати', 'Нето'], r.by_month || [], function(x) { return [x.month, num(x.orders), eur(x.amount_cents), eur(x.refunds_cents), eur(x.net_cents)]; }), 1;
+
+                html += '<h3 style="margin:18px 0 8px;">Заключени модули, които се гледат</h3>' +
+                    '<div class="hint">Кой модул хората отварят, без да е отключен — и колко от тях после са го купили.</div>' +
+                    repTable(['Модул', 'Прегледи', 'Хора', 'Купили'], d.locked || [], function(x) { return [x.name || x.key, num(x.views), num(x.people), num(x.bought)]; }), 1;
+                html += '<h3 style="margin:18px 0 8px;">Използване след покупка</h3>' +
+                    repTable(['Действие', 'Модул', 'Пъти', 'Хора'], d.usage || [], function(x) { return [REP_EVENTS[x.event] || x.event, x.name || x.key || '', num(x.times), num(x.people)]; }), 2;
+
+                html += '<h3 style="margin:18px 0 8px;">Откъде идват посетителите</h3>' +
+                    repTable(['Източник', 'Канал', 'Посетители', 'Прегледи'], d.sources || [], function(x) { return [x.source, x.medium || '', num(x.visitors), num(x.views)]; }), 2;
+                html += '<h3 style="margin:18px 0 8px;">Устройства</h3>' +
+                    repTable(['Устройство', 'Посетители', 'Прегледи'], d.devices || [], function(x) { return [{ mobile: 'Телефон', desktop: 'Компютър', tablet: 'Таблет' }[x.device] || x.device, num(x.visitors), num(x.views)]; }), 1;
+                html += '<h3 style="margin:18px 0 8px;">Регистрации по начин</h3>' +
+                    repTable(['Начин', 'Регистрации'], d.signup_methods || [], function(x) { return [REP_SOURCES[x.method] || x.method, num(x.users)]; }), 1;
+                html += '<h3 style="margin:18px 0 8px;">Най-гледани страници</h3>' +
+                    repTable(['Страница', 'Прегледи', 'Посетители'], d.top_pages || [], function(x) { return [x.path, num(x.views), num(x.visitors)]; }), 1;
+
+                const cu = d.customers || {}, ai = d.ai || {};
+                html += '<h3 style="margin:18px 0 8px;">Купувачи и AI разход</h3><div class="stats">';
+                html += statCard('Нови купувачи', num(cu.new_buyers), 'Общо някога: ' + num(cu.buyers_ever) + ' · повторни: ' + num(cu.repeat_buyers));
+                html += statCard('До първа покупка', cu.median_days_to_first_purchase === null || cu.median_days_to_first_purchase === undefined ? '—' : cu.median_days_to_first_purchase + ' дни', 'Медиана: от регистрация до първо плащане');
+                html += statCard('AI разход', usd(ai.cost_usd), 'Платили клиенти: ' + usd(ai.paying_clients_usd) + (ai.per_buyer_usd !== null && ai.per_buyer_usd !== undefined ? ' · на купувач ' + usd(ai.per_buyer_usd) : ''));
+                html += statCard('Марж (прибл.)', eur(ai.margin_cents_approx), 'Нето приход минус AI по курс ' + ai.eur_per_usd + ' €/$');
+                html += '</div>';
+                el.innerHTML = html;
+            } catch (e) {
+                el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+        document.getElementById('repDays').addEventListener('change', loadReports);
 
         /* ---------- server logs ---------- */
         const logsBody = document.getElementById('logsBody');

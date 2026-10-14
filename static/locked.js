@@ -137,9 +137,29 @@ function escapeHtml(text) {
 }
 
 // Renders the blurred teaser plus the price, into the panel that failed.
+// За отчета „кои заключени модули се гледат“: повечето заключени табове не
+// викат сървъра, така че той не ги вижда. Едно събитие на модул на страница.
+const _lockedSeen = {};
+function reportLockedView(feature) {
+    if (!feature || _lockedSeen[feature]) return;
+    _lockedSeen[feature] = true;
+    try {
+        fetch('/api/events', {
+            method: 'POST', keepalive: true,
+            headers: Object.assign({ 'Content-Type': 'application/json' },
+                                   typeof authHeaders === 'function' ? authHeaders() : {}),
+            body: JSON.stringify({ event: 'locked_view', feature: feature }),
+        }).catch(function () {});
+    } catch (e) { /* отчетът никога не бива да чупи страницата */ }
+    if (typeof window.track === 'function') {
+        window.track('view_item', { items: [{ item_id: feature, item_category: 'module' }] });
+    }
+}
+
 function renderLocked(el, detail, retry) {
     const offer = detail.offer;
     const name = detail.feature_name || (offer && offer.name) || 'Тази функция';
+    reportLockedView(detail.feature || (offer && offer.key));
 
     /* Пакетът се показва само когато наистина е по-изгоден от този модул
        плюс останалите поотделно — и то като втори, по-тих ред под основния

@@ -179,6 +179,13 @@
     /* opts.firstTime changes the wording for someone who has just arrived. */
     window.openModulePicker = async function (opts) {
         opts = opts || {};
+        try {   // за отчета: колко хора разглеждат офертата
+            fetch('/api/events', { method: 'POST', keepalive: true,
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: JSON.stringify({ event: 'picker_open', feature: opts.firstTime ? 'first' : 'later' }),
+            }).catch(function () {});
+            if (typeof window.track === 'function') window.track('view_item_list', { item_list_id: 'modules' });
+        } catch (e) { /* без значение */ }
 
         const root = document.getElementById('mod-root') || (() => {
             const el = document.createElement('div');
