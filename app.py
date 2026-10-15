@@ -11508,6 +11508,47 @@ def _first_sentences(text: str, count: int = 2, limit: int = 190) -> str:
     return out
 
 
+def personal_horoscope_teaser(viewer: dict) -> str:
+    """Първите изречения от днешния личен хороскоп на вписания — само от кеша.
+
+    Страницата по зодия е входът от Google и никога не бива да пуска AI
+    генериране: ако текстът още го няма (човекът не е отварял картата си днес),
+    връща празно и страницата показва само връзка. Ключът е по часовата зона на
+    самия човек — както го пише `api_daily_horoscope`, иначе вечер/сутрин близо
+    до полунощ търсим чужд ден. Само при една карта: с няколко не знаем чия."""
+    try:
+        if (not viewer.get("logged_in") or viewer.get("person_count") != 1
+                or "horoscope" not in (viewer.get("unlocked") or [])):
+            return ""
+        pid = int(str(viewer.get("chart_url") or "").rsplit("/", 1)[-1])
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute("SELECT timezone FROM persons WHERE id = ?", (pid,)).fetchone()
+        try:
+            tz = ZoneInfo((row[0] if row else None) or "Europe/Sofia")
+        except Exception:
+            tz = ZoneInfo("Europe/Sofia")
+        today = datetime.datetime.now(tz).date().isoformat()
+        cached = get_ai_cache(pid, f"horoscope:{today}")
+        if not cached:
+            return ""
+        _, body = split_summary(cached["content"])
+        return _first_sentences(body, count=2, limit=240)
+    except Exception:
+        return ""
+
+
+def sign_page_bundle(viewer: dict) -> Optional[dict]:
+    """Цената на пакета за спокойния ред под личния блок; None, ако няма какво
+    да се предложи (пакетът не е в продажба или вписаният вече има всичко)."""
+    bundle = landing_pricing().get("bundle")
+    if not bundle:
+        return None
+    if (viewer.get("logged_in") and viewer.get("person_count") == 1
+            and SELLABLE_KEYS <= set(viewer.get("unlocked") or [])):
+        return None
+    return bundle
+
+
 @app.get("/horoskop", response_class=HTMLResponse)
 async def horoskop_hub(request: Request):
     """Общата страница за всички зодии.
@@ -11579,6 +11620,11 @@ async def horoskop_sign(request: Request, sign_slug: str):
         "faq": _SIGN_FAQ,
         "stale_date": stale_date,
     })
+    # Личният блок под текста: за вписания — откъс от неговия хороскоп (само
+    # от кеша), за всички — пакетът като спокоен ред, а не скрит във въпросите.
+    viewer = viewer_info(request)
+    ctx["personal_teaser"] = personal_horoscope_teaser(viewer)
+    ctx["bundle"] = sign_page_bundle(viewer)
     if cached:
         summary, body = split_summary(cached)
         ctx["summary"] = summary

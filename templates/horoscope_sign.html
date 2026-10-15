@@ -69,6 +69,37 @@
         .horo-reading hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
         .horo-loading { text-align: center; color: var(--text-soft); padding: 40px 0; }
         .stale-note { display: inline-block; margin: 0.6rem 0 0; padding: 8px 14px; border-radius: 10px; background: var(--surface-raised, rgba(255,255,255,0.05)); border: 1px solid var(--line); color: var(--text-soft); font-size: 0.9rem; }
+        /* Героят има ЕДИН основен бутон; „Сподели“ е малка икона до него. */
+        .cta-row.cta-row--hero { flex-direction: row; flex-wrap: nowrap; justify-content: center; align-items: stretch; gap: 10px; }
+        .cta-row.cta-row--hero .btn-primary { width: auto; flex: 0 1 auto; text-align: center; }
+        .cta-row.cta-row--hero .btn-icon { width: 50px; padding: 0; flex: 0 0 50px; font-size: 1.15rem; }
+        @media (max-width: 600px) { .cta-row.cta-row--hero .btn-primary { flex: 1 1 auto; width: auto; padding-inline: 10px; font-size: 0.95rem; } }
+
+        /* Личният блок под общия текст: спокойно сравнение, не изскачащ прозорец. */
+        .lichen { max-width: 760px; margin: 44px auto 0; padding: clamp(20px, 4vw, 30px); border: 1px solid var(--border); border-radius: 18px; background: var(--bg-card); box-shadow: var(--shadow-card); scroll-margin-top: 20px; }
+        .lichen h2 { font-family: var(--font-display); font-size: clamp(1.25rem, 3.4vw, 1.6rem); color: var(--text-heading); line-height: 1.25; margin-bottom: 10px; }
+        .lichen p { color: var(--text-soft); line-height: 1.7; }
+        .lichen-teaser { margin: 14px 0 4px; padding-left: 14px; border-left: 2px solid var(--accent); font-style: italic; }
+        .lichen-form { margin-top: 18px; display: grid; gap: 12px; }
+        .lichen-form label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; }
+        .lichen-form input[type="text"], .lichen-form input[type="number"] { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font: inherit; font-size: 1rem; }
+        .lichen-form input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        .lichen-form input:disabled { opacity: 0.5; }
+        .lichen-row { display: grid; gap: 10px; }
+        .lichen-row--3 { grid-template-columns: 1fr 1fr 1.4fr; }
+        .lichen-row--2 { grid-template-columns: 1fr 1fr; }
+        .lichen-form .lichen-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 0.92rem; color: var(--text-soft); cursor: pointer; margin: 0; }
+        .lichen-check input { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
+        .lichen-place { position: relative; }
+        .lichen-sug { position: absolute; left: 0; right: 0; top: 100%; z-index: 5; margin-top: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); box-shadow: var(--shadow-card); overflow: hidden; }
+        .lichen-sug button { display: block; width: 100%; text-align: left; padding: 11px 12px; min-height: 44px; background: none; border: 0; border-bottom: 1px solid var(--border-soft); color: var(--text); font: inherit; font-size: 0.92rem; cursor: pointer; }
+        .lichen-sug button:last-child { border-bottom: 0; }
+        .lichen-sug button:hover, .lichen-sug button:focus-visible { background: var(--surface-thistle); outline: none; }
+        .lichen-err { color: var(--on-pink); font-size: 0.9rem; }
+        .lichen-err:empty { display: none; }
+        .lichen-form .btn { width: 100%; }
+        .lichen-note { font-size: 0.82rem; color: var(--text-dim); text-align: center; }
+        .lichen-bundle { max-width: 760px; margin: 14px auto 0; text-align: center; font-size: 0.92rem; color: var(--text-muted); }
         .horo-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
         .horo-meta .trust-item { display: block; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
     </style>
@@ -92,12 +123,15 @@
             <p class="lede">Какво носи днешният ден за родените под знака {{ sign.name }}.</p>
             {% if stale_date %}<p class="stale-note">⚠️ Днешният хороскоп още се подготвя — показваме последния наличен (от {{ stale_date }}).</p>{% endif %}
             <p class="sub">{{ sign.name }} е {{ sign.element|lower }} и {{ sign.modality|lower }} знак, управляван от {{ sign.ruler }}. Период: {{ sign.dates }}.</p>
-            <div class="cta-row">
-                {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
-                <a class="btn btn-ghost" href="/dneven-horoskop">Персонален хороскоп</a>
-                <button type="button" class="btn btn-ghost share-btn" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="horoskop">Сподели</button>
+            {# Един основен бутон над текста: гостът слиза до личния блок (формата е
+               там), вписаният отива направо в картата си. „Сподели“ е икона. #}
+            {% set cta = primary_cta('horoscope', 'Твоят личен хороскоп за днес') %}
+            {% set go = cta.href if cta.logged_in else '#lichen' %}
+            <div class="cta-row cta-row--hero">
+                <a class="btn btn-primary" href="{{ go }}" data-cta="horoscope_sign:hero">Твоят личен хороскоп за днес</a>
+                <button type="button" class="btn btn-ghost btn-icon share-btn" aria-label="Сподели" title="Сподели" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="horoskop" data-cta="horoscope_sign:share"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4"/></svg></button>
             </div>
-            <p class="cta-note">Персоналният хороскоп стъпва на точно твоята карта, а не само на зодията.</p>
+            <p class="cta-note">{% if cta.logged_in %}Стъпва на точно твоята карта, а не само на зодията.{% else %}Безплатно. Без регистрация.{% endif %}</p>
         </div>
     </header>
 
@@ -194,7 +228,7 @@
                        важат за милиони души наведнъж. Твоята натална карта показва
                        кои от днешните транзити засягат точно теб.</p>
                     <div class="cta-row">
-                        {% set _c = primary_cta(None, 'Направи безплатната си натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
+                        {# Контурен, не основен: личният блок е веднага под него и носи основния бутон. #}<a class="btn btn-ghost" href="{{ go }}" data-cta="horoscope_sign:locked">Виж личния си хороскоп</a>
                     </div>
                 </div>
             </div>
@@ -206,10 +240,48 @@
             </div>
             {% endif %}
 
-            <div class="mid-cta" style="margin-top: 40px;">
-                {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
-                <span class="mid-cta-note">Персоналният хороскоп е по-точен от зодийния.</span>
+            {# Личният блок: честно за разликата между зодийния и личния хороскоп. #}
+            <div class="lichen" id="lichen">
+                {% if cta.logged_in %}
+                <h2>Твоят личен хороскоп за днес</h2>
+                {% if personal_teaser %}
+                <p class="lichen-teaser">{{ personal_teaser }}</p>
+                {% else %}
+                <p>Това е общото за всички родени под знака {{ sign.name }}. Твоят ден зависи и от Луната и асцендента ти — личният хороскоп е написан по точно твоята карта.</p>
+                {% endif %}
+                <p style="margin-top: 16px;"><a class="btn btn-primary" href="{{ cta.href }}" data-cta="horoscope_sign:personal">{% if personal_teaser %}Прочети целия си хороскоп{% else %}Виж личния си хороскоп{% endif %}</a></p>
+                {% else %}
+                <h2>Това е общото за всички {{ sign.name }}</h2>
+                <p>Твоят ден зависи и от Луната и асцендента ти — виж личния си хороскоп. Нужни са само датата, часът и мястото на раждане.</p>
+                <form class="lichen-form" id="lichenForm" novalidate>
+                    <div>
+                        <label for="lfName">Как се казваш?</label>
+                        <input type="text" id="lfName" autocomplete="given-name" placeholder="Име" maxlength="60">
+                    </div>
+                    <div class="lichen-row lichen-row--3">
+                        <div><label for="lfDay">Ден</label><input type="number" id="lfDay" placeholder="8" min="1" max="31" inputmode="numeric"></div>
+                        <div><label for="lfMonth">Месец</label><input type="number" id="lfMonth" placeholder="1" min="1" max="12" inputmode="numeric"></div>
+                        <div><label for="lfYear">Година</label><input type="number" id="lfYear" placeholder="1988" min="1800" max="2100" inputmode="numeric"></div>
+                    </div>
+                    <div class="lichen-row lichen-row--2">
+                        <div><label for="lfHour">Час</label><input type="number" id="lfHour" value="12" min="0" max="23" inputmode="numeric"></div>
+                        <div><label for="lfMinute">Минути</label><input type="number" id="lfMinute" value="0" min="0" max="59" inputmode="numeric"></div>
+                    </div>
+                    <label class="lichen-check"><input type="checkbox" id="lfUnknown"> <span>Не знам часа на раждане</span></label>
+                    <div class="lichen-place">
+                        <label for="lfPlace">Място на раждане</label>
+                        <input type="text" id="lfPlace" autocomplete="off" placeholder="Напр. София, Варна…" maxlength="80">
+                        <div id="lfSug"></div>
+                    </div>
+                    <p class="lichen-err" id="lfErr" role="alert"></p>
+                    <button type="submit" class="btn btn-primary" id="lfBtn" data-cta="horoscope_sign:form">Виж личния си хороскоп</button>
+                    <p class="lichen-note">Безплатно. Без регистрация.</p>
+                </form>
+                {% endif %}
             </div>
+            {% if bundle %}
+            <p class="lichen-bundle">Искаш всичко за картата си? <a href="{{ primary_cta('bundle').href }}" data-cta="horoscope_sign:bundle">Всички разчитания — {{ bundle.price }} еднократно</a>.</p>
+            {% endif %}
         </div>
     </section>
 
@@ -282,8 +354,8 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
                 <div class="cta-row">
-                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
-                    <a class="btn btn-ghost" href="/login">Вход</a>
+                    {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:final">{{ _c.label }}</a>
+                    {% if not _c.logged_in %}<a class="btn btn-ghost" href="/login">Вход</a>{% endif %}
                 </div>
             </div>
         </div>
@@ -317,6 +389,122 @@
         updateThemeToggleIcon();
     </script>
     <script src="/static/consent.js?v=6"></script>
+    {% if not (viewer().logged_in) %}
+    <script>
+        /* Мини формата към гост-картата. Не е нов API: адресът се търси през
+           същия /api/public/geocode като на /start, данните се слагат в
+           localStorage във формата на saveGuestBirth() от start.html и
+           /start сам ги връща във формата и пуска картата — без пренаписване. */
+        (function () {
+            var form = document.getElementById('lichenForm');
+            if (!form) return;
+            var $ = function (id) { return document.getElementById(id); };
+            var GUEST_KEY = 'miralog_guest_birth';
+            var picked = null, timer = null, busy = false;
+            var place = $('lfPlace'), sug = $('lfSug'), err = $('lfErr');
+
+            // Страницата се презарежда сама, щом се появи текстът — не пред очите на пишещ човек.
+            ['input', 'change'].forEach(function (ev) {
+                form.addEventListener(ev, function () { window.__lichenTyping = true; });
+            });
+
+            // Сигнал „видяна е молбата“ — веднъж, когато формата влезе в екрана.
+            var seen = false;
+            function seenOnce() {
+                if (seen) return; seen = true;
+                try {
+                    fetch('/api/events', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ event: 'signup_prompt_view', feature: 'horoscope_sign' }) }).catch(function () {});
+                } catch (e) { /* без значение */ }
+            }
+            if ('IntersectionObserver' in window) {
+                var io = new IntersectionObserver(function (entries) {
+                    if (entries.some(function (en) { return en.isIntersecting; })) { seenOnce(); io.disconnect(); }
+                }, { threshold: 0.25 });
+                io.observe(form);
+            }
+
+            function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+            function fail(msg, el) { err.textContent = msg; if (el) el.focus(); }
+
+            $('lfUnknown').addEventListener('change', function () {
+                var off = $('lfUnknown').checked;
+                $('lfHour').disabled = off; $('lfMinute').disabled = off;
+            });
+
+            place.addEventListener('input', function () {
+                picked = null; err.textContent = '';
+                clearTimeout(timer);
+                var q = place.value.trim();
+                if (q.length < 2) { sug.innerHTML = ''; return; }
+                // Като на /start: 600 ms тишина, за да не засипваме геокодера.
+                timer = setTimeout(function () { search(q); }, 600);
+            });
+            function search(q) {
+                fetch('/api/public/geocode?q=' + encodeURIComponent(q)).then(function (r) {
+                    return r.ok ? r.json() : { results: [] };
+                }).then(function (d) {
+                    var rs = (d && d.results) || [];
+                    if (!rs.length || place.value.trim() !== q) { sug.innerHTML = ''; return; }
+                    sug.innerHTML = '<div class="lichen-sug">' + rs.map(function (r, i) {
+                        return '<button type="button" data-i="' + i + '">' + esc(r.label) + '</button>';
+                    }).join('') + '</div>';
+                    Array.prototype.forEach.call(sug.querySelectorAll('button'), function (b) {
+                        b.addEventListener('click', function () { choose(rs[+b.getAttribute('data-i')]); });
+                    });
+                }).catch(function () { /* полето остава както е написано */ });
+            }
+            function choose(r) {
+                picked = { lat: r.lat, lon: r.lon, timezone: r.timezone || 'Europe/Sofia', label: r.label };
+                place.value = r.label; sug.innerHTML = '';
+            }
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest || !e.target.closest('.lichen-place')) sug.innerHTML = '';
+            });
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                if (busy) return;
+                err.textContent = '';
+                var name = $('lfName').value.trim();
+                var day = +$('lfDay').value, month = +$('lfMonth').value, year = +$('lfYear').value;
+                if (!name) return fail('Въведи името си.', $('lfName'));
+                if (!(day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1800 && year <= 2100))
+                    return fail('Въведи пълна дата на раждане.', $('lfDay'));
+                var typed = place.value.trim();
+                if (!typed) return fail('Въведи място на раждане.', place);
+                var unknown = $('lfUnknown').checked;
+                var btn = $('lfBtn'), label = btn.textContent;
+                busy = true; btn.disabled = true; btn.textContent = 'Търсим мястото…';
+
+                // Написано без избор от списъка пак е истинско място — търсим го вместо да отказваме.
+                var ready = picked ? Promise.resolve(picked) :
+                    fetch('/api/public/geocode?q=' + encodeURIComponent(typed)).then(function (r) {
+                        return r.ok ? r.json() : { results: [] };
+                    }).then(function (d) {
+                        var r = d && d.results && d.results[0];
+                        return r ? { lat: r.lat, lon: r.lon, timezone: r.timezone || 'Europe/Sofia', label: r.label } : null;
+                    }).catch(function () { return null; });
+
+                ready.then(function (pl) {
+                    if (!pl) {
+                        busy = false; btn.disabled = false; btn.textContent = label;
+                        return fail('Не намерихме такова място. Опитай с по-голям град наблизо.', place);
+                    }
+                    var birth = {
+                        name: name, year: year, month: month, day: day,
+                        hour: unknown ? 12 : (+$('lfHour').value || 0),
+                        minute: unknown ? 0 : (+$('lfMinute').value || 0),
+                        lat: pl.lat, lon: pl.lon, timezone: pl.timezone, time_unknown: unknown
+                    };
+                    try { localStorage.setItem(GUEST_KEY, JSON.stringify({ birth: birth, label: pl.label || '', at: Date.now() })); }
+                    catch (x) { /* частен режим: /start ще поиска данните пак */ }
+                    window.location.href = '/start';
+                });
+            });
+        })();
+    </script>
+    {% endif %}
     {% if not body_html or stale_date %}
     <script>
         (async function() {
@@ -326,9 +514,9 @@
                 try {
                     const r = await fetch('/api/horoskop/' + slug);
                     const d = await r.json();
-                    if (stale) { if (d.body && !d.stale && !d.error) { location.reload(); return; } if (d.error || d.stale) return; }
+                    if (stale) { if (d.body && !d.stale && !d.error) { if (!window.__lichenTyping) location.reload(); return; } if (d.error || d.stale) return; }
                     else if (d.error) { var hl = document.getElementById('horoLoading'); if (hl) hl.innerHTML = '<p>' + (d.body || 'Не се получи този път. Опитай пак след малко.') + '</p>'; return; }
-                    if (d.body) { location.reload(); return; }
+                    if (d.body) { if (!window.__lichenTyping) location.reload(); return; }
                 } catch (e) { /* retry */ }
                 await new Promise(res => setTimeout(res, 3000));
             }
