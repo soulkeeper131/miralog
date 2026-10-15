@@ -2980,9 +2980,14 @@ def api_public_config():
 
 
 def price_label(cents: int, currency: str = "EUR") -> str:
-    """A price the way a customer reads it: `5 €`, `6.99 €`, `2.97 €`."""
-    value = (cents or 0) / 100
-    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    """A price the way a Bulgarian customer reads it: `25 €`, `2,99 €`, `6,90 €`.
+
+    Display only: Stripe and the invoices get integer cents, never this string.
+    """
+    cents = int(cents or 0)
+    sign = "-" if cents < 0 else ""
+    whole, frac = divmod(abs(cents), 100)
+    text = f"{sign}{whole}" if frac == 0 else f"{sign}{whole},{frac:02d}"
     symbol = "€" if (currency or "EUR").upper() == "EUR" else currency
     return f"{text} {symbol}"
 

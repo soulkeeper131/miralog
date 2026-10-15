@@ -96,8 +96,8 @@ def test_prices_follow_the_database(app, price_of):
     price_of("akashic", 1234)
     html = _home(app)
     block = _pricing_block(html)
-    assert "12.34 €" in block                      # картата на модула
-    assert "12.34 €" in html.split("Всички разчитания</h2>")[1]   # и етикетът в мрежата
+    assert "12,34 €" in block                      # картата на модула
+    assert "12,34 €" in html.split("Всички разчитания</h2>")[1]   # и етикетът в мрежата
     # пакетът пази спестяването спрямо новата сума
     b = app.landing_pricing()["bundle"]
     assert b["full_price"] in block and b["saving"] in block and b["price"] in block
@@ -130,7 +130,7 @@ def test_hero_line_has_cheapest_and_bundle_price(app, price_of):
     html = _home(app)
     hero = html[html.index('class="hero"'):html.index('class="ephemeris"')]
     b = app.landing_pricing()["bundle"]
-    assert "разчитания от 1.99 €" in hero
+    assert "разчитания от 1,99 €" in hero
     assert f"всички за {b['price']}" in hero
     assert 'href="#ceni"' in hero and 'data-cta="landing_hero:prices"' in hero
 
