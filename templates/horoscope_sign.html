@@ -102,6 +102,24 @@
         .lichen-form .btn { width: 100%; padding-inline: 14px; }
         .lichen-note { font-size: 0.82rem; color: var(--text-dim); text-align: center; }
         .lichen-bundle { max-width: 760px; margin: 14px auto 0; text-align: center; font-size: 0.92rem; color: var(--text-muted); }
+        /* Разчитането по темата на раздела (section_offers_html в app.py). */
+        .horo-offer { margin: 6px 0 26px; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--border);
+            background: var(--surface-thistle); }
+        .horo-offer-q { font-weight: 600; color: var(--text-heading) !important; margin: 0 0 4px !important; }
+        .horo-offer-t { font-size: .92rem; margin: 0 0 12px !important; }
+        .horo-offer-btn { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border-radius: 10px;
+            background: var(--bg-card); border: 1px solid var(--accent); color: var(--text-heading); font-weight: 600;
+            text-decoration: none; }
+        .horo-offer-note { font-size: .8rem; color: var(--text-dim) !important; margin: 8px 0 0 !important; }
+        .bundle-card { max-width: 760px; margin: 22px auto 0; padding: 18px 20px; border-radius: 16px; border: 1px solid var(--border);
+            background: var(--bg-card); box-shadow: var(--shadow-card); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+        .bundle-card > div { flex: 1 1 260px; }
+        .bundle-card h3 { font-size: 1.05rem; color: var(--text-heading); margin: 0 0 4px; }
+        .bundle-card p { margin: 0; color: var(--text-soft); font-size: .92rem; line-height: 1.55; }
+        .bundle-card .price { font-weight: 700; color: var(--text-heading); }
+        .bundle-card .old { text-decoration: line-through; color: var(--text-dim); margin-left: 6px; font-weight: 400; }
+        .bundle-card .btn { flex: 0 0 auto; }
+        @media (max-width: 600px) { .bundle-card .btn { width: 100%; } }
         .hero-tools { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 0 22px; margin-bottom: 8px; }
         .hero-tools .sign-hop, .hero-tools .day-switch { margin-bottom: 6px; }
         .own-sign { display: inline-block; margin: 0 0 14px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--accent); color: var(--text-heading); font-size: 0.9rem; font-weight: 500; }
@@ -313,7 +331,16 @@
             </div>
             {% endif %}
             {% if bundle %}
-            <p class="lichen-bundle">Искаш всичко за картата си? <a href="{{ primary_cta('bundle').href }}" data-cta="horoscope_sign:bundle">Всички разчитания — {{ bundle.price }} еднократно</a>.</p>
+            {# Пакетът като карта с цената, не като ред текст под формата. #}
+            <div class="bundle-card">
+                <div>
+                    <h3>Всички {{ bundle.count }} разчитания за картата ти</h3>
+                    <p>Профил, любов, период, нумерология, акашови записи и лунен календар —
+                       <span class="price">{{ bundle.price }}</span><span class="old">{{ bundle.full_price }}</span>,
+                       еднократно, остават ти завинаги.</p>
+                </div>
+                <a class="btn btn-ghost" href="{{ primary_cta('bundle').href }}" data-cta="horoscope_sign:bundle">Вземи всички</a>
+            </div>
             {% endif %}
         </div>
     </section>
@@ -551,5 +578,12 @@
     </script>
     {% endif %}
     <script src="/static/share.js?v=2"></script>
+    {% set _sc = primary_cta('horoscope', 'Получи личния си хороскоп') %}
+    {% with sticky_href = (_sc.href if _sc.logged_in else '#lichen'),
+            sticky_label = ('☽ Отвори личния си хороскоп' if _sc.logged_in else '☽ Личен хороскоп — безплатно'),
+            sticky_cta = 'horoscope_sign:sticky',
+            sticky_target = ('' if _sc.logged_in else 'lichen') %}
+    {% include "_horo_sticky.html" %}
+    {% endwith %}
 </body>
 </html>

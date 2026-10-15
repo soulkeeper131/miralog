@@ -88,6 +88,16 @@
     </noscript>
     {% include "_analytics.html" %}
     {% include "_seo_shared.html" %}
+    <style>
+        .hub-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 640px; margin: 22px auto 18px; }
+        @media (min-width: 700px) { .hub-picker { grid-template-columns: repeat(6, 1fr); } }
+        .hub-picker a { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 6px 8px;
+            border-radius: 12px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-heading);
+            text-decoration: none; font-size: .9rem; font-weight: 500; }
+        .hub-picker a:hover { border-color: var(--accent); }
+        .hub-picker span { color: var(--gilt); }
+        .hub-personal { margin-bottom: 8px; }
+    </style>
 </head>
 <body>
     {% include "_site_nav.html" %}
@@ -106,6 +116,16 @@
             <p><span class="kicker">Дневен хороскоп</span></p>
             <h1>Дневен хороскоп за всички зодии — {{ date_bg }}</h1>
             <p class="lede">Пише се наново всяка сутрин по реалните позиции на планетите.</p>
+            {# Първият екран: избор на зодия (12-те карти долу са ~5 екрана на телефон)
+               и личният хороскоп — оттук идват повечето хора от Google. #}
+            <nav class="hub-picker" aria-label="Избери зодията си">
+                {% for s in previews %}<a href="/horoskop/{{ s.slug }}" data-cta="horoscope_index:pick"><span aria-hidden="true">{{ s.glyph }}</span> {{ s.name }}</a>{% endfor %}
+            </nav>
+            {% set _pc = primary_cta('horoscope', 'Твоят личен хороскоп') %}
+            <div class="cta-row hub-personal">
+                <a class="btn btn-primary" href="{{ _pc.href if _pc.logged_in else '/start?from=horoscope' }}" data-cta="horoscope_index:personal">{% if _pc.logged_in %}Отвори личния си хороскоп →{% else %}Твоят личен хороскоп по картата ти{% endif %}</a>
+            </div>
+            {% if not _pc.logged_in %}<p class="cta-note">Безплатно — по датата, часа и мястото ти на раждане, а не само по зодията.</p>{% endif %}
         </div>
     </header>
 
@@ -262,5 +282,11 @@
         updateThemeToggleIcon();
     </script>
     <script src="/static/consent.js?v=7"></script>
+    {% set _sc = primary_cta('horoscope', 'Твоят личен хороскоп') %}
+    {% with sticky_href = (_sc.href if _sc.logged_in else '/start?from=horoscope'),
+            sticky_label = ('☽ Отвори личния си хороскоп' if _sc.logged_in else '☽ Личен хороскоп — безплатно'),
+            sticky_cta = 'horoscope_index:sticky', sticky_target = '' %}
+    {% include "_horo_sticky.html" %}
+    {% endwith %}
 </body>
 </html>

@@ -12559,6 +12559,51 @@ def personal_horoscope_teaser(viewer: dict) -> str:
         return ""
 
 
+# Разчитане по темата на раздела — малка карта точно след него. Човекът е
+# стигнал до „Любов“ или „Работа“, защото това го интересува; там предлагаме
+# личното разчитане по същата тема, а не общ банер. Ред: (заглавие на раздела,
+# модул, въпрос, обяснение, бутон).
+SECTION_OFFERS = (
+    (re.compile(r"любов|отношения", re.I), "love", "Как си точно с партньора си?",
+     "Любовният хороскоп сравнява твоята карта с тази на партньора ти: привличане, "
+     "кое ви свързва, кое ви дели и има ли дългосрочен потенциал.", "Любовен хороскоп"),
+    (re.compile(r"работ|пари|финанс|кариер", re.I), "period", "Какво носят следващите седмици?",
+     "Хороскопът за период минава ден по ден до 60 дни напред по твоята карта — "
+     "кога да действаш и кога да изчакаш.", "Хороскоп за период"),
+)
+
+
+def section_offers_html(html: str, viewer: dict) -> str:
+    """Вмъква картата с разчитане след раздела по същата тема (всяко по веднъж).
+
+    Вписаният, който вече има модула, не вижда нищо — няма какво да купи."""
+    if not html:
+        return html
+    prices = landing_pricing().get("by_key") or {}
+    owned = set(viewer.get("unlocked") or []) if viewer.get("logged_in") else set()
+    heads = [(m.start(), m.end()) for m in re.finditer(r"<h3[ >].*?</h3>", html, re.S)]
+    inserts, used = [], set()
+    for i, (start, end) in enumerate(heads):
+        title = re.sub(r"<[^>]+>", " ", html[start:end])
+        for pattern, key, question, text, label in SECTION_OFFERS:
+            if key in used or key in owned or key not in prices or not pattern.search(title):
+                continue
+            used.add(key)
+            cta = cta_for(viewer, key)
+            note = ("" if viewer.get("logged_in") else
+                    '<p class="horo-offer-note">Първо безплатната ти карта — отнема минута.</p>')
+            card = (f'<aside class="horo-offer" data-offer="{key}">'
+                    f'<p class="horo-offer-q">{question}</p><p class="horo-offer-t">{text}</p>'
+                    f'<a class="horo-offer-btn" href="{cta["href"]}" data-cta="horoscope_sign:offer_{key}">'
+                    f'{label} · {prices[key]} →</a>{note}</aside>')
+            end_of_section = heads[i + 1][0] if i + 1 < len(heads) else len(html)
+            inserts.append((end_of_section, card))
+            break
+    for pos, card in sorted(inserts, reverse=True):
+        html = html[:pos] + card + html[pos:]
+    return html
+
+
 def sign_page_bundle(viewer: dict) -> Optional[dict]:
     """Цената на пакета за спокойния ред под личния блок; None, ако няма какво
     да се предложи (пакетът не е в продажба или вписаният вече има всичко)."""
@@ -12713,7 +12758,7 @@ async def horoskop_sign(request: Request, sign_slug: str):
             # Вписаният има картата си — размазването на „още раздели“ е само
             # за госта; на него целият общ текст се чете свободно.
             free_html, hidden_html, hidden_count = full, "", 0
-        ctx["body_html"] = free_html
+        ctx["body_html"] = section_offers_html(free_html, viewer)
         ctx["body_hidden"] = hidden_html
         ctx["hidden_sections"] = hidden_count
     return HTMLResponse(templates.get_template("horoscope_sign.html").render(ctx))

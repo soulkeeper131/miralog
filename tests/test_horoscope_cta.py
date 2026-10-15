@@ -74,20 +74,20 @@ def test_guest_gets_the_mini_form_under_the_text(app, db):
 def test_bundle_line_uses_the_db_price_and_leaves_the_faq(app, db, monkeypatch):
     html = _render(app)
     price = app.landing_pricing()["bundle"]["price"]
-    m = re.search(r'<p class="lichen-bundle">(.*?)</p>', html, re.S)
+    m = re.search(r'<div class="bundle-card">(.*?)</a>', html, re.S)
     assert m and price in m.group(1)
     assert 'href="/start?want=bundle"' in m.group(1) and 'data-cta="horoscope_sign:bundle"' in m.group(1)
     assert 'data-cta="faq:bundle"' in html            # въпросът си остава
 
     # Цената е от landing_pricing(), не текст в шаблона.
     monkeypatch.setattr(app, "BUNDLE_PRICE_CENTS", 1234)
-    assert app.price_label(1234) in re.search(r'<p class="lichen-bundle">(.*?)</p>', _render(app), re.S).group(1)
+    assert app.price_label(1234) in re.search(r'<div class="bundle-card">(.*?)</a>', _render(app), re.S).group(1)
 
 
 def test_no_bundle_line_when_bundle_is_not_offered(app, db, monkeypatch):
     monkeypatch.setattr(app, "landing_pricing", lambda: {"rows": [], "bundle": None})
     html = _render(app)
-    assert 'class="lichen-bundle"' not in html and 'id="lichen"' in html
+    assert 'class="bundle-card"' not in html and 'id="lichen"' in html
 
 
 def test_logged_in_sees_a_link_not_the_form(app, db, user):
@@ -97,8 +97,9 @@ def test_logged_in_sees_a_link_not_the_form(app, db, user):
     hero = _hero(html)
     assert hero.count("btn-primary") == 1
     assert f'href="/chart/{pid}#horoscope"' in hero
-    # Един бутон към личния хороскоп: без втори в блока и без размазания „Още N раздела“.
-    assert html.count(f'href="/chart/{pid}#horoscope"') == 1
+    # Един бутон към личния хороскоп в съдържанието: без втори в блока и без
+    # размазания „Още N раздела“ (лентата долу на телефон е отделно).
+    assert html.split('id="horoSticky"')[0].count(f'href="/chart/{pid}#horoscope"') == 1
     assert "Отвори днешния си личен хороскоп" in hero
 
 
@@ -140,3 +141,36 @@ def test_seo_content_is_intact(app, db):
     html = _render(app)
     assert '"@type": "FAQPage"' in html and "Често задавани въпроси" in html
     assert "<h1>Дневен хороскоп за Овен</h1>" in html
+
+
+# --- разчитане по темата на раздела и лента долу -----------------------------
+
+def test_section_offers_follow_love_and_work(app):
+    html = ("<h3><span>1</span> Общо усещане за деня</h3><p>а</p>"
+            "<h3><span>2</span> Любов и отношения</h3><p>б</p>"
+            "<h3><span>3</span> Работа и пари</h3><p>в</p>")
+    guest = {"logged_in": False}
+    out = app.section_offers_html(html, guest)
+    love, period = out.index('data-offer="love"'), out.index('data-offer="period"')
+    assert out.index("Любов и отношения") < love < out.index("Работа и пари") < period
+    assert "/start?want=love" in out and "/start?want=period" in out
+    assert "€" in out and "безплатната ти карта" in out
+
+
+def test_no_offer_for_what_the_reader_already_owns(app):
+    html = "<h3>Любов</h3><p>б</p><h3>Работа</h3><p>в</p>"
+    viewer = {"logged_in": True, "person_count": 1, "chart_url": "/chart/7",
+              "unlocked": ["chart", "horoscope", "love"]}
+    out = app.section_offers_html(html, viewer)
+    assert 'data-offer="love"' not in out and 'data-offer="period"' in out
+    assert "/chart/7?unlock=period" in out and "безплатната ти карта" not in out
+
+
+def test_horoscope_pages_have_the_sticky_bar_and_picker():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "templates"
+    sign = (root / "horoscope_sign.html").read_text(encoding="utf-8")
+    hub = (root / "horoscope_index.html").read_text(encoding="utf-8")
+    assert '_horo_sticky.html' in sign and '_horo_sticky.html' in hub
+    assert 'class="hub-picker"' in hub and 'horoscope_index:personal' in hub
+    assert 'class="bundle-card"' in sign

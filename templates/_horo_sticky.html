@@ -1,0 +1,40 @@
+{# Лента долу на телефон по страниците с хороскопи: оттам идват най-много хора,
+   а единственият бутон беше горе. Появява се след първия екран, крие се, щом
+   формата/целта е на екрана, и може да се затвори (помни се за деня).
+   Параметри: sticky_href, sticky_label, sticky_cta (за отчета), sticky_target
+   (id на елемент — докато е видим, лентата не се показва). #}
+<style>
+    .horo-sticky { position: fixed; left: 0; right: 0; bottom: 0; z-index: 150; display: none;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--bg-card);
+        border-top: 1px solid var(--border); box-shadow: 0 -6px 24px rgba(0,0,0,.18); }
+    .horo-sticky.on { display: flex; gap: 8px; align-items: center; }
+    .horo-sticky a { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 48px;
+        border-radius: 12px; background: linear-gradient(135deg, var(--accent-light), var(--accent)); color: #fff;
+        font-weight: 600; text-decoration: none; font-size: .98rem; text-align: center; padding: 0 10px; }
+    .horo-sticky button { flex: 0 0 44px; height: 44px; border: 0; background: none; color: var(--text-muted);
+        font-size: 1.1rem; cursor: pointer; }
+    @media (min-width: 761px) { .horo-sticky { display: none !important; } }
+</style>
+<div class="horo-sticky" id="horoSticky" role="region" aria-label="Личен хороскоп">
+    <a href="{{ sticky_href }}" data-cta="{{ sticky_cta }}">{{ sticky_label }}</a>
+    <button type="button" aria-label="Затвори" id="horoStickyX">✕</button>
+</div>
+<script>
+    (function () {
+        var bar = document.getElementById('horoSticky');
+        var key = 'miralog_sticky_off', today = new Date().toISOString().slice(0, 10);
+        try { if (localStorage.getItem(key) === today) return; } catch (e) { /* частен режим */ }
+        var target = {{ (sticky_target or '') | tojson }} && document.getElementById({{ (sticky_target or '') | tojson }});
+        var targetVisible = false;
+        if (target && 'IntersectionObserver' in window) {
+            new IntersectionObserver(function (es) { targetVisible = es.some(function (x) { return x.isIntersecting; }); update(); })
+                .observe(target);
+        }
+        function update() { bar.classList.toggle('on', window.scrollY > window.innerHeight * 0.8 && !targetVisible); }
+        window.addEventListener('scroll', update, { passive: true });
+        document.getElementById('horoStickyX').addEventListener('click', function () {
+            bar.remove();
+            try { localStorage.setItem(key, today); } catch (e) { /* без значение */ }
+        });
+    })();
+</script>

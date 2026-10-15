@@ -74,7 +74,7 @@ def test_logged_in_gets_one_button_no_blur_and_own_sign_badge(app, db, user):
     assert "Това е твоята зодия" not in guest
 
     # Един бутон към личния хороскоп, без размазан блок и без „общото за всички“.
-    assert own.count(f'href="/chart/{pid}#horoscope"') == 1
+    assert own.split('id="horoSticky"')[0].count(f'href="/chart/{pid}#horoscope"') == 1
     assert 'class="horo-locked"' not in own and "Още 3 раздела" not in own
     assert "Това е общото за всички" not in own
     assert "Отвори днешния си личен хороскоп" in own
