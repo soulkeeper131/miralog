@@ -57,9 +57,10 @@ def clean_bg(text: str) -> str:
             continue
         parts = _URL.split(line)
         urls = _URL.findall(line)
-        fixed = _fix_punctuation(_fix_prepositions(parts[0]))
+        # „силeн“ с латинско e се поправя във всяко разчитане, не само в хороскопите.
+        fixed = _fix_punctuation(_fix_prepositions(fix_latin_lookalikes(parts[0])))
         for url, rest in zip(urls, parts[1:]):
-            fixed += url + _fix_punctuation(_fix_prepositions(rest))
+            fixed += url + _fix_punctuation(_fix_prepositions(fix_latin_lookalikes(rest)))
         out.append(fixed)
     return "\n".join(out)
 
@@ -103,6 +104,10 @@ def fix_latin_lookalikes(text: str) -> str:
     def fix(m):
         word = m.group(0)
         if not (_CYR.search(word) and _LATIN.search(word)):
+            return word
+        # Само ако ВСЯКА латинска буква има кирилски двойник — иначе
+        # „impulsивно“ ставаше „imрulsивно“, още по-счупено.
+        if any(_LATIN.match(ch) and ch not in _LATIN_TO_CYR for ch in word):
             return word
         return "".join(_LATIN_TO_CYR.get(ch, ch) for ch in word)
     return _WORD.sub(fix, text or "")

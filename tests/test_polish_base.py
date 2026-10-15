@@ -164,3 +164,11 @@ def test_birth_on_new_years_day_in_new_zealand_is_not_in_the_future(app):
                        "Pacific/Auckland")
     with pytest.raises(HTTPException):
         app.validate_birth(datetime.date.today().year + 2, 1, 1, 0, 0, 42.69, 23.32, "Europe/Sofia")
+
+
+def test_latin_lookalikes_are_fixed_in_every_reading():
+    import bg_text
+    assert bg_text.clean_bg("Днес си силeн.") == "Днес си силен."
+    # Дума с латиница без двойник не се „поправя“ наполовина.
+    assert "impulsивно" in bg_text.clean_bg("impulsивно")
+    assert "https://example.com/abc" in bg_text.clean_bg("Виж https://example.com/abc тук.")

@@ -189,7 +189,10 @@ def fake_ai(app, monkeypatch):
     """Фалшив AI: брои извикванията и пази модела."""
     calls = []
     monkeypatch.setattr(app, "get_ai_config", lambda: ("key", "deepseek"))
-    monkeypatch.setattr(app, "call_ai", lambda *a, **k: calls.append(k.get("model")) or READING)
+    # Отговорът трябва да мине проверката за качество преди кеша (9-те раздела, резюме).
+    from tests.test_horoscope_quality import make_reply
+    reply = make_reply(app.PERSONAL_SECTION_TITLES, teaser=False)
+    monkeypatch.setattr(app, "call_ai", lambda *a, **k: calls.append(k.get("model")) or reply)
     monkeypatch.setattr(app, "HOROSCOPE_PREWARM_MAX", 100)
     return calls
 
