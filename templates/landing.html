@@ -58,10 +58,10 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=7" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=8" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=7">
+        <link rel="stylesheet" href="/static/landing.min.css?v=8">
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
 {% include "_analytics.html" %}
@@ -129,6 +129,11 @@
                 {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/horoskop">Дневен хороскоп</a>
             </div>
+            {# Цените са видими още тук, без да са втори бутон: един ред и линк
+               към таблицата. Числата идват от същите редове като самата таблица. #}
+            {% if pricing.cheapest %}
+            <p class="cta-prices">Безплатна карта · разчитания от {{ pricing.cheapest }}{% if pricing.bundle %} · всички за {{ pricing.bundle.price }}{% endif %} · <a href="#ceni" data-cta="landing_hero:prices">Виж цените</a></p>
+            {% endif %}
             <p class="cta-note">Нужни са само дата, час и място на раждане. · <a href="/login">Вече имам акаунт</a></p>
         </div>
     </header>
@@ -160,7 +165,9 @@
                 <h2>Какво ще откриеш</h2>
                 <p>Всяка секция стъпва на реалните позиции в твоята карта — нищо не е измислено или общо за зодията ти.</p>
             </div>
-            <div class="cards">
+            {# На телефон шестте карти стават лента, която се плъзга настрани: иначе
+               са ~2700 px един под друг преди първата цена. На компютър е мрежа. #}
+            <div class="cards cards--rail" tabindex="0" role="region" aria-label="Какво ще откриеш — плъзни настрани за още">
                 <article class="card">
                     <div class="card-scene s-self" aria-hidden="true"><i></i><i></i><i></i></div>
                     <h3><a href="/astrologicheski-profil">Пълен астрологически профил</a></h3>
@@ -260,10 +267,6 @@
                     <p>Всяка позиция, аспект и дом идват с обяснение. Разчитанията са структурирани, не изсипани — четат се леко.</p>
                 </div>
             </div>
-            <div class="mid-cta">
-                {% set _c = primary_cta(None, 'Направи своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
-                <span class="mid-cta-note">Отнема под минута да въведеш данните</span>
-            </div>
         </div>
     </section>
 
@@ -320,68 +323,17 @@
         </div>
     </section>
 
-    <section>
-        <div class="wrap">
-            <div class="trust">
-                <div class="trust-item">
-                    <span class="trust-ico">⚹</span>
-                    <div>
-                        <h3>Точни изчисления, не догадки</h3>
-                        <p>Позициите идват от Swiss Ephemeris — астрономическият стандарт. Разчитането обяснява данните, не ги измисля.</p>
-                    </div>
-                </div>
-                <div class="trust-item">
-                    <span class="trust-ico">☌</span>
-                    <div>
-                        <h3>Изцяло на български</h3>
-                        <p>Знаци, планети, домове, аспекти — всичко преведено, с кратко обяснение до всеки термин.</p>
-                    </div>
-                </div>
-                <div class="trust-item">
-                    <span class="trust-ico">♄</span>
-                    <div>
-                        <h3>Данните ти остават твои</h3>
-                        <p>Всеки вижда само своите хора. Нищо не се споделя и не се продава на трети страни.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="privacy-strip">
-                <div class="privacy-item">
-                    <span class="privacy-glyph" aria-hidden="true">✦</span>
-                    <div>
-                        <h3>Картата без регистрация не се пази</h3>
-                        <p>Ако само разгледаш картата си, данните остават в браузъра ти.
-                           При нас не се записва нищо, докато сам не решиш да я запазиш.</p>
-                    </div>
-                </div>
-                <div class="privacy-item">
-                    <span class="privacy-glyph" aria-hidden="true">☌</span>
-                    <div>
-                        <h3>Плащането не минава през нас</h3>
-                        <p>Картовите данни се обработват от Stripe. Ние не ги виждаме
-                           и не ги съхраняваме.</p>
-                    </div>
-                </div>
-                <div class="privacy-item">
-                    <span class="privacy-glyph" aria-hidden="true">⚹</span>
-                    <div>
-                        <h3>Съобразено с GDPR</h3>
-                        <p>Имаш право на достъп, корекция и изтриване по всяко време.
-                           Виж <a href="/privacy">политиката за поверителност</a>.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section id="plans">
+    {# Цените са веднага след примера: човек вече е видял какво получава и
+       тук научава колко струва. Всичко числово идва от базата през
+       landing_pricing(); бутоните — от primary_cta, за да водят гост към
+       /start?want=<модул> (картата първо, после избраното е отметнато). #}
+    <section id="ceni" class="pricing">
         <div class="wrap">
             <div class="sec-head">
                 <span class="mark">☉</span>
                 <h2>Картата е безплатна, четенето — по избор</h2>
-                <p>Няма абонамент и няма месечна такса. Виждаш наталната си карта веднага,
-                   а разчитанията отключваш поотделно, ако решиш — веднъж, завинаги.</p>
+                <p>Без абонамент и без месечна такса. Виждаш наталната си карта веднага,
+                   а разчитанията отключваш, ако решиш — плащаш веднъж и остават ти завинаги.</p>
             </div>
 
             <div class="entry">
@@ -414,64 +366,113 @@
                 <div class="entry-side">
                     <div class="entry-price">0 €</div>
                     <div class="entry-once">без плащане</div>
-                    {% set _c = primary_cta(None, 'Виж своята натална карта') %}<a class="btn btn-primary entry-btn" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
+                    {# Безплатната стъпка е контурен бутон: основният на този блок
+                       е пакетът отдолу, а и двата водят през същата безплатна карта. #}
+                    {% set _c = primary_cta(None, 'Виж своята натална карта') %}<a class="btn btn-ghost entry-btn" href="{{ _c.href }}" data-cta="landing_price:chart">{{ _c.label }}</a>
                     <p class="entry-note">Нужни са дата, час и място на раждане</p>
                 </div>
             </div>
 
+            {% if pricing.bundle %}
+            <div class="bundle">
+                <div class="bundle-main">
+                    <span class="bundle-flag">Най-изгодно</span>
+                    <h3>Всички {{ pricing.bundle.count }} разчитания</h3>
+                    <p class="bundle-lede">Всичко, което се отключва по-долу — с едно плащане,
+                       без да избираш. Остава ти завинаги.</p>
+                </div>
+                <div class="bundle-side">
+                    <div class="bundle-price">
+                        <span class="bundle-now">{{ pricing.bundle.price }}</span>
+                        <span class="bundle-was">вместо <s>{{ pricing.bundle.full_price }}</s></span>
+                    </div>
+                    <p class="bundle-save">спестяваш {{ pricing.bundle.saving }}</p>
+                    {% set _c = primary_cta('bundle', 'Вземи всички') %}<a class="btn btn-primary bundle-btn" href="{{ _c.href }}" data-cta="landing_price:bundle" aria-label="{{ _c.label }} — {{ pricing.bundle.count }} разчитания за {{ pricing.bundle.price }}">{{ _c.label }}</a>
+                    <p class="bundle-note">Първо виждаш безплатната си карта</p>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="unlocks">
                 <div class="unlocks-head">
-                    <h3>Добави каквото ти трябва</h3>
-                    <p>Всяко от тези се отключва отделно към картата ти.
+                    <h3>{{ 'Или отключи само каквото ти трябва' if pricing.bundle else 'Отключи каквото ти трябва' }}</h3>
+                    <p>Всяко разчитане се отключва отделно към картата ти.
                        <strong>Плащаш веднъж — остава ти завинаги.</strong>
-                       Без абонамент, без месечна такса, без автоматично подновяване.</p>
+                       Без абонамент и без автоматично подновяване.</p>
                 </div>
 
-                <div class="price-table-wrap">
-                    <table class="price-table">
-                        <caption class="visually-hidden">Цени на отделните модули</caption>
-                        <thead>
-                            <tr>
-                                <th scope="col">Модул</th>
-                                <th scope="col">Какво получаваш</th>
-                                <th scope="col" class="col-price">Цена</th>
-                            </tr>
-                        </thead>
-                        {# Priced from the database, not written here: an admin
-                           editing a price used to leave this table advertising
-                           a figure the checkout did not charge. #}
-                        <tbody>
-                            {% for row in pricing.rows %}
-                            <tr>
-                                <th scope="row"><span class="pt-glyph">{{ row.glyph }}</span>{{ row.name }}</th>
-                                <td>{{ row.blurb }}
-                                    {%- if row.extra %}
-                                    <span class="pt-extra">{{ row.extra }}</span>
-                                    {%- endif %}</td>
-                                <td class="col-price">{{ row.price }}</td>
-                            </tr>
-                            {% endfor %}
-                            {% if pricing.bundle %}
-                            <tr class="pt-bundle">
-                                <th scope="row"><span class="pt-glyph">✦</span>Всички модули заедно</th>
-                                <td>{{ pricing.bundle.count }}-те по-горе с едно плащане.
-                                    <span class="pt-extra">Поотделно излизат {{ pricing.bundle.full_price }} — спестяваш {{ pricing.bundle.saving }}.</span></td>
-                                <td class="col-price">{{ pricing.bundle.price }}</td>
-                            </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <p class="price-table-note">
-                    Наталната карта, астро портретът, планетите, аспектите и
-                    <strong>дневният хороскоп</strong> са безплатни и не изискват плащане.
-                    Дневният може да ти пристига и на имейла всяка сутрин.
-                </p>
+                <ul class="price-cards">
+                    {% for row in pricing.rows %}
+                    {# Цялата картичка се натиска (линкът е разпънат върху нея), за да
+                       не се налага да се цели малкият бутон. #}
+                    <li class="price-card">
+                        <div class="pc-head">
+                            <span class="pt-glyph" aria-hidden="true">{{ row.glyph }}</span>
+                            <h4>{{ row.name }}</h4>
+                        </div>
+                        <p class="pc-blurb">{{ row.blurb }}
+                            {%- if row.extra %}
+                            <span class="pt-extra">{{ row.extra }}</span>
+                            {%- endif %}</p>
+                        <div class="pc-foot">
+                            <span class="pc-price">{{ row.price }}</span>
+                            {% set _c = primary_cta(row.key, 'Отключи') %}<a class="btn btn-ghost btn-sm" href="{{ _c.href }}" data-cta="landing_price:{{ row.key }}" aria-label="{{ _c.label }}: {{ row.name }}, {{ row.price }}">{{ _c.label }}</a>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
             </div>
 
-            <p class="plans-foot">Картата ти остава достъпна винаги. Ако добавиш разчитане,
-               плащането минава през Stripe и остава твое завинаги.</p>
+            <p class="plans-foot">Плащането минава през Stripe. Картата ти остава достъпна винаги.</p>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap">
+            <div class="trust">
+                <div class="trust-item">
+                    <span class="trust-ico">⚹</span>
+                    <div>
+                        <h3>Точни изчисления, не догадки</h3>
+                        <p>Позициите идват от Swiss Ephemeris — астрономическият стандарт. Разчитането обяснява данните, не ги измисля.</p>
+                    </div>
+                </div>
+                <div class="trust-item">
+                    <span class="trust-ico">☌</span>
+                    <div>
+                        <h3>Изцяло на български</h3>
+                        <p>Знаци, планети, домове, аспекти — всичко преведено, с кратко обяснение до всеки термин.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="privacy-strip">
+                <div class="privacy-item">
+                    <span class="privacy-glyph" aria-hidden="true">✦</span>
+                    <div>
+                        <h3>Картата без регистрация не се пази</h3>
+                        <p>Ако само разгледаш картата си, данните остават в браузъра ти.
+                           При нас не се записва нищо, докато сам не решиш да я запазиш.</p>
+                    </div>
+                </div>
+                <div class="privacy-item">
+                    <span class="privacy-glyph" aria-hidden="true">☌</span>
+                    <div>
+                        <h3>Плащането не минава през нас</h3>
+                        <p>Картовите данни се обработват от Stripe. Ние не ги виждаме
+                           и не ги съхраняваме.</p>
+                    </div>
+                </div>
+                <div class="privacy-item">
+                    <span class="privacy-glyph" aria-hidden="true">⚹</span>
+                    <div>
+                        <h3>Данните ти остават твои</h3>
+                        <p>Всеки вижда само своите хора, нищо не се продава на трети страни.
+                           Съобразено с GDPR: имаш право на достъп, корекция и изтриване —
+                           виж <a href="/privacy">политиката за поверителност</a>.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -490,7 +491,9 @@
                         <span class="mod-name">{{ f.name }}</span>
                         <span class="mod-lede">{{ f.lede }}</span>
                     </span>
-                    <span class="mod-tag{{ ' free' if f.included else '' }}">{{ 'Безплатно' if f.included else 'Платено' }}</span>
+                    {# Цената вместо „Платено“ (звучеше като „вече си платил“). #}
+                    {% if f.included %}<span class="mod-tag free">Безплатно</span>
+                    {% elif pricing.by_key.get(f.key) %}<span class="mod-tag price">{{ pricing.by_key[f.key] }}</span>{% endif %}
                 </a>
                 {% endfor %}
             </div>
@@ -504,7 +507,7 @@
                 <h2>Дневен хороскоп по зодия</h2>
                 <p>Избери своя знак и виж какво ти носи днешният ден.</p>
             </div>
-            <div class="mod-grid">
+            <div class="mod-grid mod-grid--compact">
                 {% for s in zodiac_signs %}
                 <a class="mod-card" href="/horoskop/{{ s.slug }}">
                     <span class="mod-glyph">{{ s.glyph }}</span>
@@ -562,6 +565,24 @@
         if (localStorage.getItem('miralog_token')) {
             window.location.replace('/dashboard');
         }
+
+        // Колко хора стигат до цените: един път на посещение, когато блокът
+        // влезе в екрана. Без бисквитки и без съгласие — като cta_click.
+        (function () {
+            var sec = document.getElementById('ceni');
+            if (!sec || !('IntersectionObserver' in window)) return;
+            var io = new IntersectionObserver(function (entries) {
+                if (!entries.some(function (e) { return e.isIntersecting; })) return;
+                io.disconnect();
+                try {
+                    fetch('/api/events', { method: 'POST', keepalive: true,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ event: 'pricing_view', feature: 'landing' }) })
+                        .catch(function () {});
+                } catch (e) { /* без значение */ }
+            }, { rootMargin: '0px 0px -20% 0px' }); // блокът е висок: достатъчно е горният му ръб да влезе
+            io.observe(sec);
+        })();
     </script>
     <script src="/static/consent.js?v=6"></script>
 </body>
