@@ -65,15 +65,25 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=8" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=9" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=8">
+        <link rel="stylesheet" href="/static/landing.min.css?v=9">
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
 </head>
 <body>
+    {# Главният бутон: за гост — /start (картата първо), за вписан — направо към
+       неговата карта/модул. При „Отключи“ вписаният вижда и цената. #}
+    {% macro cta_btn(where) -%}
+        {% set _c = primary_cta(page.key, page.cta) -%}
+        {% set _label = (_c.label ~ ' за ' ~ price) if (price and _c.logged_in and '?unlock=' in _c.href) else _c.label -%}
+        <a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:{{ where }}">{{ _label }}</a>
+    {%- endmacro %}
+    {% set _logged = viewer().logged_in %}
+    {% set _paid = not page.included %}
+    {% set _owned = page.key in viewer().unlocked %}
     {% include "_site_nav.html" %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
@@ -92,11 +102,21 @@
             <p class="lede">{{ page.lede }}</p>
             <p class="sub">{{ page.sub }}</p>
 
+            {# Платеният модул казва цената и „еднократно“ още преди бутона. #}
+            {% if _paid and _owned %}
+            <p class="price-line"><span class="price-line-terms">Вече е отключено в акаунта ти.</span></p>
+            {% elif _paid %}
+            <p class="price-line">
+                {% if price %}<span class="price-line-amount">{{ price }}</span>{% endif %}
+                <span class="price-line-terms">Еднократно плащане · остава ти завинаги · без абонамент</span>
+            </p>
+            {% endif %}
+
             <div class="cta-row">
-                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
-                <a class="btn btn-ghost" href="/">Всички разчитания</a>
+                {{ cta_btn('main') }}
+                {% if not _logged %}<a class="btn btn-ghost" href="/#ceni" data-cta="feature_{{ page.key }}:all">Всички разчитания</a>{% endif %}
             </div>
-            <p class="cta-note">{{ page.cta_note }}</p>
+            {% if not _logged %}<p class="cta-note">{{ page.cta_note }}</p>{% endif %}
         </div>
     </header>
 
@@ -136,10 +156,6 @@
                 </div>
                 {% endfor %}
             </div>
-            <div class="mid-cta">
-                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
-                <span class="mid-cta-note">{{ page.cta_note }}</span>
-            </div>
         </div>
     </section>
 
@@ -147,7 +163,7 @@
         <div class="wrap">
             <div class="sec-head">
                 <h2>Ето как изглежда едно разчитане</h2>
-                <p>Не общи приказки, а изречения, изведени от конкретни позиции.</p>
+                <p>{{ page.example_intro or 'Не общи приказки, а изречения, изведени от конкретни позиции.' }}</p>
             </div>
             <div class="sample">
                 <div class="sample-side">
@@ -170,8 +186,9 @@
                 </div>
             </div>
             <div class="mid-cta">
-                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
-                <span class="mid-cta-note">{{ page.cta_note }}</span>
+                {{ cta_btn('mid') }}
+                {% if _paid and _owned %}{% elif _paid and price %}<span class="mid-cta-note">{{ price }} · еднократно · остава ти завинаги</span>
+                {% elif not _logged %}<span class="mid-cta-note">{{ page.cta_note }}</span>{% endif %}
             </div>
         </div>
     </section>
@@ -193,10 +210,6 @@
                 </div>
                 {% endfor %}
             </div>
-            <div class="mid-cta">
-                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
-                <span class="mid-cta-note">{{ page.cta_note }}</span>
-            </div>
         </div>
     </section>
 
@@ -215,10 +228,6 @@
                 </div>
                 {% endfor %}
             </div>
-            <div class="mid-cta">
-                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
-                <span class="mid-cta-note">{{ page.cta_note }}</span>
-            </div>
         </div>
     </section>
     {% endif %}
@@ -228,14 +237,16 @@
         <div class="wrap">
             <div class="sec-head">
                 <h2>Свързани разчитания</h2>
-                <p>Продължи оттук — всяко от тях се чете заедно с картата ти.</p>
+                <p>Продължи оттук — всяко разчитане допълва останалите.</p>
             </div>
             <div class="related">
                 {% for r in related_pages %}
                 <a href="/{{ r.slug }}">
                     <span class="r-glyph" aria-hidden="true">{{ r.glyph }}</span>
                     <span class="r-name">{{ r.name }}</span>
-                    {% if r.included %}<span class="r-tag">Безплатно</span>{% endif %}
+                    {% if r.included %}<span class="r-tag">Безплатно</span>
+                    {% elif r.key in viewer().unlocked %}<span class="r-tag">Отключено</span>
+                    {% elif prices.get(r.key) %}<span class="r-tag price">{{ prices[r.key] }}</span>{% endif %}
                 </a>
                 {% endfor %}
             </div>
@@ -246,23 +257,29 @@
     <section>
         <div class="wrap">
             <div class="final">
+                {% if _logged %}
+                <h2>Картата ти те чака</h2>
+                <p>Всичко, което си отключил, е на едно място.</p>
+                <div class="cta-row">{{ cta_btn('end') }}</div>
+                {% elif _paid %}
+                <h2>Започни с безплатната си карта</h2>
+                <p>Създаваш я за минута.{% if price %} После отключваш разчитането за {{ price }} — еднократно, остава ти завинаги.{% endif %}</p>
+                <div class="cta-row">{{ cta_btn('end') }}</div>
+                <p class="final-note">Вече имаш акаунт? <a href="/login">Вход</a></p>
+                {% else %}
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
                 <div class="cta-row">
-                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_landing:start">{{ _c.label }}</a>
-                    <a class="btn btn-ghost" href="/login">Вход</a>
+                    {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_landing:start">{{ _c.label }}</a>
                 </div>
+                <p class="final-note">Вече имаш акаунт? <a href="/login">Вход</a></p>
+                {% endif %}
             </div>
         </div>
     </section>
 
     </main>
-    <footer>
-        <div class="wrap">
-            {{ brand().name }} · {{ brand().tagline }}<br>
-            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
-        </div>
-    </footer>
+    {% include "_site_footer.html" %}
 
     <script>
         function updateThemeToggleIcon() {

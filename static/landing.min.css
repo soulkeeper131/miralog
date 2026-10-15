@@ -126,6 +126,14 @@
         }
         .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
         .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        @media (max-width: 600px) {
+            /* На телефон не плава над текста: горе вдясно, до менюто, и се
+               скролва със страницата (мястото му е запазено в .site-nav). */
+            .theme-toggle {
+                position: absolute; top: 10px; right: 4px; bottom: auto;
+                width: 36px; height: 36px; font-size: 1rem; box-shadow: none;
+            }
+        }
 
         .wrap {
             max-width: 1080px; margin: 0 auto;
@@ -316,10 +324,11 @@
         }
 
         .sec-head { text-align: center; margin-bottom: clamp(30px, 5vw, 50px); }
-        @media (max-width: 1000px) {
+        @media (min-width: 601px) and (max-width: 1000px) {
             /* Below the widest layout there is no free margin at the top right,
                so the button docks bottom-right where it floats over gutter
-               rather than over headings and buttons. */
+               rather than over headings and buttons. На телефон (≤600px) е
+               горе вдясно и се скролва със страницата — виж _critical.html. */
             .theme-toggle {
                 top: auto;
                 bottom: max(16px, env(safe-area-inset-bottom));
@@ -1090,12 +1099,8 @@
             .mod-grid--compact .mod-tag { display: none; }
         }
         @media (max-width: 600px) {
-            /* Цялото описание стои на страницата на модула и в картата с цената
-               по-горе; тук две реда са достатъчни, за да се познае кой е. */
-            .mod-lede {
-                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-                overflow: hidden;
-            }
+            /* Описанията не се режат: отрязано по средата на изречението
+               смисълът се губи, а те са кратки. */
             .mod-card { padding: 12px 14px; }
             .mod-grid { margin-top: 18px; }
         }
@@ -1121,6 +1126,10 @@
         }
         footer a { color: var(--accent-light); text-decoration: none; }
         footer a:hover { text-decoration: underline; }
+        /* Общият футър (_site_footer.html): списък с разчитанията, цени/вход/контакт. */
+        .site-footer p { margin-top: 12px; }
+        .site-footer-links { line-height: 2; max-width: 760px; margin: 0 auto; }
+        .site-footer-links a, .site-footer p a { display: inline-block; padding: 2px 3px; }
 
         @media (prefers-reduced-motion: reduce) {
             * { animation: none !important; transition: none !important; }
@@ -1211,4 +1220,204 @@
             font-family: var(--font-mono); font-size: .62rem; letter-spacing: .1em;
             text-transform: uppercase; color: var(--text-dim); margin-left: auto; white-space: nowrap;
         }
-.sign-previews{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}.sign-preview{display:flex;flex-direction:column;gap:10px;padding:18px 20px;border-radius:14px;border:1px solid var(--border-soft);background:var(--bg-card);color:inherit;text-decoration:none;transition:border-color .15s ease,transform .15s ease}.sign-preview:hover{border-color:var(--accent-light);transform:translateY(-2px)}.sign-preview:focus-visible{outline:none;box-shadow:var(--focus-ring)}.sp-head{display:flex;align-items:center;gap:12px}.sp-glyph{font-size:1.9rem;line-height:1;color:var(--accent-light)}.sign-preview h3{margin:0;font-size:1.05rem;color:var(--text-heading)}.sp-dates{font-size:.78rem;color:var(--text-muted)}.sp-text{margin:0;font-size:.9rem;line-height:1.65;color:var(--text-soft);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:calc(3 * 1.65em)}.sp-muted{opacity:.65;font-style:italic}.sp-more{margin-top:auto;font-size:.82rem;font-weight:600;color:var(--accent-light)}.prose{max-width:68ch}.prose p{margin-bottom:14px;line-height:1.75;color:var(--text-soft)}.prose p:last-child{margin-bottom:0}.final-note{margin-top:14px;font-size:.85rem;color:var(--text-muted)}.sr-head{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.hero--list{padding:clamp(24px,3vw,36px) 0 clamp(20px,2.5vw,30px)}.hero--list .hero-glyph{width:68px;height:68px;margin-bottom:14px}.hero--list .lede{margin-bottom:0}.horo-reading h3>span{display:inline-flex;align-items:center;justify-content:center;width:1.6em;height:1.6em;margin-right:.5em;border-radius:50%;background:var(--surface-icy,rgba(255,255,255,.08));color:var(--accent-light);font-size:.72em;font-weight:600;vertical-align:middle}.horo-locked{position:relative}.horo-locked .horo-fade{filter:blur(5px);opacity:.5;pointer-events:none;user-select:none;max-height:260px;overflow:hidden}.horo-more{margin-top:-60px;padding-top:70px;position:relative;text-align:center;background:linear-gradient(180deg,transparent 0%,color-mix(in srgb,var(--bg,#0a0a1a) 92%,transparent) 30%)}.horo-more h3{margin-bottom:8px}.horo-more p{max-width:46ch;margin:0 auto 16px;color:var(--text-muted)}.day-facts{display:grid;gap:10px;align-items:stretch;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:10px}.fact{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:center;padding:14px 16px;border-radius:14px;background:var(--bg-card);border:1px solid var(--border-soft)}.fact--wide{grid-column:1 / -1}@media (min-width:900px){.fact--wide{grid-column:auto}}.fact-ico{grid-row:span 2;font-size:1.35rem;line-height:1}.fact-label{font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);align-self:end}.fact-value{font-size:.98rem;font-weight:600;color:var(--text-heading);line-height:1.35;align-self:start}.day-caution{display:flex;gap:10px;align-items:baseline;padding:12px 16px;margin-bottom:14px;border-radius:12px;border-left:3px solid var(--warn,#d9a75c);background:color-mix(in srgb,var(--warn,#d9a75c) 10%,transparent);font-size:.9rem;line-height:1.6;color:var(--text-soft)}.day-caution strong{color:var(--text-heading)}.day-lists{display:grid;gap:12px;align-items:stretch;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}.day-list{padding:16px 18px;border-radius:14px;background:var(--bg-card);border:1px solid var(--border-soft)}.day-list h3{display:flex;align-items:center;gap:8px;font-size:.82rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin:0 0 10px}.day-list ul{list-style:none;margin:0;padding:0}.day-list li{position:relative;padding-left:20px;margin-bottom:7px;font-size:.92rem;line-height:1.55;color:var(--text-soft)}.day-list li:last-child{margin-bottom:0}.day-list li::before{content:"";position:absolute;left:4px;top:.6em;width:6px;height:6px;border-radius:50%}.day-list--do li::before{background:var(--ok-text,#8fb798)}.day-list--avoid li::before{background:var(--danger-text,#e2836b)}.day-list--do{border-left:3px solid var(--ok-text,#8fb798)}.day-list--avoid{border-left:3px solid var(--danger-text,#e2836b)}@media (max-width:560px){.fact--wide{grid-column:auto}}
+        /* Цената на платеното разчитане — златна, както на началната. */
+        .r-tag.price { color: var(--gilt); letter-spacing: 0; font-size: .74rem; font-variant-numeric: tabular-nums; }
+
+/* --- общата страница за хороскопи: откъси по зодия --- */
+/* Мрежа от карти вместо списък с връзки: всяка носи първите изречения от
+   днешното разчитане, за да има какво да се чете още тук. */
+.sign-previews {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.sign-preview {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 18px 20px; border-radius: 14px;
+    border: 1px solid var(--border-soft); background: var(--bg-card);
+    color: inherit; text-decoration: none;
+    transition: border-color .15s ease, transform .15s ease;
+}
+.sign-preview:hover { border-color: var(--accent-light); transform: translateY(-2px); }
+.sign-preview:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.sp-head { display: flex; align-items: center; gap: 12px; }
+.sp-glyph { font-size: 1.9rem; line-height: 1; color: var(--accent-light); }
+.sign-preview h3 { margin: 0; font-size: 1.05rem; color: var(--text-heading); }
+.sp-dates { font-size: .78rem; color: var(--text-muted); }
+/* Откъсите излизат различно дълги — от едно изречение до три реда. Без
+   ограничение картите стават стълбовидни и мрежата изглежда небрежна.
+   Три реда изравняват височините, а „…“ подсказва, че има продължение. */
+.sp-text {
+    margin: 0; font-size: .9rem; line-height: 1.65; color: var(--text-soft);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; min-height: calc(3 * 1.65em);
+}
+.sp-muted { opacity: .65; font-style: italic; }
+.sp-more {
+    margin-top: auto; font-size: .82rem; font-weight: 600; color: var(--accent-light);
+}
+
+/* Обяснителният текст под откъсите — тясна колона за четене. */
+.prose { max-width: 68ch; }
+.prose p { margin-bottom: 14px; line-height: 1.75; color: var(--text-soft); }
+.prose p:last-child { margin-bottom: 0; }
+
+.final-note {
+    margin-top: 14px; font-size: .85rem; color: var(--text-muted);
+}
+
+/* Заглавието остава за Google и за екранните четци, но не заема място —
+   картите отдолу вече казват какво е това. */
+.sr-head {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Общата страница за хороскопи е списък, не представяне: човекът е дошъл
+   за своята зодия и трябва да я вижда бързо. Затова героят тук е по-нисък
+   и лунният кръг по-малък, отколкото на рекламните страници. */
+.hero--list { padding: clamp(24px, 3vw, 36px) 0 clamp(20px, 2.5vw, 30px); }
+.hero--list .hero-glyph { width: 68px; height: 68px; margin-bottom: 14px; }
+.hero--list .lede { margin-bottom: 0; }
+
+/* Номерът пред заглавието на раздела беше слепен с текста („1Общо усещане“),
+   защото span-ът нямаше стил. */
+.horo-reading h3 > span {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6em; height: 1.6em; margin-right: .5em;
+    border-radius: 50%; background: var(--surface-icy, rgba(255,255,255,.08));
+    color: var(--accent-light); font-size: .72em; font-weight: 600;
+    vertical-align: middle;
+}
+
+/* Частично разчитане: последните раздели се размазват, за да остане нещо,
+   за което да си струва наталната карта. */
+.horo-locked { position: relative; }
+.horo-locked .horo-fade {
+    filter: blur(5px); opacity: .5; pointer-events: none; user-select: none;
+    max-height: 260px; overflow: hidden;
+}
+.horo-more {
+    margin-top: -60px; padding-top: 70px; position: relative; text-align: center;
+    background: linear-gradient(180deg, transparent 0%,
+        color-mix(in srgb, var(--bg, #0a0a1a) 92%, transparent) 30%);
+}
+.horo-more h3 { margin-bottom: 8px; }
+.horo-more p { max-width: 46ch; margin: 0 auto 16px; color: var(--text-muted); }
+
+/* --- „Денят накратко“: резюмето над разчитането ---------------------------
+   Преди беше два различни контейнера с фалшиви точки („· “) вътре в абзаци.
+   Сега: кратките факти са отделни карти, а двата списъка са истински <ul>
+   с цвят според смисъла — зелено за препоръчаното, червено за избягваното. */
+.day-facts {
+    display: grid; gap: 10px; align-items: stretch;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    margin-bottom: 10px;
+}
+.fact {
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 10px;
+    align-items: center;
+    padding: 14px 16px; border-radius: 14px;
+    background: var(--bg-card); border: 1px solid var(--border-soft);
+}
+/* „Фокус“ е по-дълъг текст — заема останалото място на реда, вместо да
+   стърчи по-висок от съседите си. */
+.fact--wide { grid-column: 1 / -1; }
+@media (min-width: 900px) { .fact--wide { grid-column: auto; } }
+.fact-ico { grid-row: span 2; font-size: 1.35rem; line-height: 1; }
+.fact-label {
+    font-size: .7rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--text-muted); align-self: end;
+}
+.fact-value {
+    font-size: .98rem; font-weight: 600; color: var(--text-heading);
+    line-height: 1.35; align-self: start;
+}
+
+/* Предупреждението е един ред, не карта — иначе се състезава с фактите. */
+.day-caution {
+    display: flex; gap: 10px; align-items: baseline;
+    padding: 12px 16px; margin-bottom: 14px;
+    border-radius: 12px; border-left: 3px solid var(--warn, #d9a75c);
+    background: color-mix(in srgb, var(--warn, #d9a75c) 10%, transparent);
+    font-size: .9rem; line-height: 1.6; color: var(--text-soft);
+}
+.day-caution strong { color: var(--text-heading); }
+
+.day-lists {
+    display: grid; gap: 12px; align-items: stretch;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.day-list {
+    padding: 16px 18px; border-radius: 14px;
+    background: var(--bg-card); border: 1px solid var(--border-soft);
+}
+.day-list h3 {
+    display: flex; align-items: center; gap: 8px;
+    font-size: .82rem; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin: 0 0 10px;
+}
+.day-list ul { list-style: none; margin: 0; padding: 0; }
+.day-list li {
+    position: relative; padding-left: 20px; margin-bottom: 7px;
+    font-size: .92rem; line-height: 1.55; color: var(--text-soft);
+}
+.day-list li:last-child { margin-bottom: 0; }
+/* Точката се рисува от CSS, вместо да се пише „· “ в текста. */
+.day-list li::before {
+    content: ""; position: absolute; left: 4px; top: .6em;
+    width: 6px; height: 6px; border-radius: 50%;
+}
+.day-list--do li::before { background: var(--ok-text, #8fb798); }
+.day-list--avoid li::before { background: var(--danger-text, #e2836b); }
+.day-list--do { border-left: 3px solid var(--ok-text, #8fb798); }
+.day-list--avoid { border-left: 3px solid var(--danger-text, #e2836b); }
+
+@media (max-width: 560px) {
+    .fact--wide { grid-column: auto; }
+}
+
+/* --- платените лендинги: цената е до първия бутон --- */
+/* Сумата и „еднократно“ стоят преди бутона, за да не звучи като безплатно
+   действие. Сумата идва от feature_prices, не е твърд текст. */
+.price-line {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center;
+    gap: 4px 12px; margin: 0 auto 18px;
+}
+.price-line-amount {
+    font-family: var(--font-mono); font-size: 1.35rem; font-weight: 500;
+    color: var(--gilt); font-variant-numeric: tabular-nums;
+}
+.price-line-terms { font-size: .9rem; color: var(--text-muted); }
+.unlocks-foot {
+    margin-top: 18px; text-align: center; font-size: .92rem; color: var(--text-muted);
+}
+
+/* --- правните страници (условия, поверителност) в общата рамка --- */
+.legal { max-width: 760px; padding-top: clamp(24px, 4vw, 40px); padding-bottom: 48px; }
+.legal-back { font-size: .9rem; margin-bottom: 8px; }
+.legal h1 {
+    font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em;
+    font-size: clamp(1.8rem, 4.4vw, 2.4rem); line-height: 1.15;
+    color: var(--text-heading); margin-bottom: 6px;
+}
+.legal h2 {
+    font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
+    color: var(--text-heading); margin: 2em 0 .5em;
+}
+.legal h3 { font-size: 1.05rem; color: var(--text-heading); margin: 1.5em 0 .4em; }
+.legal p, .legal li { color: var(--text-soft); line-height: 1.75; margin-bottom: .8em; }
+.legal ul, .legal ol { padding-left: 1.4em; margin-bottom: .8em; }
+.legal strong { color: var(--text); }
+.legal .muted { color: var(--text-muted); font-size: .92rem; }
+.legal table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: .93rem; display: block; overflow-x: auto; }
+.legal th, .legal td {
+    text-align: left; vertical-align: top; padding: 8px 10px;
+    border: 1px solid var(--border-soft); color: var(--text-soft);
+}
+.legal th { background: var(--bg-card); color: var(--text-heading); }
+.legal .linklike {
+    background: none; border: 0; padding: 0; color: var(--accent-light);
+    text-decoration: underline; cursor: pointer; font: inherit;
+}
