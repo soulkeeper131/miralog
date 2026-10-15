@@ -56,12 +56,12 @@
         <p id="totpError" style="color:#e57373;min-height:1.4em;margin:8px 0;"></p>
         <button type="submit" id="totpBtn"
                 style="width:100%;padding:11px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:1rem;cursor:pointer;">Потвърди</button>
-        <p style="margin-top:14px;"><a href="/login">Откажи</a></p>
+        <p style="margin-top:14px;"><a href="/login">Назад към вход</a></p>
     </form>
     {% else %}
     <div>
         <div class="spinner" aria-hidden="true"></div>
-        <h1>Влизаш в профила си…</h1>
+        <h1>Влизаш в акаунта си…</h1>
         <p>Ако страницата не се смени, <a href="{{ next_url }}">продължи оттук</a>.</p>
     </div>
     {% endif %}
@@ -102,7 +102,7 @@
                     return resp.json().catch(function () { return {}; }).then(function (data) {
                         if (!resp.ok) {
                             var d = data && data.detail;
-                            throw new Error(typeof d === 'string' ? d : 'Невалиден код.');
+                            throw new Error(typeof d === 'string' ? d : 'Кодът не е верен. Опитай пак.');
                         }
                         finishLogin(data.token, data.email, data.next || '/dashboard');
                     });

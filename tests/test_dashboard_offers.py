@@ -195,6 +195,6 @@ def test_chart_template_has_the_bundle_strip():
 def test_start_sends_the_place_name():
     """Госът записва картата със името на мястото; таблото го показва."""
     html = (TEMPLATES / "start.html").read_text(encoding="utf-8")
-    assert "place: picked.place" in html
+    assert "place: shortPlace()" in html
     dash = (TEMPLATES / "dashboard.html").read_text(encoding="utf-8")
     assert "fd.append('place'" in dash and "formData.append('place'" in dash

@@ -244,6 +244,7 @@
             display: none;
         }
         .error-msg.visible { display: block; }
+        .error-msg .hint-link { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
         .footer {
             text-align: center;
@@ -508,7 +509,11 @@
                         }
                         throw new Error(detail.message || 'Грешка при вход');
                     }
-                    throw new Error(detail || 'Грешка при вход');
+                    const failure = new Error(detail || 'Грешка при вход');
+                    // Грешна парола: човек, запазил картата си без парола, няма
+                    // коя да въведе — подсказваме му пътя.
+                    failure.wrongPassword = resp.status === 401;
+                    throw failure;
                 }
 
                 // Store token and redirect (админ → отделен панел на поддомейна)
@@ -525,6 +530,13 @@
                 }
             } catch (err) {
                 errorEl.textContent = friendlyError(err);
+                if (err.wrongPassword) {
+                    const link = document.createElement('a');
+                    link.href = '/forgot-password?email=' + encodeURIComponent(email);
+                    link.textContent = 'Получи връзка по имейл';
+                    link.className = 'hint-link';
+                    errorEl.append(document.createElement('br'), 'Нямаш парола или си я забравил? ', link);
+                }
                 errorEl.classList.add('visible');
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Вход';

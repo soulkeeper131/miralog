@@ -181,7 +181,7 @@
                     const m = forSale.find(function (i) { return i.key === k; });
                     return m ? m.name : k;
                 });
-                html += '<div class="onb-pending"><strong>Избра ги при записа:</strong> ' + esc(names.join(', ')) +
+                html += '<div class="onb-pending"><strong>Избра ги при регистрацията:</strong> ' + esc(names.join(', ')) +
                         '. Плащането тогава не тръгна — можеш да ги вземеш оттук.</div>';
             }
             const b = data.bundle;
@@ -205,7 +205,7 @@
             }).join('');
             if (!html) html = '<p class="onb-lede">В момента няма какво да се добави.</p>';
             chrome('Какво още може да прочетеш',
-                   'Плащаш веднъж и ти остава завинаги — не е абонамент. Можеш и по-късно, от менюто „Добави“.',
+                   'Плащаш веднъж и ти остава завинаги — не е абонамент. Можеш и по-късно, от бутона „Разчитания“.',
                    html, true);
             sheet.querySelectorAll('.onb-mod-btn').forEach(function (btn) {
                 btn.addEventListener('click', function () {
