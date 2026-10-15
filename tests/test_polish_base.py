@@ -127,7 +127,8 @@ def test_every_script_parses():
         text = path.read_text(encoding="utf-8")
         for i, m in enumerate(re.finditer(
                 r"<script(?![^>]*\bsrc=)(?![^>]*ld\+json)[^>]*>(.*?)</script>", text, re.S)):
-            code = re.sub(r"\{%.*?%\}", "", re.sub(r"\{\{.*?\}\}", "0", m.group(1)), flags=re.S)
+            code = re.sub(r"\{%.*?%\}", "", re.sub(r"\{\{.*?\}\}", "0", m.group(1), flags=re.S),
+                          flags=re.S)
             with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
                 f.write(code)
             r = subprocess.run(["node", "--check", f.name], capture_output=True, text=True)
