@@ -41,6 +41,19 @@
         } catch (e) { return Promise.resolve(); }
     }
 
+    /* Дали акаунтът вече е минал въвеждането. Една заявка на зареждане —
+       картата я ползва, за да реши кой таб да отвори (върналият се човек идва
+       за хороскопа), и самото въвеждане. null при грешка. */
+    let stateOnce = null;
+    window.getOnboardingState = function () {
+        if (!stateOnce) {
+            stateOnce = fetch('/api/account/onboarding', { headers: authHeaders() })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .catch(function () { return null; });
+        }
+        return stateOnce;
+    };
+
     // Дълбока връзка към плащане (?unlock=): човекът знае какво иска — не му
     // показваме въвеждането и после.
     window.markOnboardingDone = markDone;
@@ -113,7 +126,7 @@
                 (lede ? '<p class="onb-lede">' + lede + '</p>' : '') +
                 body +
                 '<div class="onb-actions">' +
-                '<button type="button" class="onb-next" id="onb-next">' + (last ? 'Готово' : 'Напред') + '</button>' +
+                '<button type="button" class="onb-next" id="onb-next">' + (last ? 'Продължи' : 'Напред') + '</button>' +
                 '<button type="button" class="onb-skip" id="onb-skip">Пропусни</button></div>';
             sheet.querySelector('#onb-next').addEventListener('click', function () {
                 if (last) close('done'); else { step += 1; render(); }
@@ -169,6 +182,8 @@
             });
         }
 
+        /* Само пакетът и „Продължи“: списъкът с всички модули тук беше трета
+           оферта на един екран — табовете с катинар са мястото за отделните. */
         function stepThree() {
             const data = features || { catalogue: [], bundle: null };
             const forSale = (data.catalogue || []).filter(function (i) {
@@ -182,7 +197,7 @@
                     return m ? m.name : k;
                 });
                 html += '<div class="onb-pending"><strong>Избра ги при регистрацията:</strong> ' + esc(names.join(', ')) +
-                        '. Плащането тогава не тръгна — можеш да ги вземеш оттук.</div>';
+                        '. Плащането тогава не тръгна — вземи ги с пакета или от менюто на картата.</div>';
             }
             const b = data.bundle;
             if (b) {
@@ -194,7 +209,8 @@
                     '<button type="button" class="onb-mod-btn" data-key="bundle" aria-label="Вземи пакета за ' +
                     esc(money(b.price_cents, b.currency)) + '">Вземи всички</button></div>';
             }
-            html += forSale.map(function (i) {
+            // Без пакет (остава едно разчитане) — него, а не списък.
+            html += (b ? [] : forSale.slice(0, 1)).map(function (i) {
                 return '<div class="onb-mod' + (wantKeys.indexOf(i.key) >= 0 ? ' onb-wanted' : '') + '">' +
                     '<div class="onb-mod-text"><div class="onb-mod-name">' + esc(i.name) + '</div>' +
                     // Какво получава, накратко („Какво ще узнаеш?“ стоеше под всеки модул и не казваше нищо).
@@ -205,7 +221,7 @@
             }).join('');
             if (!html) html = '<p class="onb-lede">В момента няма какво да се добави.</p>';
             chrome('Какво още може да прочетеш',
-                   'Плащаш веднъж и ти остава завинаги — не е абонамент. Можеш и по-късно, от бутона „Разчитания“.',
+                   'Плащаш веднъж и ти остава завинаги — не е абонамент. Разчитанията с катинар са в менюто на картата и можеш да ги вземеш и по-късно.',
                    html, true);
             sheet.querySelectorAll('.onb-mod-btn').forEach(function (btn) {
                 btn.addEventListener('click', function () {
@@ -235,12 +251,8 @@
        с конкретна цел. */
     window.maybeStartOnboarding = async function () {
         const q = new URLSearchParams(location.search);
-        let state = null;
-        try {
-            const r = await fetch('/api/account/onboarding', { headers: authHeaders() });
-            if (!r.ok) return;
-            state = await r.json();
-        } catch (e) { return; }   // неуспешна проверка не бива да изкарва прозорец
+        const state = await window.getOnboardingState();
+        if (!state) return;   // неуспешна проверка не бива да изкарва прозорец
 
         let pending = null;
         try { pending = (await loadFeatures()).pending || null; } catch (e) { /* без избор */ }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="bg">
+<html lang="bg" data-mode="{{ ui_mode }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -11,6 +11,21 @@
             var saved = localStorage.getItem('miralog_theme');
             var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <script>
+        /* Режим „Лесно / За напреднали“ — преди първото рисуване, за да не мига.
+           Сървърът казва какъв е на акаунта; localStorage печели само докато
+           последната смяна още не е стигнала до сървъра (miralog_mode_pending). */
+        (function() {
+            try {
+                var server = '{{ ui_mode }}' === 'pro' ? 'pro' : 'easy';
+                var local = localStorage.getItem('miralog_mode');
+                var pending = localStorage.getItem('miralog_mode_pending');
+                var mode = (pending && (local === 'easy' || local === 'pro')) ? local : server;
+                document.documentElement.setAttribute('data-mode', mode);
+                localStorage.setItem('miralog_mode', mode);
+            } catch (e) { /* остава режимът от сървъра */ }
         })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -241,25 +256,9 @@
         .sec-card.is-locked .sec-card-ico { color: var(--text-dim); font-size: 1.05rem; }
         .sec-card:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-        /* Pushed to the far right so it never crowds the back link. */
-        .nav-modules {
-            margin-left: auto; flex-shrink: 0;
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 8px 15px; border-radius: 10px; min-height: 40px;
-            border: 1px solid var(--border); background: transparent;
-            color: var(--accent-light); cursor: pointer;
-            font-family: var(--font-body); font-size: 0.8rem; font-weight: 500;
-            line-height: 1.2;
-            transition: background-color .15s ease, border-color .15s ease;
-        }
-        .nav-modules:hover { border-color: var(--accent); background: var(--surface-thistle); }
-        .nav-modules:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         @media (max-width: 600px) {
-            .nav-modules { padding: 8px 12px; font-size: 0.75rem; }
-            /* The theme toggle is fixed in the top-right corner, and this row
-               reaches for the same corner with margin-left:auto — the circle
-               landed on top of the button. Reserving the corner keeps them
-               apart. */
+            /* The theme toggle is fixed in the top-right corner: reserving it
+               keeps the row's content from landing under the circle. */
             .page-nav { padding-right: 52px; flex-wrap: wrap; }
         }
         .page-logo {
@@ -664,26 +663,7 @@
             border: none; border-top: 1px solid var(--border-soft); margin: 1.6em 0;
         }
 
-        /* --- daily summary cards --- */
-        .sum-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px; margin-bottom: 12px; align-items: stretch;
-        }
-        .sum-card {
-            border-radius: 14px; padding: 16px 14px; text-align: center;
-            border: 1px solid var(--border-soft);
-            display: flex; flex-direction: column; justify-content: center;
-            gap: 4px; min-height: 84px;
-        }
-        .sum-mood { background: var(--surface-thistle); }
-        .sum-energy { background: var(--surface-icy); }
-        .sum-focus { background: var(--surface-petal); }
-        .sum-label {
-            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .07em;
-            color: var(--text-dim); font-weight: 600; margin-bottom: 4px;
-        }
-        .sum-value { color: var(--text-heading); font-weight: 600; font-size: 1rem; line-height: 1.35; }
-
+        /* --- daily summary --- */
         .sum-cols {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 12px; margin-bottom: 12px; align-items: stretch;
@@ -787,46 +767,6 @@
         .prof-aspect-meaning {
             font-size: 0.82rem; color: var(--text-meaning); line-height: 1.55; margin-top: 3px;
         }
-
-        .cache-bar {
-            display: flex; justify-content: space-between; align-items: center;
-            gap: 8px; flex-wrap: wrap;
-            margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft);
-        }
-        .cache-label { font-size: 0.75rem; color: var(--text-dim); }
-        .cache-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-
-        .btn-refresh {
-            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-            padding: 6px 14px; border-radius: 10px; border: 1px solid var(--border);
-            background: transparent; color: var(--accent-light);
-            font-family: var(--font-body); font-size: 0.75rem; font-weight: 500;
-            cursor: pointer; min-height: 36px; white-space: nowrap;
-            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-        }
-
-        /* На телефон четирите действия се пренасяха разбъркано — три на един
-           ред и „Сподели“ само на втория. Мрежа 2x2 ги подрежда равномерно и
-           дава на всяко истински тъч таргет вместо 36px. */
-        @media (max-width: 560px) {
-            .cache-bar { align-items: flex-start; }
-            .cache-actions {
-                display: grid; grid-template-columns: 1fr 1fr;
-                gap: 8px; width: 100%;
-            }
-            .cache-actions .btn-refresh {
-                width: 100%; min-height: 44px; font-size: 0.8rem;
-            }
-            /* Нечетен брой бутони: последният заема цялата ширина, за да не
-               остава празна клетка до него. */
-            .cache-actions .btn-refresh:last-child:nth-child(odd) {
-                grid-column: 1 / -1;
-            }
-        }
-        .btn-refresh:hover { background: var(--accent); color: white; border-color: var(--accent); transform: translateY(-1px); }
-        .btn-refresh:active { transform: translateY(0); }
-        .btn-refresh:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-        .btn-refresh.is-playing { background: var(--accent); color: white; border-color: var(--accent); }
 
         /* Плаващ аудио плейър — матово стъкло, с истински тъч таргети.
            Заглавието е на свой ред и се чете; лентата за превъртане има
@@ -1459,11 +1399,242 @@
             color: var(--text); overflow-wrap: anywhere; }
         .saved-note-x { background: none; border: 0; color: var(--text-muted); font-size: 1rem;
             min-width: 44px; min-height: 44px; margin: -12px -12px -12px 0; cursor: pointer; }
+
+        /* ═══ Режим „Лесно / За напреднали“ ═══
+           Всичко за напреднали носи .adv-only: в „Лесно“ го няма изобщо (нито
+           в менюто, нито на плочките), в „За напреднали“ е на мястото си. */
+        html[data-mode="easy"] .adv-only { display: none !important; }
+        html[data-mode="easy"] svg .asp { display: none; }
+        /* Принудително отворените блокове (Прочети цялото, Как го изчислихме)
+           в „За напреднали“ нямат нужда от бутон за отваряне. */
+        html[data-mode="pro"] .hide-sum-pro > summary { display: none; }
+
+        .ui-seg {
+            display: grid; grid-template-columns: 1fr 1fr; margin-top: 14px;
+            border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+            background: var(--bg-input);
+        }
+        .ui-seg-btn {
+            min-height: 44px; padding: 0 14px; border: none; border-radius: 0; cursor: pointer;
+            background: transparent; color: var(--text-muted);
+            font-family: var(--font-body); font-size: .88rem; font-weight: 500;
+            transition: background-color .15s ease, color .15s ease;
+        }
+        .ui-seg-btn + .ui-seg-btn { border-left: 1px solid var(--border); }
+        .ui-seg-btn:hover { color: var(--accent-light); }
+        .ui-seg-btn[aria-pressed="true"] {
+            background: linear-gradient(135deg, var(--accent-light), var(--accent));
+            color: #fff; font-weight: 600;
+        }
+        .ui-seg-btn:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+        @media (min-width: 601px) {
+            .ui-seg { display: inline-grid; grid-template-columns: auto auto; }
+            .ui-seg-btn { padding: 0 22px; }
+        }
+
+        /* „⋯“: поправката на данните се ползва рядко — не заема място отгоре. */
+        .more-wrap { position: relative; flex-shrink: 0; margin: -6px -8px 0 0; }
+        .btn-more {
+            width: 44px; height: 44px; border-radius: 12px; cursor: pointer;
+            border: 1px solid transparent; background: transparent; color: var(--text-muted);
+            font-size: 1.4rem; line-height: 1; letter-spacing: .05em;
+        }
+        .btn-more:hover, .btn-more[aria-expanded="true"] { border-color: var(--border); color: var(--accent-light); }
+        .btn-more:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .more-menu {
+            position: absolute; right: 0; top: 46px; z-index: 30; min-width: 190px; padding: 6px;
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            box-shadow: var(--shadow-card);
+        }
+        .more-menu[hidden] { display: none; }
+        .more-item {
+            display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
+            padding: 0 12px; border: none; border-radius: 8px; cursor: pointer; text-align: left;
+            background: transparent; color: var(--text);
+            font-family: var(--font-body); font-size: .9rem;
+        }
+        .more-item:hover { background: var(--surface-thistle); }
+        .more-item:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .chart-header h1 { min-width: 0; overflow-wrap: anywhere; }
+        @media (max-width: 600px) {
+            .chart-header { padding: 16px; }
+            .chart-header h1 { font-size: 1.7rem; }
+        }
+
+        /* Тап по плочка води към началото на съдържанието, не оставя човека да
+           търси къде е отворило. 60px: под кръга за темата (fixed, горе вдясно). */
+        .tab-content, #love-result { scroll-margin-top: 60px; }
+
+        /* Една оферта на екран: лентата с пакета е само на „Карта“. */
+        body:not([data-tab="wheel"]) .bundle-strip { display: none; }
+        .bundle-strip-more {
+            border: none; background: none; padding: 0 4px; min-height: 44px; cursor: pointer;
+            color: var(--text-muted); font-family: var(--font-body); font-size: .82rem;
+            text-decoration: underline; text-underline-offset: 3px;
+        }
+        .bundle-strip-more:hover { color: var(--accent-light); }
+        .bundle-strip-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        @media (max-width: 600px) {
+            .bundle-strip-acts { width: 100%; flex-wrap: nowrap; }
+            .bundle-strip-acts .bundle-strip-btn { flex: 1 1 auto; width: auto; }
+            .bundle-strip-acts .bundle-strip-more { flex: 0 0 auto; }
+        }
+
+        /* ═══ „Планети“ — компактна таблица ═══ */
+        .ptable {
+            border: 1px solid var(--border-soft); border-radius: 14px; overflow: hidden;
+            background: var(--bg-input); margin-bottom: 14px;
+        }
+        .prow-head, .prow-sum {
+            display: grid; align-items: center; column-gap: 6px; padding: 0 10px;
+            grid-template-columns: 26px minmax(0, 1.2fr) 16px 54px minmax(0, 1.3fr) 40px;
+        }
+        .ptable.no-house .prow-head, .ptable.no-house .prow-sum {
+            grid-template-columns: 26px minmax(0, 1.2fr) 16px 54px minmax(0, 1.3fr);
+        }
+        .prow-head {
+            min-height: 34px; border-bottom: 1px solid var(--border-soft);
+            font-size: .66rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .prow-sum {
+            min-height: 44px; cursor: pointer; list-style: none; font-size: .86rem;
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .prow:last-child > .prow-sum { border-bottom: none; }
+        .prow > .prow-sum::-webkit-details-marker { display: none; }
+        .prow[open] > .prow-sum { background: var(--surface-thistle); }
+        .prow > .prow-sum:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+        .prow-glyph { font-size: 1.1rem; line-height: 1; text-align: center; color: var(--accent-light); }
+        .prow-name { min-width: 0; font-weight: 600; color: var(--text-heading); }
+        .prow-name .planet-title-name { font-size: .88rem; font-weight: 600; letter-spacing: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .prow-rx { color: var(--on-pink); font-weight: 700; text-align: center; }
+        .prow-deg { font-variant-numeric: tabular-nums; color: var(--gilt); white-space: nowrap; }
+        .prow-sign { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+        .prow-house { text-align: right; color: var(--text-muted); white-space: nowrap; }
+        .prow-more { padding: 4px 14px 12px; background: var(--surface-thistle); border-bottom: 1px solid var(--border-soft); }
+        .prow:last-child > .prow-more { border-bottom: none; }
+        .prow-more .planet-meaning { margin-top: 0; padding-top: 4px; border-top: none; }
+        .ptable-more { margin-top: 0; }
+        @media (max-width: 420px) {
+            .prow-head, .prow-sum { column-gap: 4px; padding: 0 8px;
+                grid-template-columns: 20px 90px 12px 46px minmax(0, 1fr) 32px; }
+            .ptable.no-house .prow-head, .ptable.no-house .prow-sum {
+                grid-template-columns: 20px 90px 12px 46px minmax(0, 1fr); }
+            .prow-sum { font-size: .82rem; }
+            .prow-sign .sg { display: none; }
+            .prow-name .planet-title-name { font-size: .84rem; }
+        }
+
+        /* ═══ „Аспекти“ — сбити редове ═══ */
+        .asp-chips { display: flex; gap: 8px; margin: 0 0 12px; }
+        .btn-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .asp-list { border: 1px solid var(--border-soft); border-radius: 14px; overflow: hidden; background: var(--bg-input); }
+        .asp-list[data-filter="major"] .asp-item[data-major="0"] { display: none; }
+        .asp-item { border-bottom: 1px solid var(--border-soft); }
+        .asp-item:last-child { border-bottom: none; }
+        .asp-row {
+            display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center;
+            column-gap: 10px; min-height: 44px; padding: 5px 12px; cursor: pointer; list-style: none;
+        }
+        .asp-row::-webkit-details-marker { display: none; }
+        .asp-item[open] > .asp-row { background: var(--surface-thistle); }
+        .asp-row:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
+        .asp-row .aspect-icon { font-size: 1.15rem; text-align: center; color: var(--accent-light); }
+        .asp-names { min-width: 0; line-height: 1.25; }
+        .asp-names .aspect-title-name { font-size: .9rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .asp-sub { font-size: .74rem; color: var(--text-dim); }
+        .asp-sub .t-harmony { color: var(--on-icy); }
+        .asp-sub .t-challenge { color: var(--on-pink); }
+        .asp-sub .t-major { color: var(--on-thistle); }
+        .asp-chev { color: var(--text-dim); font-size: .8rem; transition: transform .15s ease; }
+        .asp-item[open] .asp-chev { transform: rotate(90deg); }
+        .asp-more { padding: 6px 14px 12px 48px; background: var(--surface-thistle); font-size: .84rem; line-height: 1.6; color: var(--text-meaning); }
+
+        /* ═══ Дневният хороскоп ═══ */
+        .dh-glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 0 0 14px; }
+        .dh-chip {
+            border-radius: 12px; padding: 8px 8px 9px; text-align: center; min-width: 0;
+            border: 1px solid var(--border-soft);
+        }
+        .dh-chip.c-mood { background: var(--surface-thistle); }
+        .dh-chip.c-energy { background: var(--surface-icy); }
+        .dh-chip.c-focus { background: var(--surface-petal); }
+        .dh-chip .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim); font-weight: 600; }
+        .dh-chip .v { color: var(--text-heading); font-weight: 600; font-size: .86rem; line-height: 1.25; overflow-wrap: anywhere; }
+        .dh-block { margin: 0 0 14px; }
+        .dh-h { font-size: 1.02rem; font-weight: 600; letter-spacing: -0.01em; color: var(--text-heading); margin: 0 0 6px; }
+        .dh-essence {
+            padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border-soft);
+            background: var(--surface-thistle);
+        }
+        .dh-essence .dh-h::before { content: "✦ "; color: var(--accent-light); }
+        .dh-block .interpretation { font-size: .95rem; line-height: 1.7; }
+        .dh-block .interpretation .int-list { margin-bottom: 0; }
+        .read-all { margin: 4px 0 0; }
+        .read-all > summary {
+            display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px;
+            padding: 0 16px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
+            list-style: none; font-size: .92rem; font-weight: 600; color: var(--accent-light);
+            background: var(--bg-input);
+        }
+        .read-all > summary::-webkit-details-marker { display: none; }
+        .read-all > summary::before { content: "▸"; font-size: .8rem; transition: transform .15s ease; }
+        .read-all[open] > summary::before { transform: rotate(90deg); }
+        .read-all > summary:hover { border-color: var(--accent); }
+        .read-all > summary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .read-all-body { padding-top: 16px; }
+        .sum-cols { gap: 10px; }
+        .sum-col { padding: 11px 14px; }
+        .sum-col li { font-size: .86rem; padding: 2px 0 2px 14px; }
+        .sum-caution { margin-bottom: 14px; padding: 10px 14px; }
+        .disclaimer { margin: 12px 0 0; font-size: .76rem; line-height: 1.5; color: var(--text-dim); text-align: center; }
+
+        /* Действията с разчитането — ред икони под текста, не блок преди него. */
+        .ra-row {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px;
+            margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);
+        }
+        .ra-btn {
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+            min-height: 52px; padding: 4px 6px; border-radius: 12px; cursor: pointer;
+            border: 1px solid var(--border); background: transparent; color: var(--accent-light);
+            font-family: var(--font-body); transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+        }
+        .ra-ico { font-size: 1.15rem; line-height: 1.1; }
+        .ra-lbl { font-size: .72rem; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+        .ra-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .ra-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .ra-btn.is-playing { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+        /* ═══ Колелото на цял екран ═══ */
+        .wheel-container.is-zoomable { cursor: zoom-in; }
+        .wheel-hint { margin-top: 8px; font-size: .78rem; color: var(--text-dim); }
+        .wheel-zoom {
+            position: fixed; inset: 0; z-index: 9200; display: flex; align-items: center; justify-content: center;
+            background: rgba(6, 5, 18, .96); cursor: zoom-out;
+        }
+        .wheel-zoom svg { width: min(100vw, 100dvh); height: auto; max-height: 100dvh; }
+        .wheel-zoom-close {
+            position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; width: 44px; height: 44px;
+            border-radius: 50%; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08);
+            color: #fff; cursor: pointer; font-size: .95rem;
+        }
+
+        /* ═══ След покупка ═══ */
+        .unlock-banner {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            margin: 0 0 16px; padding: 12px 14px; border-radius: 14px; font-size: .92rem; line-height: 1.45;
+            background: var(--surface-icy); border: 1px solid var(--border); color: var(--text);
+        }
+        .unlock-banner b { color: var(--text-heading); }
+        .unlock-banner a { color: var(--accent-light); font-weight: 600; }
+        .unlock-banner button { background: none; border: 0; color: var(--text-muted); font-size: 1rem; min-width: 44px; min-height: 44px; margin: -10px -10px -10px 0; cursor: pointer; }
 </style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
 </head>
-<body>
+<body data-tab="wheel">
     {# Въртящият се кръг на чакането; „slow“ добавя колко отнема — платените разчитания се пишат до минута. #}
     {% macro loader(text, slow=false) %}<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>{{ text }}{% if slow %}<small>Обикновено отнема до минута.</small>{% endif %}</div>{% endmacro %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -1471,8 +1642,6 @@
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
             <a href="/dashboard" class="back-link">← Моите карти</a>
-            <button class="nav-modules" onclick="openModulePicker()"
-                    aria-label="Разчитания">✦ Разчитания</button>
         </div>
 
         {# „Истински северен възел“ → „Северен възел“: думата „истински“ е жаргон. #}
@@ -1485,7 +1654,14 @@
         <div class="chart-header">
             <div class="chart-title-row">
                 <h1>{{ person.name }}</h1>
-                <button type="button" class="btn-edit" id="editBirthBtn" onclick="openEditBirth()">✎ Поправи данните</button>
+                {# Поправката на данните е рядка — в менюто „⋯“, не като втори бутон до името. #}
+                <div class="more-wrap">
+                    <button type="button" class="btn-more" id="moreBtn" aria-haspopup="menu" aria-expanded="false"
+                            aria-controls="moreMenu" aria-label="Още за тази карта" onclick="toggleMore(event)">⋯</button>
+                    <div class="more-menu" id="moreMenu" role="menu" hidden>
+                        <button type="button" class="more-item" id="editBirthBtn" role="menuitem" onclick="closeMore(); openEditBirth()">✎ Поправи данните</button>
+                    </div>
+                </div>
             </div>
             <div class="chart-meta">
                 {{ '%02d'|format(person.day) }}.{{ '%02d'|format(person.month) }}.{{ person.year }},
@@ -1508,7 +1684,11 @@
                 <a href="#" onclick="openEditBirth(); return false;">Знаеш часа? Добави го.</a>
             </p>
             {% endif %}
-            <details class="adv">
+            <div class="ui-seg" role="group" aria-label="Режим на показване">
+                <button type="button" class="ui-seg-btn" data-mode="easy" aria-pressed="{{ 'true' if ui_mode == 'easy' else 'false' }}" onclick="setMode('easy')">Лесно</button>
+                <button type="button" class="ui-seg-btn" data-mode="pro" aria-pressed="{{ 'true' if ui_mode == 'pro' else 'false' }}" onclick="setMode('pro')">За напреднали</button>
+            </div>
+            <details class="adv adv-only">
                 <summary>Подробности за напреднали</summary>
                 <div class="stats">
                     <div class="stat">
@@ -1541,12 +1721,13 @@
         <button class="tab-nav tab-nav-prev" id="tabPrev" type="button"
                 aria-label="Предишни менюта" hidden>‹</button>
         <div class="tabs" id="tabStrip">
+            {# Хороскопът е първи: това е причината повечето хора да се върнат. Безплатен е — няма катинар. #}
+            <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope" data-feature="horoscope">Дневен хороскоп</div>
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
             {# Без катинар и цена: „Накратко за теб“ в таба е безплатно. Катинарът е само на платената част вътре. #}
             <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">Профил</div>
-            <div class="tab" onclick="showTab('planets')">Планети</div>
-            <div class="tab" onclick="showTab('aspects')">Аспекти</div>
-            <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope" data-feature="horoscope">Дневен хороскоп</div>
+            <div class="tab adv-only" onclick="showTab('planets')">Планети</div>
+            <div class="tab adv-only" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('period')" id="tabbtn-period" data-feature="period">Период</div>
             <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology" data-feature="numerology">Нумерология</div>
             <div class="tab" onclick="showTab('love')" id="tabbtn-love" data-feature="love">Любов</div>
@@ -1567,11 +1748,16 @@
         <nav class="sec-grid" id="secGrid" aria-label="Раздели"></nav>
 
         <!-- Пакетът под менюто: пълен текст се слага от renderBundleStrip(),
-             когато има оферта и поне две заключени разчитания. -->
+             когато има оферта и поне две заключени разчитания. Показва се
+             само на „Карта“ (виж body[data-tab]) — една оферта на екран. -->
         <div class="bundle-strip" id="bundleStrip" hidden>
             <span id="bundleStripText"></span>
-            <button type="button" class="bundle-strip-btn" id="bundleStripBtn"
-                    data-cta="chart:bundle_strip" onclick="unlockModule('bundle')">Вземи всички</button>
+            <span class="bundle-strip-acts">
+                <button type="button" class="bundle-strip-btn" id="bundleStripBtn"
+                        data-cta="chart:bundle_strip" onclick="unlockModule('bundle')">Вземи всички</button>
+                {# Листът с разчитанията вече не е бутон горе: плочките са менюто, а тук е за онзи, който иска да ги сравни. #}
+                <button type="button" class="bundle-strip-more" onclick="openModulePicker()">Какво включва?</button>
+            </span>
         </div>
 
         <div id="tab-wheel" class="tab-content active">
@@ -1580,16 +1766,18 @@
                 <div id="chart-wheel" class="wheel-container">
                     {{ loader('Зареждане на картата…') }}
                 </div>
+                <p class="wheel-hint" id="wheelHint" hidden>Докосни колелото, за да го увеличиш.</p>
                 <div class="wheel-legend" id="wheel-legend"></div>
             </div>
         </div>
 
         <div id="tab-profile" class="tab-content">
-            <div class="section">
+            <div class="section" id="profile-free-sec">
                 <h2>Накратко за теб</h2>
                 <div id="profile-content">{{ loader('Изчисляване…') }}</div>
             </div>
-            <div class="section">
+            {# Който е купил профила, идва заради четенето — то е първо (виж markLockedTabs). #}
+            <div class="section" id="profile-paid-sec">
                 <h2>Пълен астрологически профил</h2>
                 <div id="profile-ai-content">{{ loader('Съставяме портрета ти…', true) }}</div>
             </div>
@@ -1598,108 +1786,91 @@
         <div id="tab-planets" class="tab-content">
             <div class="section">
                 <h2>Планети и точки</h2>
-                {# Български вместо суровото „POINT“; ретроградността има смисъл само за планетите. #}
-                {% set point_types = {'True North Node': 'Лунен възел', 'True South Node': 'Лунен възел',
-                                      'True Lilith': 'Лунна точка', 'Part of Fortune': 'Чувствителна точка',
-                                      'Vertex': 'Чувствителна точка'} %}
                 {% set movers = ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Chiron'] %}
+                {# Големите осем плюс Хирон, Асцендента, Медиум Коели и възела; малките точки са под „Още точки“. #}
+                {% set main_names = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Chiron', 'Asc', 'MC', 'True North Node'] %}
+                {# Един ред: глиф, име, ℞, градус и минути, знак, дом. Докосването разгъва обяснението. #}
+                {% macro prow(obj, movers) %}
+                    {% set dm = (obj.sign_longitude or '').split("'")[0] %}
+                    <details class="prow">
+                        <summary class="prow-sum">
+                            <span class="prow-glyph" aria-hidden="true">{{ obj.icon or '🪐' }}</span>
+                            <span class="prow-name"><span class="planet-title-name">{{ nm(obj.name_bg) }}</span></span>
+                            <span class="prow-rx">{% if obj.name in movers and obj.movement == 'Retrograde' %}<span title="Ретроградна — привидно се движи назад">℞</span>{% endif %}</span>
+                            <span class="prow-deg">{{ dm }}{% if dm %}′{% endif %}</span>
+                            <span class="prow-sign"><span class="sg">{{ obj.sign_symbol }} </span>{{ obj.sign_bg }}</span>
+                            {% if not person.time_unknown %}<span class="prow-house">{{ (obj.house_bg or '')|replace(' дом', '') }}</span>{% endif %}
+                        </summary>
+                        <div class="prow-more">
+                            <div class="planet-meaning">
+                                {% if obj.name_meaning %}<span class="meaning-line"><span class="ml-icon">✦</span>{{ obj.name_meaning }}</span>{% endif %}
+                                {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">{{ obj.sign_symbol }}</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
+                                {% if obj.house_meaning and obj.house_bg %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
+                                {% if obj.name in movers and obj.movement in ('Retrograde', 'Stationary', 'Direct') and obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
+                            </div>
+                        </div>
+                    </details>
+                {% endmacro %}
+                {% macro phead() %}
+                    <div class="prow-head" aria-hidden="true">
+                        <span></span><span>Планета</span><span>℞</span><span>°</span><span>Знак</span>{% if not person.time_unknown %}<span style="text-align:right">Дом</span>{% endif %}
+                    </div>
+                {% endmacro %}
                 {% if person.time_unknown %}
                 <p class="tab-note">Без час на раждане не показваме Асцендента, Медиум Коели и домовете — планетите са по знаци.</p>
+                {% else %}
+                <p class="tab-note">Докосни ред, за да видиш какво означава позицията.</p>
                 {% endif %}
-                <div class="planet-cards">
-                {% for oid, obj in chart.objects.items() %}
-                    <div class="planet-card">
-                        <div class="planet-card-header">
-                            <div class="planet-icon">{{ obj.icon or '🪐' }}</div>
-                            <div class="planet-title">
-                                <div class="planet-title-name">{{ nm(obj.name_bg) }}</div>
-                                <div class="planet-title-type">
-                                {%- if obj.name in ('Sun', 'Moon') %}Светило
-                                {%- elif obj.type == 'Planet' %}Планета
-                                {%- elif obj.type == 'Angle' %}Ъглова точка
-                                {%- elif 'Asteroid' in obj.type %}Малка планета
-                                {%- else %}{{ point_types.get(obj.name, 'Чувствителна точка') }}{% endif -%}
-                                </div>
-                            </div>
-                            {% if obj.name in movers %}
-                                {% if obj.movement == 'Retrograde' %}
-                                <span class="planet-badge retro" title="Привидно се движи назад">℞ Ретроградна</span>
-                                {% elif obj.movement == 'Stationary' %}
-                                <span class="planet-badge stationary">Стационарна</span>
-                                {% elif obj.movement == 'Direct' %}
-                                <span class="planet-badge direct">Прав ход</span>
-                                {% endif %}
-                            {% endif %}
-                        </div>
-                        <div class="planet-detail">
-                            <span class="planet-detail-label">Знак</span>
-                            <strong>{{ obj.sign_bg }}</strong>
-                        </div>
-                        {% if obj.house_bg %}
-                        <div class="planet-detail">
-                            <span class="planet-detail-label">Дом</span>
-                            <strong>{{ obj.house_bg }}</strong>
-                        </div>
-                        {% endif %}
-                        {% if obj.name_meaning or obj.sign_meaning or obj.house_meaning %}
-                        <div class="planet-meaning">
-                            {% if obj.name_meaning %}<span class="meaning-line"><span class="ml-icon">✦</span>{{ obj.name_meaning }}</span>{% endif %}
-                            {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">{{ obj.sign_symbol }}</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
-                            {% if obj.house_meaning and obj.house_bg %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
-                            {% if obj.name in movers and obj.movement in ('Retrograde', 'Stationary', 'Direct') and obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
-                        </div>
-                        {% endif %}
-                        <details class="adv adv-mini">
-                            <summary>Градуси</summary>
-                            <div class="planet-detail"><span class="planet-detail-label">В знака</span> {{ obj.sign_longitude }}</div>
-                            <div class="planet-detail"><span class="planet-detail-label">Дължина</span> {{ obj.longitude }}</div>
-                        </details>
-                    </div>
-                {% endfor %}
+                <div class="ptable{% if person.time_unknown %} no-house{% endif %}">
+                    {{ phead() }}
+                    {% for oid, obj in chart.objects.items() %}{% if obj.name in main_names %}{{ prow(obj, movers) }}{% endif %}{% endfor %}
                 </div>
+                {% set more = namespace(n=0) %}
+                {% for oid, obj in chart.objects.items() %}{% if obj.name not in main_names %}{% set more.n = more.n + 1 %}{% endif %}{% endfor %}
+                {% if more.n %}
+                <details class="adv">
+                    <summary>Още точки ({{ more.n }}): Вертекс, Част на щастието, Лилит…</summary>
+                    <div class="ptable ptable-more{% if person.time_unknown %} no-house{% endif %}">
+                        {% for oid, obj in chart.objects.items() %}{% if obj.name not in main_names %}{{ prow(obj, movers) }}{% endif %}{% endfor %}
+                    </div>
+                </details>
+                {% endif %}
             </div>
         </div>
 
         <div id="tab-aspects" class="tab-content">
             <div class="section">
                 <h2>Аспекти</h2>
-                {% macro aspect_card(a, with_meaning) %}
-                    <div class="aspect-card">
-                        <div class="aspect-card-header">
-                            <div class="aspect-icon">{{ a.icon or '◇' }}</div>
-                            <div class="aspect-title">
-                                <div class="aspect-title-name">{{ nm(a.active_bg) }} и {{ nm(a.passive_bg) }}</div>
-                                {% if a.deviation_label %}<div class="aspect-title-sub">{{ a.deviation_label }}</div>{% endif %}
-                            </div>
-                            <span class="aspect-badge {{ a.aspect_class or 'minor' }}">{{ a.type_bg }}</span>
-                        </div>
-                        {% if with_meaning and a.type_meaning %}
-                        <div class="aspect-meaning">{{ a.type_meaning }}</div>
-                        {% endif %}
-                    </div>
-                {% endmacro %}
                 {% if chart.aspects %}
+                {# „Главни“: съвпад, опозиция, квадрат, тригон и секстил между планети — това, което се чете първо. #}
+                {% set planet_names = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'] %}
+                {% set major_types = ['Conjunction', 'Opposition', 'Square', 'Trine', 'Sextile'] %}
+                {% set cnt = namespace(major=0) %}
+                {% for a in chart.aspects %}{% if a.type in major_types and a.active in planet_names and a.passive in planet_names %}{% set cnt.major = cnt.major + 1 %}{% endif %}{% endfor %}
                 {% if person.time_unknown %}
                 <p class="tab-note">Без час на раждане не показваме аспектите към Асцендента, Медиум Коели и точките, които зависят от часа.</p>
                 {% else %}
-                <p class="tab-note">Подредени от най-точните към най-слабите. „Точен до 1,2°“ значи, че връзката е само на 1,2° от съвършената.</p>
+                <p class="tab-note">Подредени от най-точните към най-слабите. „Точен до 1,2°“ значи, че връзката е само на 1,2° от съвършената. Докосни ред за обяснение.</p>
                 {% endif %}
-                {% set shown = [] %}
-                <div class="aspect-cards">
-                    {% for a in chart.aspects[:12] %}
-                    {# Обяснението на вида се чете веднъж — не на всяка от трийсетте карти. #}
-                    {{ aspect_card(a, a.type not in shown) }}
-                    {% if shown.append(a.type) %}{% endif %}
+                <div class="asp-chips" role="group" aria-label="Кои аспекти да се показват">
+                    <button type="button" class="btn-chip" data-asp-filter="major" aria-pressed="{{ 'true' if cnt.major else 'false' }}">Главни ({{ cnt.major }})</button>
+                    <button type="button" class="btn-chip" data-asp-filter="all" aria-pressed="{{ 'false' if cnt.major else 'true' }}">Всички ({{ chart.aspects|length }})</button>
+                </div>
+                <div class="asp-list" id="aspList" data-filter="{{ 'major' if cnt.major else 'all' }}">
+                    {% for a in chart.aspects %}
+                    <details class="asp-item" data-major="{{ 1 if (a.type in major_types and a.active in planet_names and a.passive in planet_names) else 0 }}">
+                        <summary class="asp-row">
+                            <span class="aspect-icon" aria-hidden="true">{{ a.icon or '◇' }}</span>
+                            <span class="asp-names">
+                                <span class="aspect-title-name">{{ nm(a.active_bg) }} и {{ nm(a.passive_bg) }}</span>
+                                <span class="asp-sub"><span class="t-{{ a.aspect_class or 'minor' }}">{{ a.type_bg }}</span>{% if a.deviation_label %} · {{ a.deviation_label }}{% endif %}</span>
+                            </span>
+                            <span class="asp-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        {% if a.type_meaning %}<div class="asp-more">{{ a.type_meaning }}</div>{% endif %}
+                    </details>
                     {% endfor %}
                 </div>
-                {% if chart.aspects|length > 12 %}
-                <details class="adv">
-                    <summary>Още {{ chart.aspects|length - 12 }} по-слаби връзки</summary>
-                    <div class="aspect-cards">
-                        {% for a in chart.aspects[12:] %}{{ aspect_card(a, false) }}{% endfor %}
-                    </div>
-                </details>
-                {% endif %}
                 {% else %}
                 <p style="color:var(--text-muted)">Няма данни за аспектите.</p>
                 {% endif %}
@@ -1708,11 +1879,12 @@
 
         <div id="tab-horoscope" class="tab-content">
             <div class="section">
-                <h2>Разчитане на деня</h2>
+                {# Заглавието става „Днес, 15 октомври“, щом разчитането пристигне (по датата в отговора). #}
+                <h2 id="horoscope-title">Хороскоп за днес</h2>
                 <div id="horoscope-ai-content">{{ loader('Разчитаме деня ти…', true) }}</div>
             </div>
             {# Суровият списък от транзити е за напреднали: след разчитането и сгънат, зарежда се чак при отваряне. #}
-            <div class="section">
+            <div class="section adv-only">
                 <details class="adv adv-block" id="transitDetails">
                     <summary>Подробности за напреднали: небето днес спрямо картата ти</summary>
                     <div id="horoscope-content"></div>
@@ -1837,28 +2009,38 @@
                 </div>
             </div>
             <div id="love-result" style="display:none;">
+                {# Първо двойката и разчитането; суровата съвместимост по позиции е под тях, сгъната. #}
                 <div class="section">
                     <h2>Вашата съвместимост</h2>
-                    <div id="love-content"></div>
+                    <div id="love-head"></div>
                 </div>
                 <div class="section">
                     <h2>Любовен хороскоп</h2>
                     <div id="love-ai-content"></div>
                 </div>
+                <div class="section" id="love-calc" hidden>
+                    <details class="adv adv-block" data-open-pro>
+                        <summary>Как го изчислихме</summary>
+                        <div id="love-content"></div>
+                    </details>
+                </div>
             </div>
         </div>
 
         <div id="tab-akashic" class="tab-content">
-            <div class="section">
-                <h2>Кармични точки в картата</h2>
-                <p class="tab-note">
-                    Четенето по-долу стъпва на тези точно изчислени позиции — лунните възли, Хирон, Сатурн, Плутон, Лилит{% if not person.time_unknown %}, 12-ти дом{% endif %} и ретроградните планети.
-                </p>
-                <div id="akashic-content">{{ loader('Изчисляване…') }}</div>
-            </div>
+            {# Четенето е първо; изчислените позиции, на които стъпва, са под него. #}
             <div class="section">
                 <h2>Четене на Акашовите записи</h2>
                 <div id="akashic-ai-content">{{ loader('Отваряме записа…', true) }}</div>
+            </div>
+            <div class="section">
+                <details class="adv adv-block" data-open-pro>
+                    <summary>Как го изчислихме</summary>
+                    <p class="tab-note">
+                        Четенето стъпва на тези точно изчислени позиции — лунните възли, Хирон, Сатурн, Плутон, Лилит{% if not person.time_unknown %}, 12-ти дом{% endif %} и ретроградните планети.
+                    </p>
+                    <div id="akashic-content">{{ loader('Изчисляване…') }}</div>
+                </details>
             </div>
         </div>
 
@@ -1918,11 +2100,11 @@
     </div>
 
     <div id="onboarding-root"></div>
-    <script src="/static/locked.js?v=10"></script>
+    <script src="/static/locked.js?v=11"></script>
     <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=3"></script>
-    <script src="/static/modules.js?v=10"></script>
-    <script src="/static/onboarding.js?v=5"></script>
+    <script src="/static/modules.js?v=11"></script>
+    <script src="/static/onboarding.js?v=6"></script>
     <script>
         // slow: платените разчитания се пишат до минута — казваме го, за да не
         // изглежда, че е увиснало.
@@ -2051,6 +2233,90 @@
             updateThemeToggleIcon();
         }
         updateThemeToggleIcon();
+
+        /* ---------- режим „Лесно / За напреднали“ ---------- */
+        function currentMode() {
+            return document.documentElement.getAttribute('data-mode') === 'pro' ? 'pro' : 'easy';
+        }
+        // Блоковете с data-open-pro (Прочети цялото, Как го изчислихме) са
+        // отворени в „За напреднали“ и сгънати в „Лесно“.
+        function syncModeDetails() {
+            const pro = currentMode() === 'pro';
+            document.querySelectorAll('details[data-open-pro]').forEach(d => { d.open = pro; });
+        }
+        function renderModeControl() {
+            const mode = currentMode();
+            document.querySelectorAll('.ui-seg-btn').forEach(b => {
+                b.setAttribute('aria-pressed', b.dataset.mode === mode ? 'true' : 'false');
+            });
+        }
+        // Пише се веднага в браузъра, а на сървъра — на заден план: грешката се
+        // игнорира тихо (miralog_mode_pending остава и браузърът пази избора).
+        function setMode(mode, opts) {
+            mode = mode === 'pro' ? 'pro' : 'easy';
+            if (mode === currentMode() && !(opts && opts.force)) return;
+            document.documentElement.setAttribute('data-mode', mode);
+            try {
+                localStorage.setItem('miralog_mode', mode);
+                localStorage.setItem('miralog_mode_pending', '1');
+            } catch (e) { /* без значение */ }
+            try {
+                fetch('/api/account/ui-mode', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: mode }),
+                }).then(r => {
+                    if (r.ok) { try { localStorage.removeItem('miralog_mode_pending'); } catch (e) {} }
+                }).catch(() => {});
+            } catch (e) { /* без значение */ }
+            renderModeControl();
+            syncModeDetails();
+            // Таб, който в „Лесно“ го няма, не бива да остава отворен.
+            if (mode === 'easy') {
+                const active = document.querySelector('.tab-content.active');
+                if (active && (active.id === 'tab-planets' || active.id === 'tab-aspects')) {
+                    showTab('wheel', { noScroll: true });
+                }
+            }
+        }
+
+        /* „⋯“ до името: поправката на данните. */
+        function toggleMore(ev) {
+            if (ev) ev.stopPropagation();
+            const menu = document.getElementById('moreMenu');
+            const btn = document.getElementById('moreBtn');
+            const open = menu.hidden;
+            menu.hidden = !open;
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) { const first = menu.querySelector('.more-item'); if (first) first.focus(); }
+        }
+        function closeMore() {
+            const menu = document.getElementById('moreMenu');
+            const btn = document.getElementById('moreBtn');
+            if (!menu || menu.hidden) return;
+            menu.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+        }
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.more-wrap')) closeMore();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const menu = document.getElementById('moreMenu');
+                if (menu && !menu.hidden) { closeMore(); document.getElementById('moreBtn').focus(); }
+            }
+        });
+
+        /* На телефон съдържанието на таба е под плочките: без превъртане тапът
+           „не прави нищо“ — човекът не вижда, че нещо се е променило. */
+        function scrollToContent(el) {
+            if (!el || !window.matchMedia('(max-width: 600px)').matches) return;
+            const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            // След като новият таб е разположен (лентата с пакета се скрива и т.н.).
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                el.scrollIntoView({ block: 'start', behavior: calm ? 'auto' : 'smooth' });
+            }));
+        }
 
         function getToken() {
             const params = new URLSearchParams(window.location.search);
@@ -2183,7 +2449,18 @@
             return true;
         }
 
-        function showTab(name) {
+        // opts.noScroll — отварянето не е по волята на човека (начален таб).
+        function showTab(name, opts) {
+            opts = opts || {};
+            const panel = document.getElementById('tab-' + name);
+            if (!panel) return;
+            // Връзка към Планети/Аспекти в „Лесно“: те са за напреднали — не
+            // показваме празно, а минаваме на „За напреднали“ и го казваме.
+            if ((name === 'planets' || name === 'aspects') && currentMode() === 'easy') {
+                setMode('pro');
+                if (typeof uiToast === 'function') uiToast('Превключихме на „За напреднали“ — там са планетите и аспектите.');
+            }
+            if (!opts.noScroll) window._tabTouched = true;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             // Find the tab by what it opens rather than by what was clicked:
@@ -2191,8 +2468,11 @@
             const tab = [...document.querySelectorAll('.tab')].find(
                 t => (t.getAttribute('onclick') || '').includes("'" + name + "'"));
             if (tab) tab.classList.add('active');
-            document.getElementById('tab-' + name).classList.add('active');
+            panel.classList.add('active');
+            // body[data-tab] сваля лентата с пакета от всички табове освен „Карта“.
+            document.body.setAttribute('data-tab', name);
             if (typeof syncSectionGrid === 'function') syncSectionGrid(name);
+            if (!opts.noScroll) scrollToContent(panel);
 
             if (name === 'horoscope' && !window._horoscopeLoaded) {
                 window._horoscopeLoaded = true;
@@ -2227,11 +2507,77 @@
                 if (!resp.ok) throw await apiError(resp);
                 const svgText = await resp.text();
                 el.innerHTML = svgText;
+                el.classList.add('is-zoomable');
+                el.setAttribute('role', 'button');
+                el.setAttribute('tabindex', '0');
+                el.setAttribute('aria-label', 'Увеличи колелото на цял екран');
+                const hint = document.getElementById('wheelHint');
+                if (hint) hint.hidden = false;
             } catch (e) {
                 el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
         loadChartWheel();
+
+        /* Колелото на цял екран — на телефон 310px са малко за 12 знака и
+           десет планети. Простo наслагване: докосване или Esc го затваря. */
+        function openWheelZoom() {
+            const svg = document.querySelector('#chart-wheel svg');
+            if (!svg || document.querySelector('.wheel-zoom')) return;
+            const ov = document.createElement('div');
+            ov.className = 'wheel-zoom';
+            ov.setAttribute('role', 'dialog');
+            ov.setAttribute('aria-modal', 'true');
+            ov.setAttribute('aria-label', 'Колелото на картата');
+            const big = svg.cloneNode(true);
+            big.removeAttribute('width');
+            big.removeAttribute('height');
+            ov.appendChild(big);
+            const x = document.createElement('button');
+            x.type = 'button';
+            x.className = 'wheel-zoom-close';
+            x.setAttribute('aria-label', 'Затвори');
+            x.textContent = '✕';
+            ov.appendChild(x);
+            const close = () => {
+                ov.remove();
+                document.body.style.overflow = '';
+                document.removeEventListener('keydown', onKey);
+                const w = document.getElementById('chart-wheel');
+                if (w) w.focus({ preventScroll: true });
+            };
+            const onKey = (e) => { if (e.key === 'Escape') close(); };
+            ov.addEventListener('click', close);
+            document.addEventListener('keydown', onKey);
+            document.body.style.overflow = 'hidden';
+            document.body.appendChild(ov);
+            x.focus({ preventScroll: true });
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const w = document.getElementById('chart-wheel');
+            if (!w) return;
+            w.addEventListener('click', () => { if (w.classList.contains('is-zoomable')) openWheelZoom(); });
+            w.addEventListener('keydown', (e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && w.classList.contains('is-zoomable')) {
+                    e.preventDefault();
+                    openWheelZoom();
+                }
+            });
+        });
+
+        /* „Главни / Всички“ в Аспекти. */
+        document.addEventListener('DOMContentLoaded', () => {
+            const list = document.getElementById('aspList');
+            if (!list) return;
+            document.querySelectorAll('[data-asp-filter]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    list.setAttribute('data-filter', btn.dataset.aspFilter);
+                    document.querySelectorAll('[data-asp-filter]').forEach(b => {
+                        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+                    });
+                });
+            });
+        });
 
         function fmtDateBg(d) {
             return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -2300,29 +2646,34 @@
             }
         }
 
-        function cachedBadge(data, onRefresh) {
-            const label = data.cached ? '📖 Твоето разчитане' : '✨ Ново разчитане';
+        // Действията с разчитането — ред икони ПОД текста. Преди бяха блок над
+        // него (134px на телефон) и човекът не стигаше до самото разчитане.
+        function raInner(ico, label) {
+            return '<span class="ra-ico" aria-hidden="true">' + ico + '</span><span class="ra-lbl">' + label + '</span>';
+        }
+        function readingActions(data) {
             // Only readings the server actually stored can be exported.
             const key = data.cache_key || '';
+            if (!key) return '';
             // Дневният хороскоп се сменя утре — имейл с PDF от него остарява,
             // докато пристигне. Оставяме четене, сваляне и споделяне; изпращането
             // по поща е за траен документ като личния портрет.
             const isDaily = key.startsWith('horoscope:');
-            const exportBtns = key ? `
-                <button class="btn-refresh audio-btn" id="audio-btn-${key}" onclick="playReading('${key}')" title="Слушай разчитането на глас">🔊 Слушай</button>
-                <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>` +
-                (isDaily ? '' : `
-                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати разчитането на имейл">✉ Изпрати по имейл</button>`) + `
-                <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
             // „Разчети наново“ е премахнато: повторното генериране харчи AI
             // токени и пари без добавена стойност за клиента. Разчитането се
             // кешира и се показва винаги; регенериране остава само за админ/API.
-            return `<div class="cache-bar">
-                <span class="cache-label">${label}</span>
-                <div class="cache-actions">
-                    ${exportBtns}
-                </div>
+            return `<div class="ra-row" role="group" aria-label="Действия с разчитането">
+                <button class="ra-btn audio-btn" id="audio-btn-${key}" onclick="playReading('${key}')" title="Слушай разчитането на глас" aria-label="Слушай разчитането на глас">${raInner('🔊', 'Слушай')}</button>
+                <button class="ra-btn" onclick="downloadReadingPdf('${key}')" title="Свали като PDF" aria-label="Свали като PDF">${raInner('⬇', 'PDF')}</button>` +
+                (isDaily ? '' : `
+                <button class="ra-btn" onclick="openEmailModal('${key}')" title="Изпрати разчитането на имейл" aria-label="Изпрати разчитането на имейл">${raInner('✉', 'Имейл')}</button>`) + `
+                <button class="ra-btn" onclick="shareReading('${key}')" title="Сподели линк" aria-label="Сподели линк">${raInner('🔗', 'Сподели')}</button>
             </div>`;
+        }
+        // Текстът, после действията — навсякъде еднакво.
+        function readingHtml(data) {
+            return '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>'
+                + readingActions(data);
         }
 
         // Глобален аудио плейър — един активен поток, показан в плаващ плейър.
@@ -2363,17 +2714,17 @@
             const active = (p.key === key);
             btn.classList.remove('is-playing');
             if (active && p.state === 'playing') {
-                btn.innerHTML = '⏸ Пауза';
+                btn.innerHTML = raInner('⏸', 'Пауза');
                 btn.title = 'Пауза';
                 btn.classList.add('is-playing');
             } else if (active && p.state === 'paused') {
-                btn.innerHTML = '▶ Продължи';
+                btn.innerHTML = raInner('▶', 'Продължи');
                 btn.title = 'Продължи четенето';
             } else if (active && p.state === 'loading') {
-                btn.innerHTML = '⏳ Подготвяме…';
+                btn.innerHTML = raInner('⏳', 'Момент…');
                 btn.title = 'Подготвяме аудиото';
             } else {
-                btn.innerHTML = '🔊 Слушай';
+                btn.innerHTML = raInner('🔊', 'Слушай');
                 btn.title = 'Слушай разчитането на глас';
             }
         }
@@ -2677,9 +3028,10 @@
             }
         }
 
-        function profilePoint(label, pt) {
+        // cls: 'adv-only' за точките, които в „Лесно“ не се показват.
+        function profilePoint(label, pt, cls) {
             if (!pt) return '';
-            return `<div class="prof-point">
+            return `<div class="prof-point${cls ? ' ' + cls : ''}">
                 <div class="prof-point-head">
                     <span class="prof-glyph">${pt.sign_symbol}</span>
                     <div>
@@ -2700,7 +3052,7 @@
             return 'Преобладава стихията ' + dominant + '.';
         }
 
-        function balanceBars(counts, dominant, meaning, title, kind) {
+        function balanceBars(counts, dominant, meaning, title, kind, cls) {
             const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
             const rows = Object.entries(counts)
                 .sort((a, b) => b[1] - a[1])
@@ -2710,7 +3062,7 @@
                         <span class="bal-track"><span class="bal-fill" style="width:${(v / total * 100).toFixed(0)}%"></span></span>
                         <span class="bal-count">${v}</span>
                     </div>`).join('');
-            return `<div class="prof-block">
+            return `<div class="prof-block${cls ? ' ' + cls : ''}">
                 <h3 class="prof-h3">${title}</h3>
                 ${rows}
                 ${dominant ? `<p class="prof-note"><strong>${dominantPhrase(dominant, kind)}</strong> ${meaning || ''}</p>` : ''}
@@ -2724,24 +3076,27 @@
                 if (!resp.ok) throw await apiError(resp);
                 const d = await resp.json();
 
+                // „Лесно“: същността (Слънце, Луна, Асцендент) и стихиите. Медиум
+                // Коели, личните планети, качествата, домовете и аспектите са
+                // за напреднали (.adv-only).
                 let html = '<div class="prof-grid">';
                 html += profilePoint('Същност', d.core.sun);
                 html += profilePoint('Емоции', d.core.moon);
                 html += profilePoint('Как те виждат', d.core.ascendant);
-                html += profilePoint('Призвание', d.core.mc);
+                html += profilePoint('Призвание', d.core.mc, 'adv-only');
                 html += '</div>';
 
                 if (d.personal_planets && d.personal_planets.length) {
-                    html += '<div class="prof-block"><h3 class="prof-h3">Лични планети</h3><div class="prof-grid">';
+                    html += '<div class="prof-block adv-only"><h3 class="prof-h3">Лични планети</h3><div class="prof-grid">';
                     d.personal_planets.forEach(pt => { html += profilePoint(pt.name_bg, pt); });
                     html += '</div></div>';
                 }
 
                 html += balanceBars(d.elements.counts, d.elements.dominant, d.elements.dominant_meaning, 'Баланс на стихиите', 'element');
-                html += balanceBars(d.modalities.counts, d.modalities.dominant, d.modalities.dominant_meaning, 'Баланс на качествата', 'modality');
+                html += balanceBars(d.modalities.counts, d.modalities.dominant, d.modalities.dominant_meaning, 'Баланс на качествата', 'modality', 'adv-only');
 
                 if (d.emphasised_houses && d.emphasised_houses.length) {
-                    html += '<div class="prof-block"><h3 class="prof-h3">Където животът ти е най-активен</h3>';
+                    html += '<div class="prof-block adv-only"><h3 class="prof-h3">Където животът ти е най-активен</h3>';
                     d.emphasised_houses.forEach(h => {
                         html += `<div class="prof-house">
                             <span class="prof-house-num">${h.house}</span>
@@ -2752,7 +3107,7 @@
                 }
 
                 if (d.key_aspects && d.key_aspects.length) {
-                    html += '<div class="prof-block"><h3 class="prof-h3">Най-силните ти аспекти</h3>';
+                    html += '<div class="prof-block adv-only"><h3 class="prof-h3">Най-силните ти аспекти</h3>';
                     // Най-точните първи; обяснението на вида се чете веднъж.
                     const seenTypes = new Set();
                     d.key_aspects.forEach(a => {
@@ -2818,8 +3173,7 @@
                 const resp = await readingFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    el.innerHTML = cachedBadge(data, 'loadProfileAI(true)') +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    el.innerHTML = readingHtml(data);
                 } else {
                     el.innerHTML = '<div class="error">Портретът не се получи. Опитай пак след малко.</div>';
                 }
@@ -2850,9 +3204,10 @@
                     tries++;
                 }
                 if (data.interpretation) {
-                    el.innerHTML = cachedBadge(data, 'loadHoroscopeAI(true)') +
-                        summaryCards(data.summary) +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    const title = document.getElementById('horoscope-title');
+                    if (title) title.textContent = dailyTitle(data.date);
+                    el.innerHTML = renderDaily(data);
+                    syncModeDetails();
                 } else {
                     el.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
@@ -2865,8 +3220,94 @@
             }
         }
 
-        // Quick-glance cards above the full daily reading.
-        function summaryCards(s) {
+        const DAILY_DISCLAIMER = 'С информативна и развлекателна цел — не е медицински или финансов съвет.';
+        const MONTHS_BG = ['януари', 'февруари', 'март', 'април', 'май', 'юни', 'юли', 'август',
+                           'септември', 'октомври', 'ноември', 'декември'];
+
+        // „15.10.2026“ (датата на разчитането от сървъра) → „Днес, 15 октомври“.
+        function dailyTitle(dateStr) {
+            const m = String(dateStr || '').match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+            if (!m || +m[2] < 1 || +m[2] > 12) return 'Хороскоп за днес';
+            const day = +m[1], month = +m[2], year = +m[3];
+            const label = day + ' ' + MONTHS_BG[month - 1];
+            const now = new Date();
+            const isToday = now.getDate() === day && now.getMonth() + 1 === month && now.getFullYear() === year;
+            return isToday ? 'Днес, ' + label : 'Хороскоп за ' + label;
+        }
+
+        // Разделя текста на раздели по заглавията му. Търси по ЗАГЛАВИЕ, не по
+        // номер: подканата може да смени реда и броя, заглавията са това, което
+        // държи изгледа („Есенцията на деня“, „Какво да направиш днес“).
+        function splitSections(raw) {
+            const lines = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').split('\n');
+            const intro = [];
+            const sections = [];
+            let cur = null;
+            for (const line of lines) {
+                const t = line.trim();
+                let m;
+                if ((m = t.match(/^(#{1,6})\s+(.*)$/))) {
+                    cur = { num: '', title: m[2].replace(/[:：]\s*$/, '').replace(/\*\*/g, '').trim(), lines: [] };
+                    sections.push(cur);
+                } else if ((m = t.match(/^(\d+)[.)]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$/))) {
+                    cur = { num: m[1], title: m[2].trim(), lines: [] };
+                    if (m[3]) cur.lines.push(m[3]);
+                    sections.push(cur);
+                } else if (/^\*\*[^*]+\*\*[:：]?$/.test(t)) {
+                    cur = { num: '', title: t.replace(/^\*\*|\*\*[:：]?$/g, '').trim(), lines: [] };
+                    sections.push(cur);
+                } else {
+                    (cur ? cur.lines : intro).push(line);
+                }
+            }
+            return { intro: intro.join('\n').trim(), sections: sections };
+        }
+
+        // Дневното разчитане: най-важното първо, останалото — под „Прочети цялото“.
+        function renderDaily(data) {
+            const s = data.summary;
+            const parts = splitSections(data.interpretation);
+            const secs = parts.sections;
+            if (!secs.length) {   // текст без заглавия — както е, без да го режем
+                return summaryGlance(s) + summaryLists(s) + readingHtml(data)
+                    + '<p class="disclaimer">' + DAILY_DISCLAIMER + '</p>';
+            }
+            const find = (re) => secs.find(x => re.test(x.title));
+            const todo = find(/какво да направиш/i);
+            // Стар кеш без „Есенцията“ → отгоре стои първият раздел.
+            const top = find(/есенцията/i) || (secs[0] !== todo ? secs[0] : null);
+            const rest = secs.filter(x => x !== top && x !== todo);
+            const block = (sec, cls) => `<section class="dh-block ${cls}">
+                <h3 class="dh-h">${inlineMd(sec.title)}</h3>
+                <div class="interpretation">${formatInterpretation(sec.lines.join('\n').trim())}</div></section>`;
+
+            let html = summaryGlance(s);
+            if (top) html += block(top, 'dh-essence');
+            if (todo) html += block(todo, 'dh-todo');
+            html += summaryLists(s);
+            if (rest.length || parts.intro) {
+                const md = (parts.intro ? parts.intro + '\n\n' : '') + rest.map(x =>
+                    (x.num ? x.num + '. ' : '') + '**' + x.title + '**\n' + x.lines.join('\n').trim()).join('\n\n');
+                html += `<details class="read-all hide-sum-pro" data-open-pro>
+                    <summary>Прочети цялото разчитане</summary>
+                    <div class="read-all-body"><div class="interpretation">${formatInterpretation(md)}</div></div>
+                </details>`;
+            }
+            return html + readingActions(data) + '<p class="disclaimer">' + DAILY_DISCLAIMER + '</p>';
+        }
+
+        // Настроение, енергия и фокус — на един ред.
+        function summaryGlance(s) {
+            if (!s) return '';
+            const chip = (cls, label, value) => value ? `<div class="dh-chip ${cls}">
+                <div class="l">${label}</div><div class="v">${escapeHtmlText(value)}</div></div>` : '';
+            const chips = chip('c-mood', 'Настроение', s.mood) + chip('c-energy', 'Енергия', s.energy)
+                + chip('c-focus', 'Фокус', s.focus);
+            return chips ? `<div class="dh-glance">${chips}</div>` : '';
+        }
+
+        // Благоприятно / избягвай / внимавай — картите под „Какво да направиш днес“.
+        function summaryLists(s) {
             if (!s) return '';
             /* Старите кеширани разчитания са писани с повелителни глаголи
                („Провери интуицията си“), които не се четат след заглавие
@@ -2899,19 +3340,7 @@
             };
             const list = (arr) => (Array.isArray(arr) ? arr : [])
                 .map(x => `<li>${escapeHtmlText(advice(x))}</li>`).join('');
-            const cards = [];
-
-            if (s.mood) cards.push(`<div class="sum-card sum-mood">
-                <div class="sum-label">Настроение</div>
-                <div class="sum-value">${escapeHtmlText(s.mood)}</div></div>`);
-            if (s.energy) cards.push(`<div class="sum-card sum-energy">
-                <div class="sum-label">Енергия</div>
-                <div class="sum-value">${escapeHtmlText(s.energy)}</div></div>`);
-            if (s.focus) cards.push(`<div class="sum-card sum-focus">
-                <div class="sum-label">Фокус</div>
-                <div class="sum-value">${escapeHtmlText(s.focus)}</div></div>`);
-
-            let html = cards.length ? `<div class="sum-grid">${cards.join('')}</div>` : '';
+            let html = '';
 
             const cols = [];
             if (Array.isArray(s.do) && s.do.length) cols.push(`<div class="sum-col sum-do">
@@ -3054,8 +3483,7 @@
                 const data = await resp.json();
                 if (data.interpretation) {
                     const refreshCall = `loadPeriodAI('${start}','${end}',true)`;
-                    el.innerHTML = cachedBadge(data, refreshCall) +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    el.innerHTML = readingHtml(data);
                 } else {
                     el.innerHTML = '';
                 }
@@ -3129,8 +3557,7 @@
                 const resp = await readingFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    aiEl.innerHTML = cachedBadge(data, 'loadNumerologyAI(true)') +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    aiEl.innerHTML = readingHtml(data);
                 } else {
                     aiEl.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
@@ -3193,15 +3620,15 @@
         // данни“ (плочки, не списък с главни букви). Разчитането с AI остава
         // това за двойката — вече е кеширано за онези, които са го поискали.
         async function runSynastry(otherId) {
-            const el = document.getElementById('love-content');
+            const el = document.getElementById('love-head');
             const aiEl = document.getElementById('love-ai-content');
             const other = savedPeople.find(p => p.id === otherId);
             // Режимът не минава през submitPartnerChart, затова резултатният
             // панел трябва да се покаже изрично тук.
             document.getElementById('love-result').style.display = 'block';
-            el.innerHTML = crystalLoader('Сравняваме двете карти…');
+            loveBegin('Сравняваме двете карти…');
             aiEl.innerHTML = '';
-            unlockPanel(el);
+            scrollToLoveResult();
             if (!other) { el.innerHTML = '<div class="error">Този човек не е намерен в списъка ти.</div>'; return; }
             try {
                 const resp = await guardedFetch('/api/love-match', {
@@ -3218,7 +3645,7 @@
                     }),
                 });
                 if (!resp.ok) throw await apiError(resp);
-                el.innerHTML = renderLoveMatch(await resp.json());
+                loveShow(await resp.json());
                 window.track('generate_synastry', { partner_id: otherId, content_type: 'synastry' });
                 loadSynastryAI(otherId);
             } catch (e) {
@@ -3242,8 +3669,7 @@
                 });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    el.innerHTML = cachedBadge(data, `loadSynastryAI(${otherId}, true)`) +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    el.innerHTML = readingHtml(data);
                 } else {
                     el.innerHTML = '<div class="error">Разчитането не се получи. Опитай пак след малко.</div>';
                 }
@@ -3367,11 +3793,19 @@
             };
             document.getElementById('love-result').style.display = 'block';
             loadLoveMatch();
+            scrollToLoveResult();
         }
 
         // Debounced so we stay within Nominatim's one-request-per-second policy.
         // Someone arriving with a fresh chart has not seen the add-ons yet.
         document.addEventListener('DOMContentLoaded', () => {
+            // Плочките се рисуват веднага от табовете (цените идват по-късно):
+            // иначе височината им се появява след превъртането до съдържанието
+            // и го избутва надолу.
+            buildSectionGrid(null);
+            renderModeControl();
+            syncModeDetails();
+
             // Дошъл от „Отключи …“ (?unlock=) или „Отвори …“ (#таб) на лендинг
             // или в цените: отиваме направо там, вместо да го пращаме да търси.
             const deep = new URLSearchParams(location.search);
@@ -3386,11 +3820,16 @@
                 if (typeof markOnboardingDone === 'function') markOnboardingDone();   // дошъл е с цел — без въвеждане
                 if (typeof unlockModule === 'function') setTimeout(() => unlockModule(unlockKey), 300);
             } else if (tabKey && /^[a-z]+$/.test(tabKey) && document.getElementById('tab-' + tabKey)) {
-                showTab(tabKey);
-            } else if (typeof maybeStartOnboarding === 'function') {
-                // Три стъпки при първото отваряне след запис — вместо прозореца
-                // с всички модули веднага. Показва се веднъж на акаунт.
-                setTimeout(maybeStartOnboarding, 900);
+                // Дълбока връзка: на телефон водим до началото на съдържанието
+                // (след като шрифтовете и плочките са заели мястото си).
+                setTimeout(() => showTab(tabKey), 120);
+            } else {
+                openStartTab();
+                if (typeof maybeStartOnboarding === 'function') {
+                    // Три стъпки при първото отваряне след запис — вместо прозореца
+                    // с всички модули веднага. Показва се веднъж на акаунт.
+                    setTimeout(maybeStartOnboarding, 900);
+                }
             }
             // Линк към таб от същата страница (#akashic) не я презарежда.
             window.addEventListener('hashchange', () => {
@@ -3411,11 +3850,34 @@
                 uiToast('Плащането е получено. Ако разчитането още е заключено, опресни страницата след няколко секунди.', 'ok');
             } else if (paid === '0') {
                 uiToast('Плащането не беше завършено. Не е удържана сума — можеш да опиташ отново.');
+                if (typeof clearUnlockIntent === 'function') clearUnlockIntent();
             }
             // Запис от /start без парола: досега никъде не пишеше как се влиза
             // пак — след 30 дни или на друг телефон човекът оставаше отвън.
             if (q.get('saved') === '1') showSavedNote();
         });
+
+        /* Без хеш: който вече е минал въвеждането, идва за хороскопа — той му е
+           първият таб. За първо влизане остава „Карта“, както досега. Решава
+           сървърът (onboarding), а подсказката в браузъра отнема мигането на
+           „Карта“ при следващите отваряния. */
+        function openStartTab() {
+            const hintKey = 'miralog_returning:' + (currentUserEmail() || '');
+            let hinted = false;
+            try { hinted = localStorage.getItem(hintKey) === '1'; } catch (e) { /* без значение */ }
+            const open = () => { if (!window._tabTouched) showTab('horoscope', { noScroll: true }); };
+            if (hinted) open();
+            if (typeof getOnboardingState !== 'function') return;
+            getOnboardingState().then(st => {
+                if (!st) return;
+                if (!st.done) {   // подсказката е от друг акаунт на този браузър
+                    if (hinted && !window._tabTouched) showTab('wheel', { noScroll: true });
+                    return;
+                }
+                try { localStorage.setItem(hintKey, '1'); } catch (e) { /* без значение */ }
+                if (!hinted) open();
+            });
+        }
 
         function showSavedNote() {
             let email = '';
@@ -3457,7 +3919,51 @@
                 // needs the same answer the padlocks were built from.
                 buildSectionGrid(data);
                 renderBundleStrip(data);
+                // Купил е профила → четенето е първо, не втора секция под данните.
+                const paidSec = document.getElementById('profile-paid-sec');
+                const profilePanel = document.getElementById('tab-profile');
+                if (unlocked.has('profile') && paidSec && profilePanel && profilePanel.firstElementChild !== paidSec) {
+                    profilePanel.prepend(paidSec);
+                }
+                openPurchasedTab(data);
             } catch (e) { /* no padlocks is better than a broken tab bar */ }
+        }
+
+        /* След покупка и презареждане: отваряме първия купен таб и казваме
+           откъде да започне. Намерението го пише modules.js (при връщане от
+           Stripe — от самото плащане; при тестово плащане — при натискането). */
+        function openPurchasedTab(data) {
+            if (typeof takeUnlockIntent !== 'function') return;
+            const intent = takeUnlockIntent();
+            if (!intent) return;
+            const unlocked = new Set(data.unlocked || []);
+            const tabs = [...document.querySelectorAll('#tabStrip .tab[data-feature]')];
+            // Първият по реда на менюто; Луната е своя страница — само ако няма друг.
+            const order = tabs.map(t => t.dataset.feature).filter(k => k !== 'moon' && document.getElementById('tab-' + k));
+            const first = order.find(k => intent.keys.includes(k) && unlocked.has(k));
+            const moonOnly = !first && intent.keys.includes('moon') && unlocked.has('moon');
+            if (!first && !moonOnly) return;     // още не е отключено (уебхукът закъснява) — остава за следващото зареждане
+            clearUnlockIntent();
+            const names = {};
+            (data.catalogue || []).forEach(i => { names[i.key] = i.short || i.name; });
+            const bought = intent.keys.filter(k => unlocked.has(k)).map(k => names[k] || k);
+            const label = intent.bundle ? 'Всички разчитания' : bought.slice(0, 3).join(', ')
+                + (bought.length > 3 ? ' и още ' + (bought.length - 3) : '');
+            const note = document.createElement('div');
+            note.className = 'unlock-banner';
+            note.setAttribute('role', 'status');
+            note.innerHTML = '<span>🔓 Отключено: <b>' + escapeHtmlText(label) + '</b> — '
+                + (first ? 'започни оттук.' : '<a href="/moon">отвори Луната</a>.') + '</span>'
+                + '<button type="button" aria-label="Затвори">✕</button>';
+            note.querySelector('button').onclick = () => note.remove();
+            if (first) {
+                const panel = document.getElementById('tab-' + first);
+                panel.prepend(note);
+                showTab(first);
+            } else {
+                const bar = document.getElementById('tabBar');
+                bar.parentNode.insertBefore(note, bar);
+            }
         }
 
         // Цена по български: „9 €“, „2,99 €“.
@@ -3527,6 +4033,7 @@
                 card.type = 'button';
                 card.className = 'sec-card'
                     + (tab.classList.contains('active') ? ' is-active' : '')
+                    + (tab.classList.contains('adv-only') ? ' adv-only' : '')
                     + (locked ? ' is-locked' : '');
                 card.dataset.target = target;
                 // The visible label may be shortened, so the accessible name
@@ -3590,6 +4097,7 @@
             });
             document.getElementById('love-result').style.display = 'block';
             loadLoveMatch();
+            scrollToLoveResult();
         }
 
         function aspectClass(name) {
@@ -3608,8 +4116,10 @@
             return n < 0.05 ? 'почти точен' : 'точен до ' + n.toFixed(1).replace('.', ',') + '°';
         }
 
-        function renderLoveMatch(d) {
-            let html = `<div class="love-pair">
+        // Двойката (Ти — аспект — Партньор) стои над разчитането; останалото —
+        // картите по позиции — е под него, в „Как го изчислихме“.
+        function lovePairHtml(d) {
+            return `<div class="love-pair">
                 <div class="love-side">
                     <span class="love-glyph">${d.you.sun_symbol || '✦'}</span>
                     <div class="love-side-label">Ти</div>
@@ -3626,7 +4136,10 @@
                     <div class="love-side-meta">${d.partner.element_bg} · ${d.partner.modality_bg}</div>
                 </div>
             </div>`;
+        }
 
+        function loveDetailHtml(d) {
+            let html = '';
             if (d.mode === 'full') {
                 // Their own placements, then the real cross-aspects between the charts.
                 if (d.partner_points && d.partner_points.length) {
@@ -3692,10 +4205,36 @@
             return html;
         }
 
+        // Чакане / резултат / грешка отиват в „главата“ (видимото); суровите
+        // карти — в сгънатия блок под разчитането.
+        function loveBegin(text) {
+            document.getElementById('love-head').innerHTML = crystalLoader(text);
+            document.getElementById('love-content').innerHTML = '';
+            document.getElementById('love-calc').hidden = true;
+            unlockPanel(document.getElementById('love-head'));
+        }
+        function loveShow(d) {
+            document.getElementById('love-head').innerHTML = lovePairHtml(d);
+            const rest = loveDetailHtml(d);
+            document.getElementById('love-content').innerHTML = rest;
+            document.getElementById('love-calc').hidden = !rest;
+            syncModeDetails();
+        }
+        // След избор на зодия или партньор резултатът е под сгъвката — водим натам.
+        function scrollToLoveResult() {
+            const r = document.getElementById('love-result');
+            if (!r) return;
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (r.getBoundingClientRect().top > window.innerHeight * 0.55) {
+                    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    r.scrollIntoView({ block: 'start', behavior: calm ? 'auto' : 'smooth' });
+                }
+            }));
+        }
+
         async function loadLoveMatch() {
-            const el = document.getElementById('love-content');
-            el.innerHTML = crystalLoader('Изчисляваме…');
-            unlockPanel(el);
+            const el = document.getElementById('love-head');
+            loveBegin('Изчисляваме…');
             try {
                 const resp = await guardedFetch('/api/love-match', {
                     method: 'POST',
@@ -3703,7 +4242,7 @@
                     body: JSON.stringify(lovePayload)
                 });
                 if (!resp.ok) throw await apiError(resp);
-                el.innerHTML = renderLoveMatch(await resp.json());
+                loveShow(await resp.json());
             } catch (e) {
                 document.getElementById('love-ai-content').innerHTML = '';
                 if (e instanceof LockedFeature) {
@@ -3729,8 +4268,7 @@
                 });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    el.innerHTML = cachedBadge(data, 'loadLoveAI(true)') +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    el.innerHTML = readingHtml(data);
                 } else {
                     el.innerHTML = '<div class="error">Хороскопът не се получи. Опитай пак след малко.</div>';
                 }
@@ -3769,7 +4307,7 @@
         function closeEditBirth() {
             document.getElementById('editOverlay').classList.remove('open');
             document.body.style.overflow = '';
-            const btn = document.getElementById('editBirthBtn');
+            const btn = document.getElementById('moreBtn');
             if (btn) btn.focus();
         }
 
@@ -3903,11 +4441,14 @@
             } catch (e) {
                 // Clear the AI panel first: returning early used to leave its
                 // loader spinning behind the locked teaser.
-                document.getElementById('akashic-ai-content').innerHTML = '';
+                const aiEl = document.getElementById('akashic-ai-content');
                 if (e instanceof LockedFeature) {
-                    renderLocked(el, e.detail, loadAkashic);
+                    // Четенето е първо в таба — офертата е там, не в сгънатия
+                    // блок с изчислените позиции.
+                    renderLocked(aiEl, e.detail, loadAkashic);
                     return;
                 }
+                aiEl.innerHTML = '';
                 el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
                 return;
             }
@@ -3923,8 +4464,7 @@
                 const resp = await readingFetch(url, { headers: authHeaders() });
                 const data = await resp.json();
                 if (data.interpretation) {
-                    el.innerHTML = cachedBadge(data, 'loadAkashicAI(true)') +
-                        '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
+                    el.innerHTML = readingHtml(data);
                 } else {
                     el.innerHTML = '<div class="error">Четенето не се получи. Опитай пак след малко.</div>';
                 }

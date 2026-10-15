@@ -11911,12 +11911,14 @@ PLANET_DISPLAY_ORDER = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "S
 async def view_chart(request: Request, person_id: int):
     """Chart view — JWT from cookie, Authorization header, or legacy ?token=."""
     user_id = None
+    user_row = {}
     token = _token_from_request(request)
     if token:
         try:
             # Същата проверка като в API-то: отменен токен или блокиран
             # акаунт не бива да виждат картата през страницата.
-            user_id = user_for_token(token)["id"]
+            user_row = user_for_token(token)
+            user_id = user_row["id"]
         except HTTPException:
             pass
     if not user_id:
@@ -11933,10 +11935,14 @@ async def view_chart(request: Request, person_id: int):
     rank = {n: i for i, n in enumerate(PLANET_DISPLAY_ORDER)}
     chart_data["objects"] = dict(sorted(
         chart_data["objects"].items(), key=lambda kv: rank.get(kv[1]["name"], 99)))
+    # Режимът „Лесно / За напреднали“ е на акаунта (колоната може още да я няма
+    # в по-стара база — .get е безопасно); непознато значение = „Лесно“.
+    ui_mode = "pro" if (user_row.get("ui_mode") or "easy") == "pro" else "easy"
     return HTMLResponse(templates.get_template("chart.html").render({
         "request": request,
         "person": p,
         "chart": chart_data,
+        "ui_mode": ui_mode,
     }))
 
 @app.get("/settings", response_class=HTMLResponse)

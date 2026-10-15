@@ -305,6 +305,8 @@ async function requestUnlock(btn, featureKey, retry) {
                 body: JSON.stringify({ keys: [featureKey] }),
             });
             if (r.ok) {
+                // Картата отваря купения таб след презареждането (modules.js).
+                if (typeof window.setUnlockIntent === 'function') window.setUnlockIntent([featureKey]);
                 uiToast('Отключено (тестово плащане).', 'ok');
                 setTimeout(() => location.reload(), 900);
                 return;

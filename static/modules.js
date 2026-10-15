@@ -32,6 +32,35 @@
     };
     window.invalidateFeatures = function () { featuresPromise = null; };
 
+    /* Какво е купено току-що — за да отвори картата първия нов таб след
+       презареждането и да каже „започни оттук“. Пази се в браузъра: плащането
+       минава през Stripe и обратно на същата страница. Срокът е кратък, за да
+       не излезе банер от забравена покупка. */
+    const INTENT_KEY = 'miralog_unlock_intent';
+    window.setUnlockIntent = function (keys) {
+        try {
+            let list = (keys || []).filter(function (k) { return typeof k === 'string' && k; });
+            const bundle = list.indexOf('bundle') >= 0;
+            if (bundle) {
+                list = list.filter(function (k) { return k !== 'bundle'; });
+                const b = lastFeatures && lastFeatures.bundle;
+                if (b && b.keys) list = list.concat(b.keys);
+            }
+            if (!list.length) return;
+            localStorage.setItem(INTENT_KEY, JSON.stringify({ keys: list, bundle: bundle, ts: Date.now() }));
+        } catch (e) { /* без значение: просто няма банер */ }
+    };
+    window.takeUnlockIntent = function () {
+        try {
+            const raw = JSON.parse(localStorage.getItem(INTENT_KEY) || 'null');
+            if (!raw || !Array.isArray(raw.keys) || Date.now() - Number(raw.ts || 0) > 3 * 3600 * 1000) return null;
+            return raw;
+        } catch (e) { return null; }
+    };
+    window.clearUnlockIntent = function () {
+        try { localStorage.removeItem(INTENT_KEY); } catch (e) { /* без значение */ }
+    };
+
     function esc(text) {
         const d = document.createElement('div');
         d.textContent = text == null ? '' : String(text);
@@ -118,6 +147,7 @@
                     body: JSON.stringify({ keys: [key] }),
                 });
                 if (r.ok) {
+                    window.setUnlockIntent([key]);
                     btn.textContent = 'Отключено';
                     btn.disabled = true;
                     uiToast('Отключено (тестово плащане).', 'ok');
@@ -233,7 +263,7 @@
                     <div class="mod-loading">Зареждане…</div>
                 </div>
                 <div class="mod-foot-note">
-                    Можеш да отключиш и по-късно — от бутона „Разчитания“ в картата ти.
+                    Можеш да отключиш и по-късно — разчитанията с катинар са в менюто на картата ти.
                 </div>
             </div>`;
         root.appendChild(overlay);
@@ -400,6 +430,10 @@
                     // „Опресни след малко“ не проверяваше плащането пак.
                     cleanUrl();
                     if (typeof invalidateFeatures === 'function') invalidateFeatures();
+                    // Какво е купено — картата отваря първия нов таб след презареждането.
+                    if (typeof setUnlockIntent === 'function' && res.d.purchase) {
+                        setUnlockIntent(res.d.purchase.keys || []);
+                    }
                     // The server tells us what was actually charged, so the
                     // reports can total revenue rather than only count sales.
                     if (typeof trackPurchase === 'function' && res.d.purchase) {
