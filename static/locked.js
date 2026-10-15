@@ -62,16 +62,26 @@ function money(cents, currency) {
     return value.toFixed(2).replace('.00', '').replace('.', ',') + ' ' + symbol;
 }
 
-// Под размазването стои истинското ядро на картата — Слънце, Луна и
-// Асцендент с реалните им значения. Данните са безплатни (искат само
-// "chart"), затова нищо не се генерира и нищо не се раздава наготово.
-// Общият текст остава само като резерва, ако извличането се провали.
+// Едно изречение за всеки модул под заглавието на заключения екран.
+// Сървърното „… още не е отключено. Можеш да го отключиш …“ повтаряше
+// заглавието и бутона, затова го заменяме с това, което модулът дава.
+const LOCKED_BLURBS = {
+    profile: 'Писмено разчитане по твоята карта: силни и слаби страни, темперамент и насоки за растеж.',
+    period: 'Какво да очакваш до 60 дни напред и кога да планираш важните неща.',
+    love: 'Има ли истинско привличане, кое ви свързва и имате ли дългосрочен потенциал.',
+    numerology: 'Числата от името и датата ти и какво казват за пътя ти и за годината напред.',
+    akashic: 'Какво носиш от миналото и накъде растеш — по лунните възли, Хирон и Сатурн.',
+    moon: 'Фазите на Луната и какво е подходящо всеки ден.',
+};
+
+// Резервен текст, докато (или ако) истинското превю не се зареди — и за
+// страниците без човек (лунният календар). Не се преструва на разчитане:
+// отгоре е изрично казано, че е примерен, и не обещава конкретни числа.
 function teaserText(featureName) {
     return `<div class="locked-teaser">
         <h4>${escapeHtml(featureName || 'Разчитане')}</h4>
-        <p>Разчитането стъпва на точните позиции в твоята карта и обяснява
-           какво означават те за теб — не общи думи за зодията, а конкретните
-           градуси и домове от мига на раждането ти.</p>
+        <p>Разчитането започва от позициите в твоята карта и ги превежда на
+           ясен език — какво означават за теб, а не общи думи за зодията.</p>
         <h4>Какво ти помага</h4>
         <p>Тук се описват страните, на които можеш да разчиташ: къде идва
            увереността ти и кои умения ти се удават без усилие.</p>
@@ -81,22 +91,27 @@ function teaserText(featureName) {
     </div>`;
 }
 
-// Заменя резервния текст с истинския откъс, щом данните пристигнат.
-async function fillTeaser(el, featureName) {
+// Заменя резервния текст с истинския откъс, щом данните пристигнат. Откъсът
+// е свързан с модула: числото на съдбата за нумерологията, Венера и Марс
+// за любовта, лунните възли за акашовите записи — не едно и също навсякъде.
+async function fillTeaser(el, featureName, featureKey) {
     const personId = (window.PERSON_ID !== undefined && window.PERSON_ID !== null)
         ? window.PERSON_ID : null;
     if (personId === null) return;
     try {
-        const resp = await fetch('/api/persons/' + encodeURIComponent(personId) + '/teaser',
+        const resp = await fetch('/api/persons/' + encodeURIComponent(personId) + '/teaser'
+                                 + (featureKey ? '?feature=' + encodeURIComponent(featureKey) : ''),
                                  { headers: authHeaders() });
         if (!resp.ok) return;
         const data = await resp.json();
-        if (!data.rows || !data.rows.length) return;
+        const hasRows = data.rows && data.rows.length;
+        const hasOutline = data.outline && data.outline.length;
+        if (!hasRows && !hasOutline) return;
 
         const host = el.querySelector('.locked-teaser');
         if (!host) return;
 
-        const rows = data.rows.map(r => `
+        const rows = (data.rows || []).map(r => `
             <div class="teaser-row">
                 <div class="teaser-row-head">
                     <span class="teaser-label">${escapeHtml(r.label)}</span>
@@ -105,7 +120,12 @@ async function fillTeaser(el, featureName) {
                 <p>${escapeHtml(r.meaning)}</p>
             </div>`).join('');
 
-        const element = data.element && data.element.name
+        const outline = hasOutline
+            ? `<ul class="teaser-outline">${data.outline.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>`
+            : '';
+
+        // Общото превю (без модул): стихията, която доминира.
+        const element = !data.feature && data.element && data.element.name
             ? `<div class="teaser-row">
                    <div class="teaser-row-head">
                        <span class="teaser-label">Стихия</span>
@@ -115,15 +135,17 @@ async function fillTeaser(el, featureName) {
                </div>`
             : '';
 
-        const more = data.aspect_count
-            ? `<p class="teaser-more">…и още ${data.aspect_count} силни аспекта,
-                   разчетени в пълния текст.</p>`
-            : '';
+        // „…и още N аспекта“ е само в профила; другаде сървърът дава свой ред.
+        const moreText = data.more
+            || (!data.feature && data.aspect_count
+                ? `…и още ${data.aspect_count} силни аспекта, разчетени в пълния текст.` : '');
+        const more = moreText ? `<p class="teaser-more">${escapeHtml(moreText)}</p>` : '';
 
+        const intro = data.intro
+            || ('Ето какво показва твоята карта' + (data.name ? ', ' + data.name : '') + ':');
         host.innerHTML = `<h4>${escapeHtml(featureName || 'Разчитане')}</h4>
-            <p class="teaser-intro">Ето какво показва твоята карта${
-                data.name ? ', ' + escapeHtml(data.name) : ''}:</p>
-            ${rows}${element}${more}`;
+            <p class="teaser-intro">${escapeHtml(intro)}</p>
+            ${rows}${outline}${element}${more}`;
         // Класът превключва оформлението: първите редове стават четими, а
         // наслагването с цената слиза под тях.
         host.classList.add('has-excerpt');
@@ -160,7 +182,11 @@ function reportLockedView(feature) {
 function renderLocked(el, detail, retry) {
     const offer = detail.offer;
     const name = detail.feature_name || (offer && offer.name) || 'Това разчитане';
-    reportLockedView(detail.feature || (offer && offer.key));
+    const featureKey = detail.feature || (offer && offer.key) || '';
+    reportLockedView(featureKey);
+    // Общото „още не е отключено…“ от сървъра повтаря заглавието и бутона.
+    const note = (!detail.message || /още не е отключено/.test(detail.message))
+        ? (LOCKED_BLURBS[featureKey] || '') : detail.message;
 
     /* Пакетът се показва само когато наистина е по-изгоден от този модул
        плюс останалите поотделно — и то като втори, по-тих ред под основния
@@ -190,9 +216,10 @@ function renderLocked(el, detail, retry) {
     el.classList.add('locked');
     el.innerHTML = teaserText(name) + `
         <div class="locked-overlay">
+            <span class="teaser-sample">Примерен откъс</span>
             <span class="locked-badge">🔒 Заключено</span>
             <div class="locked-title">${escapeHtml(name)}</div>
-            <div class="locked-note">${escapeHtml(detail.message || '')}</div>
+            <div class="locked-note">${escapeHtml(note)}</div>
             ${priceBlock}
         </div>`;
 
@@ -202,7 +229,7 @@ function renderLocked(el, detail, retry) {
     // free and whose reading is not) pass keepSiblings and stay in place.
     if (!detail.keepSiblings) hideSiblingSections(el);
 
-    fillTeaser(el, name);
+    fillTeaser(el, name, featureKey);
 
     const btn = el.querySelector('.locked-btn[data-feature]');
     if (btn) btn.addEventListener('click', () => requestUnlock(btn, btn.dataset.feature, retry));

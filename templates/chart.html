@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="/static/ui.css">
     <link rel="stylesheet" href="/static/modules.css?v=2">
     <link rel="stylesheet" href="/static/onboarding.css?v=2">
-    <link rel="stylesheet" href="/static/locked.css">
+    <link rel="stylesheet" href="/static/locked.css?v=2">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         /* The mark takes you home — the convention every visitor knows. */
@@ -139,6 +139,13 @@
         .theme-toggle:active { transform: translateY(0); }
         .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .container { max-width: 900px; margin: 0 auto; padding: 20px; padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+        /* На компютър десетте раздела се побират, без стрелка: при 900px
+           лентата стигаше само до „Акашови…“. Съдържанието под нея си остава
+           в удобна мярка (текстът има собствен max-width). */
+        @media (min-width: 1200px) {
+            .container { max-width: 1180px; }
+            .tab { padding: 8px 12px; }
+        }
         .back-link { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: inline-flex; align-items: center; min-height: 44px; transition: color 0.15s ease; }
         .back-link:hover { color: var(--accent-light); }
 
@@ -252,10 +259,8 @@
             /* The theme toggle is fixed in the top-right corner, and this row
                reaches for the same corner with margin-left:auto — the circle
                landed on top of the button. Reserving the corner keeps them
-               apart; the label shortens too, because on a 320px screen the
-               full wording still ran under the toggle. */
+               apart. */
             .page-nav { padding-right: 52px; flex-wrap: wrap; }
-            .nav-modules .nav-modules-long { display: none; }
         }
         .page-logo {
             width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
@@ -332,7 +337,7 @@
             font-family: var(--font-body); font-size: 0.82rem; font-weight: 500;
             letter-spacing: -0.005em;
             transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
-            user-select: none;
+            user-select: none; text-decoration: none;
         }
         .tab.active {
             background: linear-gradient(135deg, var(--accent-light), var(--accent));
@@ -1026,11 +1031,13 @@
 
         /* --- love horoscope --- */
         .mode-switch {
-            display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 18px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+            width: 100%; gap: 4px; padding: 4px; margin-bottom: 18px;
             background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 12px;
         }
         .mode-btn {
-            padding: 8px 16px; border-radius: 9px; border: none; cursor: pointer;
+            padding: 8px 10px; border-radius: 9px; border: none; cursor: pointer;
+            line-height: 1.3; overflow-wrap: normal;
             background: transparent; color: var(--text-muted);
             font-family: var(--font-body); font-size: 0.85rem; font-weight: 500;
             min-height: 40px; transition: background-color .15s ease, color .15s ease;
@@ -1313,69 +1320,215 @@
                 display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
                 margin-bottom: 20px;
             }
-            /* The four chart statistics ran to 441px and pushed the menu — and
-               with it everything the visitor came to read — below the fold.
-               On a phone they become a compact two-column strip; the same
-               figures, a fifth of the height. */
+            /* The chart statistics are folded under „Подробности за напреднали“;
+               opened, they are a compact two-column strip on a phone. */
             .chart-header .stats {
                 grid-template-columns: 1fr 1fr; gap: 8px;
             }
             .chart-header .stat { padding: 9px 10px; }
             .chart-header .stat-label { font-size: .72rem; }
             .chart-header .stat-value { font-size: .84rem; }
-            /* The explanatory sentences belong with the wheel, not stacked
-               above the navigation. */
-            .chart-header .stat-meaning { display: none; }
         }
+
+        /* --- сгъваеми „Подробности за напреднали“ ---
+           Сурови списъци и жаргон не са на първо място: стоят сгънати под
+           човешкото разчитане и се отварят само от този, който ги иска. */
+        .adv { margin-top: 12px; }
+        .adv > summary {
+            display: flex; align-items: center; gap: 8px; cursor: pointer;
+            min-height: 44px; list-style: none;
+            font-size: .85rem; font-weight: 500; color: var(--accent-light);
+        }
+        .adv > summary::-webkit-details-marker { display: none; }
+        .adv > summary::before { content: "▸"; font-size: .8rem; transition: transform .15s ease; }
+        .adv[open] > summary::before { transform: rotate(90deg); }
+        .adv > summary:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 8px; }
+        .adv-block { margin-top: 0; }
+        .adv-mini { margin-top: 6px; border-top: 1px dotted var(--border-soft); }
+        .adv-mini > summary { min-height: 36px; font-size: .78rem; color: var(--text-dim); }
+
+        .chart-title-row {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 8px 16px; flex-wrap: wrap;
+        }
+        .btn-edit {
+            display: inline-flex; align-items: center; gap: 6px;
+            min-height: 40px; padding: 6px 14px; border-radius: 10px; cursor: pointer;
+            border: 1px solid var(--border); background: transparent; color: var(--accent-light);
+            font-family: var(--font-body); font-size: .8rem; font-weight: 500;
+            transition: background-color .15s ease, border-color .15s ease;
+        }
+        .btn-edit:hover { border-color: var(--accent); background: var(--surface-thistle); }
+        .btn-edit:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .chart-big3 {
+            display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 10px;
+            font-size: .92rem; color: var(--text);
+        }
+        .chart-big3 b { color: var(--text-dim); font-weight: 600; font-size: .72rem;
+                        text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
+        .chart-note { margin-top: 8px; opacity: .9; line-height: 1.55; }
+        .chart-note a { color: var(--accent-light); }
+        .tab-note { color: var(--text-muted); font-size: .85rem; margin-bottom: 14px; line-height: 1.6; }
+
+        .aspect-card-header:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .aspect-title-sub { text-transform: none; letter-spacing: 0; font-size: .78rem; }
+        .planet-title-type { font-size: .72rem; }
+        .crystal-loader small { display: block; margin-top: -6px; font-size: .78rem; color: var(--text-dim); text-align: center; }
+
+        /* --- период: бързи бутони --- */
+        .period-quick {
+            display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+            margin: -6px 0 18px; font-size: .82rem; color: var(--text-muted);
+        }
+        .btn-chip {
+            min-height: 40px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-family: var(--font-body); font-size: .82rem; font-weight: 500;
+        }
+        .btn-chip:hover { border-color: var(--accent); color: var(--accent-light); }
+        .btn-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .period-hint { color: var(--text-dim); }
+        /* Неутрални цветове: „отминава“ не е лошо, а често е облекчение. */
+        .day-aspect .dot { display: inline-block; width: 18px; color: var(--accent-light); }
+        .day-aspect .when { color: var(--text-dim); font-size: .78rem; margin-right: 4px; }
+
+        /* --- „Любов“: един и същ човешки изглед във всички режими --- */
+        .love-cards > * { min-width: 0; }
+        .love-card-label, .love-card-sign, .love-strip-label, .love-card-meaning {
+            overflow-wrap: anywhere; text-transform: none; letter-spacing: 0;
+        }
+        .love-card-label { font-size: .78rem; color: var(--text-dim); font-weight: 600; }
+        .love-strip-label { min-width: 0; flex-basis: 100%; }
+        #mode-full-panel input[type="checkbox"] { width: auto; min-height: 0; }
+
+        /* --- поправка на рождените данни --- */
+        .edit-overlay {
+            position: fixed; inset: 0; z-index: 9100;
+            display: none; align-items: center; justify-content: center; padding: 16px;
+            background: rgba(6, 5, 18, .84); backdrop-filter: blur(6px);
+            overflow-y: auto;
+        }
+        .edit-overlay.open { display: flex; }
+        :root[data-theme="light"] .edit-overlay { background: rgba(45, 36, 56, .58); }
+        .edit-sheet {
+            position: relative; width: min(520px, 100%); margin: auto;
+            max-height: calc(100dvh - 32px); overflow-y: auto;
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 20px; padding: 24px 22px 22px; box-shadow: 0 28px 70px rgba(0,0,0,.5);
+        }
+        .edit-sheet h3 {
+            font-family: var(--font-display); font-size: 1.5rem; line-height: 1.2;
+            color: var(--text-heading); margin-bottom: 6px; padding-right: 36px;
+        }
+        .edit-sheet .edit-lead { color: var(--text-muted); font-size: .86rem; line-height: 1.55; margin-bottom: 16px; }
+        .edit-close {
+            position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border-radius: 50%;
+            border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+            cursor: pointer; font-size: .9rem;
+        }
+        .edit-close:hover { border-color: var(--accent); color: var(--text); }
+        .edit-sheet .form-group { margin-bottom: 14px; }
+        .edit-sheet label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: .85rem; }
+        .edit-sheet input[type="number"], .edit-sheet input[type="text"] {
+            width: 100%; padding: 10px 12px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font-family: var(--font-body); font-size: 16px; min-height: 44px;
+        }
+        .edit-sheet input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        .edit-sheet input:disabled { opacity: .5; }
+        .edit-sheet .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        .edit-sheet .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .edit-sheet .hint { font-size: .74rem; color: var(--text-dim); margin-top: 4px; }
+        .edit-check { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: .88rem; cursor: pointer; }
+        .edit-check input { width: 20px; height: 20px; min-height: 0; flex-shrink: 0; }
+        .edit-warn {
+            margin: 4px 0 16px; padding: 10px 14px; border-radius: 12px; font-size: .84rem; line-height: 1.55;
+            background: var(--surface-petal); border: 1px solid var(--border-soft); color: var(--text);
+        }
+        .edit-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+        .btn-ghost {
+            padding: 10px 18px; border-radius: 12px; min-height: 44px; cursor: pointer;
+            border: 1px solid var(--border); background: transparent; color: var(--text);
+            font-family: var(--font-body); font-size: .9rem; font-weight: 500;
+        }
+        .btn-ghost:hover { border-color: var(--accent); }
+        .edit-sheet .place-group { position: relative; }
     </style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
 </head>
 <body>
+    {# Въртящият се кръг на чакането; „slow“ добавя колко отнема — платените разчитания се пишат до минута. #}
+    {% macro loader(text, slow=false) %}<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>{{ text }}{% if slow %}<small>Обикновено отнема до минута.</small>{% endif %}</div>{% endmacro %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
     <div class="container">
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
             <a href="/dashboard" class="back-link">← Моите карти</a>
             <button class="nav-modules" onclick="openModulePicker()"
-                    aria-label="Добави разчитания">✦ Добави<span class="nav-modules-long"> разчитания</span></button>
+                    aria-label="Разчитания">✦ Разчитания</button>
         </div>
 
+        {# „Истински северен възел“ → „Северен възел“: думата „истински“ е жаргон. #}
+        {% macro nm(x) %}{{ x|replace('Истинска ', '')|replace('Истински ', '')|replace('северен', 'Северен')|replace('южен', 'Южен') }}{% endmacro %}
+        {# Слънце, Луна и Асцендент — за обикновения човек това е картата му. #}
+        {% set big = namespace(sun=None, moon=None, asc=None) %}
+        {% for oid, obj in chart.objects.items() %}
+            {% if obj.name == 'Sun' %}{% set big.sun = obj %}{% elif obj.name == 'Moon' %}{% set big.moon = obj %}{% elif obj.name == 'Asc' %}{% set big.asc = obj %}{% endif %}
+        {% endfor %}
         <div class="chart-header">
-            <h1>{{ person.name }}</h1>
-            <div class="chart-meta">
-                {{ person.day }}.{{ person.month }}.{{ person.year }},
-                {% if person.time_unknown %}час неизвестен{% else %}{{ person.hour }}:{{ '%02d'|format(person.minute) }} ч.{% endif %}
-                {# Име на мястото, не координати; за старите карти без място — нищо. #}
-                {% if person.place %}• {{ person.place }}{% endif %}
-                • {{ person.timezone }}
+            <div class="chart-title-row">
+                <h1>{{ person.name }}</h1>
+                <button type="button" class="btn-edit" id="editBirthBtn" onclick="openEditBirth()">✎ Поправи данните</button>
             </div>
+            <div class="chart-meta">
+                {{ '%02d'|format(person.day) }}.{{ '%02d'|format(person.month) }}.{{ person.year }},
+                {% if person.time_unknown %}час неизвестен{% else %}{{ person.hour }}:{{ '%02d'|format(person.minute) }} ч.{% endif %}
+                {# Име на мястото, не координати и не часова зона; за старите карти без място — нищо. #}
+                {% if person.place %}• {{ person.place }}{% endif %}
+            </div>
+            {% if big.sun and big.moon %}
+            <div class="chart-big3">
+                <span><b>Слънце</b> {{ big.sun.sign_symbol }} {{ big.sun.sign_bg }}</span>
+                <span><b>Луна</b> {{ big.moon.sign_symbol }} {{ big.moon.sign_bg }}</span>
+                {% if big.asc %}<span><b>Асцендент</b> {{ big.asc.sign_symbol }} {{ big.asc.sign_bg }}</span>{% endif %}
+            </div>
+            {% endif %}
             {% if person.time_unknown %}
-            <p class="chart-meta" style="margin-top:6px;opacity:.85">
-                Часът на раждане е неизвестен: колелото е сметнато за 12:00, затова асцендентът
-                и домовете на него са само ориентир. Разчитанията не ги тълкуват.
+            <p class="chart-meta chart-note">
+                Часът на раждане е неизвестен: картата е сметната за 12:00, затова не показваме
+                асцендент, домове и точките, които зависят от часа. Луната може да е в съседния знак,
+                ако е близо до границата. Разчитанията не ги тълкуват.
+                <a href="#" onclick="openEditBirth(); return false;">Знаеш часа? Добави го.</a>
             </p>
             {% endif %}
-            <div class="stats">
-                <div class="stat">
-                    <div class="stat-label">Форма</div>
-                    <div class="stat-value">{{ chart.shape_bg or 'Няма данни' }}</div>
-                    {% if chart.shape_meaning %}<div class="stat-meaning">{{ chart.shape_meaning }}</div>{% endif %}
+            <details class="adv">
+                <summary>Подробности за напреднали</summary>
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-label">Форма на картата</div>
+                        <div class="stat-value">{{ chart.shape_bg or 'Няма данни' }}</div>
+                        {% if chart.shape_meaning %}<div class="stat-meaning">{{ chart.shape_meaning }}</div>{% endif %}
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Лунна фаза при раждането</div>
+                        <div class="stat-value">{{ chart.moon_phase_bg or 'Няма данни' }}</div>
+                        {% if chart.moon_phase_meaning %}<div class="stat-meaning">{{ chart.moon_phase_meaning }}</div>{% endif %}
+                    </div>
+                    {% if not person.time_unknown and chart.diurnal is not none %}
+                    <div class="stat">
+                        <div class="stat-label">Раждане</div>
+                        <div class="stat-value">{% if chart.diurnal %}Дневно{% else %}Нощно{% endif %}</div>
+                        <div class="stat-meaning">{% if chart.diurnal %}Слънцето е над хоризонта.{% else %}Слънцето е под хоризонта.{% endif %}</div>
+                    </div>
+                    {% endif %}
+                    <div class="stat">
+                        <div class="stat-label">Домова система</div>
+                        <div class="stat-value">{{ chart.house_system_bg }}</div>
+                        <div class="stat-meaning">Начинът, по който небето е разделено на 12 дома.</div>
+                    </div>
                 </div>
-                <div class="stat">
-                    <div class="stat-label">Лунна фаза</div>
-                    <div class="stat-value">{{ chart.moon_phase_bg or 'Няма данни' }}</div>
-                    {% if chart.moon_phase_meaning %}<div class="stat-meaning">{{ chart.moon_phase_meaning }}</div>{% endif %}
-                </div>
-                <div class="stat">
-                    <div class="stat-label">Раждане</div>
-                    <div class="stat-value">{% if chart.diurnal %}Дневно{% else %}Нощно{% endif %}</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-label">Домова система</div>
-                    <div class="stat-value">{{ chart.house_system_bg }}</div>
-                </div>
-            </div>
+            </details>
         </div>
 
         <div class="tab-bar" id="tabBar">
@@ -1383,7 +1536,8 @@
                 aria-label="Предишни менюта" hidden>‹</button>
         <div class="tabs" id="tabStrip">
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
-            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile" data-feature="profile">Профил</div>
+            {# Без катинар и цена: „Накратко за теб“ в таба е безплатно. Катинарът е само на платената част вътре. #}
+            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile">Профил</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope" data-feature="horoscope">Дневен хороскоп</div>
@@ -1391,6 +1545,8 @@
             <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology" data-feature="numerology">Нумерология</div>
             <div class="tab" onclick="showTab('love')" id="tabbtn-love" data-feature="love">Любов</div>
             <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic" data-feature="akashic">Акашови записи</div>
+            {# Лунният календар е отделна страница, но вход от картата има: след покупка е обикновен таб, преди — със знак и цена. #}
+            <a class="tab" href="/moon" id="tabbtn-moon" data-feature="moon">Луна</a>
             <!-- „Пълно разчитане“ е временно свалено от менюто. Панелът и
                  endpoint-ът остават, за да се върне с един ред. -->
         </div>
@@ -1416,7 +1572,7 @@
             <div class="section wheel-section">
                 <h2>Натална карта</h2>
                 <div id="chart-wheel" class="wheel-container">
-                    <div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Зареждане на картата...</div>
+                    {{ loader('Зареждане на картата…') }}
                 </div>
                 <div class="wheel-legend" id="wheel-legend"></div>
             </div>
@@ -1425,64 +1581,73 @@
         <div id="tab-profile" class="tab-content">
             <div class="section">
                 <h2>Накратко за теб</h2>
-                <div id="profile-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
+                <div id="profile-content">{{ loader('Изчисляване…') }}</div>
             </div>
             <div class="section">
                 <h2>Пълен астрологически профил</h2>
-                <div id="profile-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме...</div></div>
+                <div id="profile-ai-content">{{ loader('Съставяме портрета ти…', true) }}</div>
             </div>
         </div>
 
         <div id="tab-planets" class="tab-content">
             <div class="section">
                 <h2>Планети и точки</h2>
+                {# Български вместо суровото „POINT“; ретроградността има смисъл само за планетите. #}
+                {% set point_types = {'True North Node': 'Лунен възел', 'True South Node': 'Лунен възел',
+                                      'True Lilith': 'Лунна точка', 'Part of Fortune': 'Чувствителна точка',
+                                      'Vertex': 'Чувствителна точка'} %}
+                {% set movers = ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Chiron'] %}
+                {% if person.time_unknown %}
+                <p class="tab-note">Без час на раждане не показваме Асцендента, Медиум Коели и домовете — планетите са по знаци.</p>
+                {% endif %}
                 <div class="planet-cards">
                 {% for oid, obj in chart.objects.items() %}
                     <div class="planet-card">
                         <div class="planet-card-header">
                             <div class="planet-icon">{{ obj.icon or '🪐' }}</div>
                             <div class="planet-title">
-                                <div class="planet-title-name">{{ obj.name_bg }}</div>
-                                {% if obj.type == 'Planet' %}
-                                <div class="planet-title-type">Планета</div>
-                                {% elif 'Node' in obj.type or obj.type == 'LunarNode' %}
-                                <div class="planet-title-type">Лунен възел</div>
-                                {% elif 'Asteroid' in obj.type %}
-                                <div class="planet-title-type">Астероид</div>
-                                {% elif obj.type == 'Angle' %}
-                                <div class="planet-title-type">Ъглова точка</div>
-                                {% else %}
-                                <div class="planet-title-type">{{ obj.type }}</div>
-                                {% endif %}
+                                <div class="planet-title-name">{{ nm(obj.name_bg) }}</div>
+                                <div class="planet-title-type">
+                                {%- if obj.name in ('Sun', 'Moon') %}Светило
+                                {%- elif obj.type == 'Planet' %}Планета
+                                {%- elif obj.type == 'Angle' %}Ъглова точка
+                                {%- elif 'Asteroid' in obj.type %}Малка планета
+                                {%- else %}{{ point_types.get(obj.name, 'Чувствителна точка') }}{% endif -%}
+                                </div>
                             </div>
-                            {% if obj.movement == 'Retrograde' %}
-                            <span class="planet-badge retro">⟲ Ретро</span>
-                            {% elif obj.movement == 'Stationary' %}
-                            <span class="planet-badge stationary">⬤ Стац.</span>
-                            {% elif obj.movement == 'Direct' and obj.speed and obj.speed > 0 %}
-                            <span class="planet-badge direct">→ Директ.</span>
+                            {% if obj.name in movers %}
+                                {% if obj.movement == 'Retrograde' %}
+                                <span class="planet-badge retro" title="Привидно се движи назад">℞ Ретроградна</span>
+                                {% elif obj.movement == 'Stationary' %}
+                                <span class="planet-badge stationary">Стационарна</span>
+                                {% elif obj.movement == 'Direct' %}
+                                <span class="planet-badge direct">Прав ход</span>
+                                {% endif %}
                             {% endif %}
                         </div>
                         <div class="planet-detail">
                             <span class="planet-detail-label">Знак</span>
-                            <strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_longitude }}
+                            <strong>{{ obj.sign_bg }}</strong>
                         </div>
+                        {% if obj.house_bg %}
                         <div class="planet-detail">
                             <span class="planet-detail-label">Дом</span>
                             <strong>{{ obj.house_bg }}</strong>
                         </div>
-                        <div class="planet-detail">
-                            <span class="planet-detail-label">Дълж.</span>
-                            {{ obj.longitude }}
-                        </div>
+                        {% endif %}
                         {% if obj.name_meaning or obj.sign_meaning or obj.house_meaning %}
                         <div class="planet-meaning">
                             {% if obj.name_meaning %}<span class="meaning-line"><span class="ml-icon">✦</span>{{ obj.name_meaning }}</span>{% endif %}
                             {% if obj.sign_meaning %}<span class="meaning-line"><span class="ml-icon">{{ obj.sign_symbol }}</span><strong>{{ obj.sign_bg }}</strong> — {{ obj.sign_meaning }}</span>{% endif %}
-                            {% if obj.house_meaning %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
-                            {% if obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
+                            {% if obj.house_meaning and obj.house_bg %}<span class="meaning-line"><span class="ml-icon">🏠</span><strong>{{ obj.house_bg }}</strong> — {{ obj.house_meaning }}</span>{% endif %}
+                            {% if obj.name in movers and obj.movement in ('Retrograde', 'Stationary', 'Direct') and obj.movement_meaning %}<span class="meaning-line"><span class="ml-icon">🔄</span>{{ obj.movement_meaning }}</span>{% endif %}
                         </div>
                         {% endif %}
+                        <details class="adv adv-mini">
+                            <summary>Градуси</summary>
+                            <div class="planet-detail"><span class="planet-detail-label">В знака</span> {{ obj.sign_longitude }}</div>
+                            <div class="planet-detail"><span class="planet-detail-label">Дължина</span> {{ obj.longitude }}</div>
+                        </details>
                     </div>
                 {% endfor %}
                 </div>
@@ -1492,42 +1657,43 @@
         <div id="tab-aspects" class="tab-content">
             <div class="section">
                 <h2>Аспекти</h2>
-                {% if chart.aspects %}
-                <div class="aspect-cards">
-                    {% for a in chart.aspects %}
+                {% macro aspect_card(a, with_meaning) %}
                     <div class="aspect-card">
                         <div class="aspect-card-header">
                             <div class="aspect-icon">{{ a.icon or '◇' }}</div>
                             <div class="aspect-title">
-                                <div class="aspect-title-name">{{ a.active_bg }} <span style="color:var(--accent-light);">⯀</span> {{ a.passive_bg }}</div>
-                                <div class="aspect-title-sub">{{ a.type_bg }}</div>
+                                <div class="aspect-title-name">{{ nm(a.active_bg) }} и {{ nm(a.passive_bg) }}</div>
+                                {% if a.deviation_label %}<div class="aspect-title-sub">{{ a.deviation_label }}</div>{% endif %}
                             </div>
                             <span class="aspect-badge {{ a.aspect_class or 'minor' }}">{{ a.type_bg }}</span>
                         </div>
-                        {% if a.orb %}
-                        <div class="aspect-detail">
-                            <span class="aspect-detail-label">Орб</span>
-                            <strong>{{ a.orb }}°</strong>
-                        </div>
-                        {% endif %}
-                        {% if a.distance %}
-                        <div class="aspect-detail">
-                            <span class="aspect-detail-label">Разст.</span>
-                            {{ a.distance }}
-                        </div>
-                        {% endif %}
-                        {% if a.aspect_angle %}
-                        <div class="aspect-detail">
-                            <span class="aspect-detail-label">Ъгъл</span>
-                            {{ a.aspect_angle }}°
-                        </div>
-                        {% endif %}
-                        {% if a.type_meaning %}
+                        {% if with_meaning and a.type_meaning %}
                         <div class="aspect-meaning">{{ a.type_meaning }}</div>
                         {% endif %}
                     </div>
+                {% endmacro %}
+                {% if chart.aspects %}
+                {% if person.time_unknown %}
+                <p class="tab-note">Без час на раждане не показваме аспектите към Асцендента, Медиум Коели и точките, които зависят от часа.</p>
+                {% else %}
+                <p class="tab-note">Подредени от най-точните към най-слабите. „Точен до 1,2°“ значи, че връзката е само на 1,2° от съвършената.</p>
+                {% endif %}
+                {% set shown = [] %}
+                <div class="aspect-cards">
+                    {% for a in chart.aspects[:12] %}
+                    {# Обяснението на вида се чете веднъж — не на всяка от трийсетте карти. #}
+                    {{ aspect_card(a, a.type not in shown) }}
+                    {% if shown.append(a.type) %}{% endif %}
                     {% endfor %}
                 </div>
+                {% if chart.aspects|length > 12 %}
+                <details class="adv">
+                    <summary>Още {{ chart.aspects|length - 12 }} по-слаби връзки</summary>
+                    <div class="aspect-cards">
+                        {% for a in chart.aspects[12:] %}{{ aspect_card(a, false) }}{% endfor %}
+                    </div>
+                </details>
+                {% endif %}
                 {% else %}
                 <p style="color:var(--text-muted)">Няма данни за аспектите.</p>
                 {% endif %}
@@ -1537,19 +1703,22 @@
         <div id="tab-horoscope" class="tab-content">
             <div class="section">
                 <h2>Разчитане на деня</h2>
-                <div id="horoscope-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме деня ти...</div></div>
+                <div id="horoscope-ai-content">{{ loader('Разчитаме деня ти…', true) }}</div>
             </div>
+            {# Суровият списък от транзити е за напреднали: след разчитането и сгънат, зарежда се чак при отваряне. #}
             <div class="section">
-                <h2>Дневен транзитен хороскоп — данни</h2>
-                <div id="horoscope-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
+                <details class="adv adv-block" id="transitDetails">
+                    <summary>Подробности за напреднали: небето днес спрямо картата ти</summary>
+                    <div id="horoscope-content"></div>
+                </details>
             </div>
         </div>
 
         <div id="tab-period" class="tab-content">
             <div class="section">
-                <h2>Влияние на планетите за период</h2>
-                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
-                    Избери период — системата ще провери всеки ден и ще покаже само дните с настъпваща или напускаща значима транзитна промяна.
+                <h2>Хороскоп за период</h2>
+                <p class="tab-note">
+                    Избери период — ще покажем дните, в които небето променя влиянието си върху картата ти.
                 </p>
                 <div class="period-form">
                     <div class="form-group">
@@ -1562,6 +1731,12 @@
                     </div>
                     <button class="btn" id="periodBtn" onclick="loadPeriod()">Анализирай период</button>
                 </div>
+                <div class="period-quick">
+                    <span>Бързо:</span>
+                    <button type="button" class="btn-chip" onclick="setPeriodDays(30)">30 дни</button>
+                    <button type="button" class="btn-chip" onclick="setPeriodDays(60)">60 дни</button>
+                    <span class="period-hint">Най-много 62 дни наведнъж.</span>
+                </div>
                 <div id="period-ai-content"></div>
                 <div id="period-content"></div>
             </div>
@@ -1570,14 +1745,14 @@
         <div id="tab-numerology" class="tab-content">
             <div class="section">
                 <h2>Нумерология</h2>
-                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
-                    Питагорова нумерология, изчислена математически от името и датата на раждане.
+                <p class="tab-note">
+                    Питагорова нумерология, изчислена от името и датата на раждане.
                 </p>
-                <div id="numerology-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
+                <div id="numerology-content">{{ loader('Изчисляване…') }}</div>
             </div>
             <div class="section">
                 <h2>Пълно разчитане на нумерологията</h2>
-                <div id="numerology-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Разчитаме...</div></div>
+                <div id="numerology-ai-content">{{ loader('Разчитаме числата ти…', true) }}</div>
             </div>
         </div>
 
@@ -1587,27 +1762,27 @@
                 <div class="mode-switch">
                     <button class="mode-btn active" id="modeSign" onclick="setLoveMode('sign')">Знам само зодията</button>
                     <button class="mode-btn" id="modeFull" onclick="setLoveMode('full')">Знам рождените данни</button>
-                    <button class="mode-btn" id="modeSaved" onclick="setLoveMode('saved')" hidden>Друг мой профил</button>
+                    <button class="mode-btn" id="modeSaved" onclick="setLoveMode('saved')" hidden>Друг човек от списъка ми</button>
                 </div>
 
                 <!-- Only shown when the account holds more than one chart. -->
                 <div id="mode-saved-panel" style="display:none;">
-                    <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
-                        Избери човек от профила си — сравняваме двете карти изцяло,
+                    <p class="tab-note">
+                        Избери човек от списъка си — сравняваме двете карти изцяло,
                         а не само по зодия.
                     </p>
                     <div id="saved-people" class="saved-grid"></div>
                 </div>
 
                 <div id="mode-sign-panel">
-                    <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                    <p class="tab-note">
                         Избери зодията и виж съвместимостта. С пълни рождени данни разчитането е доста по-точно.
                     </p>
                     <div id="sign-picker" class="sign-grid"></div>
                 </div>
 
                 <div id="mode-full-panel" style="display:none;">
-                    <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">
+                    <p class="tab-note">
                         С дата, час и място сравняваме двете карти реално — планета по планета.
                     </p>
                     <div id="partnerError" class="error" style="display:none; margin-bottom:14px;"></div>
@@ -1617,48 +1792,40 @@
                     </div>
                     <div class="row-3">
                         <div class="form-group">
-                            <label for="pYear">Година</label>
-                            <input type="number" id="pYear" placeholder="1990" min="1800" max="2100">
+                            <label for="pDay">Ден</label>
+                            <input type="number" id="pDay" placeholder="12" min="1" max="31" inputmode="numeric">
                         </div>
                         <div class="form-group">
                             <label for="pMonth">Месец</label>
-                            <input type="number" id="pMonth" placeholder="5" min="1" max="12">
+                            <input type="number" id="pMonth" placeholder="5" min="1" max="12" inputmode="numeric">
                         </div>
                         <div class="form-group">
-                            <label for="pDay">Ден</label>
-                            <input type="number" id="pDay" placeholder="12" min="1" max="31">
+                            <label for="pYear">Година</label>
+                            <input type="number" id="pYear" placeholder="1990" min="1800" max="2100" inputmode="numeric">
                         </div>
                     </div>
                     <div class="row">
                         <div class="form-group">
                             <label for="pHour">Час</label>
-                            <input type="number" id="pHour" value="12" min="0" max="23">
+                            <input type="number" id="pHour" value="12" min="0" max="23" inputmode="numeric">
                         </div>
                         <div class="form-group">
                             <label for="pMinute">Минути</label>
-                            <input type="number" id="pMinute" value="0" min="0" max="59">
+                            <input type="number" id="pMinute" value="0" min="0" max="59" inputmode="numeric">
                         </div>
                     </div>
                     <label style="display:flex;align-items:center;gap:8px;margin:-4px 0 14px;font-size:.85rem;cursor:pointer">
-                        <input type="checkbox" id="pTimeUnknown" onchange="pHour.disabled = pMinute.disabled = this.checked">
+                        <input type="checkbox" id="pTimeUnknown" onchange="pHour.disabled = pMinute.disabled = this.checked" style="width:auto;min-height:0">
                         <span>Не знам часа му/ѝ на раждане</span>
                     </label>
                     <div class="form-group place-group">
                         <label for="pPlace">Място на раждане</label>
-                        <input type="text" id="pPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
+                        <input type="text" id="pPlace" placeholder="Напр. София, Пловдив, Видин…" autocomplete="off">
                         <div id="pPlaceResults" class="place-results"></div>
-                        <div class="hint">Потърси населено място — координатите и часовата зона се попълват сами.</div>
+                        <div class="hint">Потърси населено място и го избери от списъка — координатите и часовата зона се попълват сами.</div>
                     </div>
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="pLat">Геогр. ширина</label>
-                            <input type="number" id="pLat" step="any" placeholder="42.6977">
-                        </div>
-                        <div class="form-group">
-                            <label for="pLon">Геогр. дължина</label>
-                            <input type="number" id="pLon" step="any" placeholder="23.3219">
-                        </div>
-                    </div>
+                    <input type="hidden" id="pLat">
+                    <input type="hidden" id="pLon">
                     <input type="hidden" id="pTimezone" value="Europe/Sofia">
                     <button class="btn" onclick="submitPartnerChart()">Изчисли съвместимост</button>
                 </div>
@@ -1678,29 +1845,92 @@
         <div id="tab-akashic" class="tab-content">
             <div class="section">
                 <h2>Кармични точки в картата</h2>
-                <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;">
-                    Четенето по-долу стъпва на тези точно изчислени позиции — лунните възли, Хирон, Сатурн, Плутон, Лилит, 12-ти дом и ретроградните планети.
+                <p class="tab-note">
+                    Четенето по-долу стъпва на тези точно изчислени позиции — лунните възли, Хирон, Сатурн, Плутон, Лилит{% if not person.time_unknown %}, 12-ти дом{% endif %} и ретроградните планети.
                 </p>
-                <div id="akashic-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
+                <div id="akashic-content">{{ loader('Изчисляване…') }}</div>
             </div>
             <div class="section">
                 <h2>Четене на Акашовите записи</h2>
-                <div id="akashic-ai-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Отваряне на записа...</div></div>
+                <div id="akashic-ai-content">{{ loader('Отваряме записа…', true) }}</div>
             </div>
         </div>
 
     </div>
 
+    <!-- Поправка на рождените данни: формата е пълна с текущите стойности и вика
+         същия адрес, който сървърът има отдавна (POST /api/persons/{id}/natal). -->
+    <div class="edit-overlay" id="editOverlay" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+        <form class="edit-sheet" id="editForm" onsubmit="saveBirth(event)" novalidate>
+            <button type="button" class="edit-close" aria-label="Затвори" onclick="closeEditBirth()">✕</button>
+            <h3 id="editTitle">Поправи данните</h3>
+            <p class="edit-lead">Грешен ден, час или място? Поправи ги тук — не е нужно да изтриваш картата и да я правиш наново.</p>
+            <div id="editError" class="error" style="display:none; margin-bottom:14px;"></div>
+            <div class="row-3">
+                <div class="form-group">
+                    <label for="edDay">Ден</label>
+                    <input type="number" id="edDay" min="1" max="31" inputmode="numeric" required>
+                </div>
+                <div class="form-group">
+                    <label for="edMonth">Месец</label>
+                    <input type="number" id="edMonth" min="1" max="12" inputmode="numeric" required>
+                </div>
+                <div class="form-group">
+                    <label for="edYear">Година</label>
+                    <input type="number" id="edYear" min="1800" max="2100" inputmode="numeric" required>
+                </div>
+            </div>
+            <div class="row-2">
+                <div class="form-group">
+                    <label for="edHour">Час</label>
+                    <input type="number" id="edHour" min="0" max="23" inputmode="numeric">
+                </div>
+                <div class="form-group">
+                    <label for="edMinute">Минути</label>
+                    <input type="number" id="edMinute" min="0" max="59" inputmode="numeric">
+                </div>
+            </div>
+            <label class="edit-check">
+                <input type="checkbox" id="edUnknown" onchange="edHour.disabled = edMinute.disabled = this.checked">
+                <span>Не знам часа на раждане</span>
+            </label>
+            <div class="form-group place-group" id="edPlaceGroup">
+                <label for="edPlace">Място на раждане</label>
+                <input type="text" id="edPlace" placeholder="Напр. София, Пловдив, Видин…" autocomplete="off">
+                <div id="edPlaceResults" class="place-results"></div>
+                <div class="hint">Ако смениш мястото, избери го от списъка с подсказки — координатите и часовата зона се попълват сами.</div>
+            </div>
+            <input type="hidden" id="edLat">
+            <input type="hidden" id="edLon">
+            <input type="hidden" id="edTz">
+            <p class="edit-warn">Разчитанията ще се напишат наново по новите данни.</p>
+            <div class="edit-actions">
+                <button type="button" class="btn-ghost" onclick="closeEditBirth()">Назад</button>
+                <button type="submit" class="btn" id="editSaveBtn">Запази</button>
+            </div>
+        </form>
+    </div>
+
     <div id="onboarding-root"></div>
-    <script src="/static/locked.js?v=8"></script>
+    <script src="/static/locked.js?v=9"></script>
     <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=3"></script>
-    <script src="/static/modules.js?v=8"></script>
+    <script src="/static/modules.js?v=9"></script>
     <script src="/static/onboarding.js?v=4"></script>
     <script>
-        function crystalLoader(text) {
-            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
+        // slow: платените разчитания се пишат до минута — казваме го, за да не
+        // изглежда, че е увиснало.
+        function crystalLoader(text, slow) {
+            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>'
+                + text + (slow ? '<small>Обикновено отнема до минута.</small>' : '') + '</div>';
         }
+
+        // Без час на раждане страницата не показва домове и ъгли (виж view_chart).
+        const TIME_UNKNOWN = {{ 'true' if person.time_unknown else 'false' }};
+        const BIRTH = {{ {'id': person.id, 'name': person.name, 'day': person.day, 'month': person.month,
+                          'year': person.year, 'hour': person.hour, 'minute': person.minute,
+                          'lat': person.lat, 'lon': person.lon, 'timezone': person.timezone,
+                          'place': person.place, 'time_unknown': (true if person.time_unknown else false)}|tojson }};
 
         // Presentation-only: turns the AI's plain text into paragraphs and renders
         // its markdown **bold** as <strong>. Escapes first, so model output is never
@@ -1960,7 +2190,6 @@
 
             if (name === 'horoscope' && !window._horoscopeLoaded) {
                 window._horoscopeLoaded = true;
-                loadHoroscope();
                 loadHoroscopeAI();
             }
             if (name === 'profile' && !window._profileLoaded) {
@@ -2002,8 +2231,25 @@
             return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' });
         }
 
+        // Суровите транзити са за напреднали и стоят сгънати: зареждат се чак
+        // когато някой ги отвори, а не при всяко влизане в таба.
+        document.addEventListener('DOMContentLoaded', () => {
+            const det = document.getElementById('transitDetails');
+            if (!det) return;
+            det.addEventListener('toggle', () => {
+                if (det.open && !window._transitsLoaded) {
+                    window._transitsLoaded = true;
+                    loadHoroscope();
+                }
+            });
+        });
+
+        // Точките, които зависят от часа: за ден или за неизвестен час нямат смисъл.
+        const TIME_POINTS = ['Asc', 'Desc', 'MC', 'IC', 'Vertex', 'Part of Fortune'];
+
         async function loadHoroscope() {
             const el = document.getElementById('horoscope-content');
+            el.innerHTML = crystalLoader('Изчисляване…');
             try {
                 const now = new Date();
                 const resp = await fetch('/api/transits', {
@@ -2014,30 +2260,27 @@
                         target_date: now.toISOString().slice(0, 19)
                     })
                 });
-                if (!resp.ok) {
-                    const data = await resp.json().catch(() => ({}));
-                    throw new Error(detailText(data.detail) || 'HTTP ' + resp.status);
-                }
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
 
-                let html = `<p style="color:var(--text-muted); margin-bottom:16px;">Транзити за ${fmtDateBg(now)}</p>`;
+                let html = `<p class="tab-note">Транзит е мястото на планетата в небето днес, натал — в картата ти.
+                    Днес: ${fmtDateBg(now)}${data.moon_phase_bg ? ' · Луна: ' + escapeHtmlText(data.moon_phase_bg).toLowerCase() : ''}.</p>`;
 
-                html += `<div class="stats" style="margin-bottom:20px;">
-                    <div class="stat"><div class="stat-label">Форма</div><div class="stat-value">${data.shape_bg || 'Няма данни'}</div></div>
-                    <div class="stat"><div class="stat-label">Лунна фаза</div><div class="stat-value">${data.moon_phase_bg || 'Няма данни'}</div></div>
-                </div>`;
-
+                // Ъглите на небето се въртят за ден, а при неизвестен час и
+                // натални ъгли няма — такива аспекти не казват нищо.
                 const aspects = (data.transit_aspects_to_natal || []).filter(a =>
                     ['Conjunction', 'Sextile', 'Square', 'Trine', 'Opposition'].includes(a.type)
+                    && !TIME_POINTS.includes(a.active)
+                    && !(TIME_UNKNOWN && TIME_POINTS.includes(a.passive))
                 );
                 if (aspects.length) {
-                    html += '<h3 style="color:var(--accent-light); font-size:0.95rem; margin-bottom:10px;">Активни транзитни аспекти към наталната карта</h3>';
+                    html += '<h3 class="prof-h3">Активни транзитни аспекти към наталната карта</h3>';
                     aspects.forEach(a => {
                         html += `<div class="aspect-row">
-                            <strong style="color:var(--text-heading)">${a.active_bg}</strong> (транзит)
-                            <strong style="color:var(--accent-light)">${a.type_bg}</strong>
-                            ${a.passive_bg} (натал)
-                            ${a.orb ? ' (орб: ' + Number(a.orb).toFixed(1) + '°)' : ''}
+                            <strong style="color:var(--text-heading)">${escapeHtmlText(a.active_bg)}</strong> (транзит)
+                            <strong style="color:var(--accent-light)">${escapeHtmlText(a.type_bg)}</strong>
+                            ${escapeHtmlText(a.passive_bg)} (натал)
+                            ${a.deviation_label ? ' · ' + escapeHtmlText(a.deviation_label) : ''}
                         </div>`;
                     });
                 } else {
@@ -2046,6 +2289,7 @@
 
                 el.innerHTML = html;
             } catch (e) {
+                window._transitsLoaded = false;
                 el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
@@ -2059,10 +2303,10 @@
             // по поща е за траен документ като личния портрет.
             const isDaily = key.startsWith('horoscope:');
             const exportBtns = key ? `
-                <button class="btn-refresh audio-btn" id="audio-btn-${key}" onclick="playReading('${key}')" title="Чети на глас">🔊 Чети</button>
+                <button class="btn-refresh audio-btn" id="audio-btn-${key}" onclick="playReading('${key}')" title="Слушай разчитането на глас">🔊 Слушай</button>
                 <button class="btn-refresh" onclick="downloadReadingPdf('${key}')" title="Свали като PDF">⬇ PDF</button>` +
                 (isDaily ? '' : `
-                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати по имейл">✉ Изпрати</button>`) + `
+                <button class="btn-refresh" onclick="openEmailModal('${key}')" title="Изпрати разчитането на имейл">✉ Изпрати по имейл</button>`) + `
                 <button class="btn-refresh" onclick="shareReading('${key}')" title="Сподели линк">🔗 Сподели</button>` : '';
             // „Разчети наново“ е премахнато: повторното генериране харчи AI
             // токени и пари без добавена стойност за клиента. Разчитането се
@@ -2079,6 +2323,8 @@
         // Ползва се от locked.js, за да извади истинския откъс от картата
         // за размазания панел.
         window.PERSON_ID = {{ person.id }};
+        // Таблото отваря чиповете за последно гледания човек.
+        try { localStorage.setItem('miralog_last_person', String(window.PERSON_ID)); } catch (e) { /* без значение */ }
 
         var audioPlayer = { key: null, audio: null, state: 'idle' };
 
@@ -2118,11 +2364,11 @@
                 btn.innerHTML = '▶ Продължи';
                 btn.title = 'Продължи четенето';
             } else if (active && p.state === 'loading') {
-                btn.innerHTML = '⏳ Подготвям…';
-                btn.title = 'Генерира се аудио';
+                btn.innerHTML = '⏳ Подготвяме…';
+                btn.title = 'Подготвяме аудиото';
             } else {
-                btn.innerHTML = '🔊 Чети';
-                btn.title = 'Чети на глас';
+                btn.innerHTML = '🔊 Слушай';
+                btn.title = 'Слушай разчитането на глас';
             }
         }
 
@@ -2148,7 +2394,7 @@
             } else {
                 wave.classList.add('paused');
                 toggle.innerHTML = FP_ICONS.spinner;
-                toggle.title = 'Подготвям…';
+                toggle.title = 'Подготвяме…';
             }
         }
 
@@ -2296,19 +2542,19 @@
             p.audio = audio;
             renderAudioBtn(key);
             renderFloatingPlayer();
-            if (typeof uiToast === 'function') uiToast('Подготвям аудио…');
+            if (typeof uiToast === 'function') uiToast('Подготвяме аудиото…');
 
             audio.play().then(function () {
                 if (p.audio !== audio) return; // вече сменено с друг поток
                 p.state = 'playing';
                 renderAudioBtn(key);
                 renderFloatingPlayer();
-                if (typeof uiToast === 'function') uiToast('Чете на глас…', 'ok');
+                if (typeof uiToast === 'function') uiToast('Четем на глас…', 'ok');
             }).catch(function () {
                 if (p.audio !== audio) return;
                 fpClose();
                 renderAudioBtn(key);
-                if (typeof uiToast === 'function') uiToast('Не можах да прочета разчитането.', 'err');
+                if (typeof uiToast === 'function') uiToast('Не успяхме да подготвим аудиото. Опитай пак.', 'err');
             });
 
             audio.onended = function () {
@@ -2392,6 +2638,14 @@
         }
 
         async function shareReading(key) {
+            // Платеното разчитане е на този, който го е купил; линкът го дава
+            // на всеки, който го получи — казваме го преди да го създадем.
+            if (!key.startsWith('horoscope:') && typeof uiConfirm === 'function') {
+                const ok = await uiConfirm(
+                    'Всеки с линка ще може да прочете това разчитане.',
+                    { title: 'Споделяне на линк', ok: 'Създай линк', cancel: 'Назад' });
+                if (!ok) return;
+            }
             try {
                 const resp = await fetch('/api/persons/{{ person.id }}/share', {
                     method: 'POST',
@@ -2432,7 +2686,15 @@
             </div>`;
         }
 
-        function balanceBars(counts, dominant, meaning, title) {
+        // „Доминира Фиксирани“ не е български: стихията е „Преобладава стихията
+        // Земя“, качествата са „Преобладават фиксираните знаци“.
+        const MODALITY_PLURAL = { 'Кардинални': 'кардиналните', 'Фиксирани': 'фиксираните', 'Променливи': 'променливите' };
+        function dominantPhrase(dominant, kind) {
+            if (kind === 'modality') return 'Преобладават ' + (MODALITY_PLURAL[dominant] || dominant.toLowerCase()) + ' знаци.';
+            return 'Преобладава стихията ' + dominant + '.';
+        }
+
+        function balanceBars(counts, dominant, meaning, title, kind) {
             const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
             const rows = Object.entries(counts)
                 .sort((a, b) => b[1] - a[1])
@@ -2445,7 +2707,7 @@
             return `<div class="prof-block">
                 <h3 class="prof-h3">${title}</h3>
                 ${rows}
-                ${dominant ? `<p class="prof-note"><strong>Доминира ${dominant}.</strong> ${meaning || ''}</p>` : ''}
+                ${dominant ? `<p class="prof-note"><strong>${dominantPhrase(dominant, kind)}</strong> ${meaning || ''}</p>` : ''}
             </div>`;
         }
 
@@ -2469,8 +2731,8 @@
                     html += '</div></div>';
                 }
 
-                html += balanceBars(d.elements.counts, d.elements.dominant, d.elements.dominant_meaning, 'Баланс на стихиите');
-                html += balanceBars(d.modalities.counts, d.modalities.dominant, d.modalities.dominant_meaning, 'Баланс на качествата');
+                html += balanceBars(d.elements.counts, d.elements.dominant, d.elements.dominant_meaning, 'Баланс на стихиите', 'element');
+                html += balanceBars(d.modalities.counts, d.modalities.dominant, d.modalities.dominant_meaning, 'Баланс на качествата', 'modality');
 
                 if (d.emphasised_houses && d.emphasised_houses.length) {
                     html += '<div class="prof-block"><h3 class="prof-h3">Където животът ти е най-активен</h3>';
@@ -2485,11 +2747,15 @@
 
                 if (d.key_aspects && d.key_aspects.length) {
                     html += '<div class="prof-block"><h3 class="prof-h3">Най-силните ти аспекти</h3>';
+                    // Най-точните първи; обяснението на вида се чете веднъж.
+                    const seenTypes = new Set();
                     d.key_aspects.forEach(a => {
+                        const first = !seenTypes.has(a.type_bg);
+                        seenTypes.add(a.type_bg);
                         html += `<div class="prof-aspect">
                             <div class="prof-aspect-title"><strong>${a.active_bg}</strong> ${a.type_bg} <strong>${a.passive_bg}</strong>
-                                <span class="prof-orb">орб ${a.orb}°</span></div>
-                            <div class="prof-aspect-meaning">${a.type_meaning || ''}</div>
+                                ${a.exact ? `<span class="prof-orb">${a.exact}</span>` : ''}</div>
+                            ${first && a.type_meaning ? `<div class="prof-aspect-meaning">${a.type_meaning}</div>` : ''}
                         </div>`;
                     });
                     html += '</div>';
@@ -2539,7 +2805,7 @@
 
         async function loadProfileAIInner(refresh) {
             const el = document.getElementById('profile-ai-content');
-            el.innerHTML = crystalLoader('Съставяме портрета ти...');
+            el.innerHTML = crystalLoader('Съставяме портрета ти…', true);
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/profile/interpretation' + (refresh ? '?refresh=true' : '');
@@ -2562,7 +2828,7 @@
 
         async function loadHoroscopeAI(refresh) {
             const el = document.getElementById('horoscope-ai-content');
-            el.innerHTML = crystalLoader('Разчитаме деня ти...');
+            el.innerHTML = crystalLoader('Разчитаме деня ти…', true);
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/daily-horoscope' + (refresh ? '?refresh=true' : '');
@@ -2660,18 +2926,67 @@
             return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' });
         }
 
+        // Периодът по подразбиране е днес → +30 дни: формата не стои празна.
+        const PERIOD_MAX_DAYS = 62;   // колкото позволява сървърът
+
+        function isoDay(d) {
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return d.getFullYear() + '-' + m + '-' + day;
+        }
+
+        function addDays(iso, n) {
+            const d = new Date(iso + 'T12:00:00');
+            d.setDate(d.getDate() + n);
+            return isoDay(d);
+        }
+
+        // Втората дата не може да е преди първата, нито по-късно от лимита.
+        function syncPeriodLimits() {
+            const startEl = document.getElementById('periodStart');
+            const endEl = document.getElementById('periodEnd');
+            if (!startEl || !endEl || !startEl.value) return;
+            endEl.min = startEl.value;
+            endEl.max = addDays(startEl.value, PERIOD_MAX_DAYS);
+            if (endEl.value && endEl.value > endEl.max) endEl.value = endEl.max;
+        }
+
+        function setPeriodDays(n) {
+            const startEl = document.getElementById('periodStart');
+            const endEl = document.getElementById('periodEnd');
+            if (!startEl.value) startEl.value = isoDay(new Date());
+            endEl.value = addDays(startEl.value, n);
+            syncPeriodLimits();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const startEl = document.getElementById('periodStart');
+            if (!startEl) return;
+            startEl.value = isoDay(new Date());
+            setPeriodDays(30);
+            startEl.addEventListener('change', syncPeriodLimits);
+        });
+
         async function loadPeriod() {
             const startEl = document.getElementById('periodStart');
             const endEl = document.getElementById('periodEnd');
             const btn = document.getElementById('periodBtn');
             const el = document.getElementById('period-content');
             if (!startEl.value || !endEl.value) {
-                el.innerHTML = '<div class="error">Моля, изберете начална и крайна дата.</div>';
+                el.innerHTML = '<div class="error">Избери начална и крайна дата.</div>';
+                return;
+            }
+            if (endEl.value < startEl.value) {
+                el.innerHTML = '<div class="error">Крайната дата е преди началната.</div>';
+                return;
+            }
+            if (endEl.value > addDays(startEl.value, PERIOD_MAX_DAYS)) {
+                el.innerHTML = '<div class="error">Най-много ' + PERIOD_MAX_DAYS + ' дни наведнъж — избери по-кратък период.</div>';
                 return;
             }
             btn.disabled = true;
-            btn.textContent = 'Анализиране...';
-            el.innerHTML = crystalLoader('Изчисляване на периода...');
+            btn.textContent = 'Анализираме…';
+            el.innerHTML = crystalLoader('Изчисляваме периода…');
             unlockPanel(el);
             try {
                 const resp = await guardedFetch('/api/period-influence', {
@@ -2683,29 +2998,26 @@
                         end_date: endEl.value
                     })
                 });
-                if (!resp.ok) {
-                    const d = await resp.json().catch(() => ({}));
-                    // detail can be an object; never interpolate it raw.
-                    const msg = typeof d.detail === 'string' ? d.detail
-                              : (d.detail && d.detail.message) || ('Грешка ' + resp.status);
-                    throw new Error(msg);
-                }
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
                 if (!data.days || !data.days.length) {
                     el.innerHTML = '<p style="color:var(--text-muted); margin-top:16px;">Няма настъпващи или отпадащи значими транзитни аспекти в избрания период.</p>';
                     return;
                 }
-                let html = '<h3 class="prof-h3" style="margin-top:22px;">Ден по ден</h3>';
+                // Суровият списък е за напреднали: след разчитането, сгънат и в
+                // неутрални цветове — „отминава“ не е лошо, а често е облекчение.
+                const line = (mark, when, a) => `<div class="day-aspect"><span class="dot">${mark}</span><span class="when">${when}</span>
+                    <strong style="color:var(--text-heading)">${escapeHtmlText(a.active_bg)}</strong> (транзит)
+                    <strong style="color:var(--accent-light)">${escapeHtmlText(a.type_bg)}</strong>
+                    ${escapeHtmlText(a.passive_bg)} (натал)</div>`;
+                let html = '<details class="adv"><summary>Подробности за напреднали: ден по ден</summary><div>';
                 data.days.forEach(day => {
                     html += `<div class="day-entry"><div class="day-date">${fmtDateShortBg(day.date)}</div>`;
-                    day.entering.forEach(a => {
-                        html += `<div class="day-aspect">🟢 Настъпва: <strong style="color:var(--text-heading)">${a.active_bg}</strong> (транзит) <strong style="color:var(--accent-light)">${a.type_bg}</strong> ${a.passive_bg} (натал)</div>`;
-                    });
-                    day.leaving.forEach(a => {
-                        html += `<div class="day-aspect">🔴 Отпада: <strong style="color:var(--text-heading)">${a.active_bg}</strong> (транзит) <strong style="color:var(--accent-light)">${a.type_bg}</strong> ${a.passive_bg} (натал)</div>`;
-                    });
+                    day.entering.forEach(a => { html += line('▸', 'започва', a); });
+                    day.leaving.forEach(a => { html += line('◂', 'отминава', a); });
                     html += '</div>';
                 });
+                html += '</div></details>';
                 el.innerHTML = html;
                 loadPeriodAI(startEl.value, endEl.value);
             } catch (e) {
@@ -2723,7 +3035,7 @@
 
         async function loadPeriodAI(start, end, refresh) {
             const el = document.getElementById('period-ai-content');
-            el.innerHTML = crystalLoader('Разчитане на периода...');
+            el.innerHTML = crystalLoader('Разчитаме периода…', true);
             unlockPanel(el);
             try {
                 const url = '/api/period-interpretation' + (refresh ? '?refresh=true' : '');
@@ -2732,10 +3044,7 @@
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ person_id: {{ person.id }}, start_date: start, end_date: end })
                 });
-                if (!resp.ok) {
-                    const d = await resp.json().catch(() => ({}));
-                    throw new Error(detailText(d.detail) || 'HTTP ' + resp.status);
-                }
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
                 if (data.interpretation) {
                     const refreshCall = `loadPeriodAI('${start}','${end}',true)`;
@@ -2787,24 +3096,9 @@
                     <div class="num-card-label">Лична година ${py.year}</div>
                 </div>`;
 
-                let details = '';
-                order.forEach(key => {
-                    const item = data[key];
-                    if (!item.meaning) return;
-                    details += `<div class="num-detail">
-                        <span class="num-detail-badge">${item.number}</span>
-                        <div><strong>${labels[key]}</strong> — ${item.meaning}</div>
-                    </div>`;
-                });
-                if (py.meaning) {
-                    details += `<div class="num-detail">
-                        <span class="num-detail-badge">${py.number}</span>
-                        <div><strong>Лична година ${py.year}</strong> — ${py.meaning}</div>
-                    </div>`;
-                }
-
-                el.innerHTML = `<div class="num-grid">${cards}</div>` +
-                    (details ? `<div class="num-details">${details}</div>` : '');
+                // Числата са само на плочките: същият списък под тях ги повтаряше,
+                // а пълното разчитане по-долу ги обяснява.
+                el.innerHTML = `<div class="num-grid">${cards}</div>`;
                 window.track('generate_numerology', { content_type: 'numerology' });
             } catch (e) {
                 // Clear the AI panel before returning, or its loader keeps
@@ -2823,7 +3117,7 @@
 
         async function loadNumerologyAI(refresh) {
             const aiEl = document.getElementById('numerology-ai-content');
-            aiEl.innerHTML = crystalLoader('Разчитаме...');
+            aiEl.innerHTML = crystalLoader('Разчитаме числата ти…', true);
             try {
                 const url = '/api/persons/{{ person.id }}/numerology/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await readingFetch(url, { headers: authHeaders() });
@@ -2836,7 +3130,7 @@
                 }
             } catch (e) {
                 if (e instanceof LockedFeature) {
-                    renderLocked(el, e.detail, loadNumerologyAI);
+                    renderLocked(aiEl, e.detail, loadNumerologyAI);
                     return;
                 }
                 aiEl.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
@@ -2847,7 +3141,6 @@
         let selectedSign = null;
         // Whichever payload was last submitted — sign-only or full birth data.
         let lovePayload = null;
-        let partnerPlaceTimer = null;
 
         function setLoveMode(mode) {
             ['Sign', 'Full', 'Saved'].forEach(suffix => {
@@ -2862,6 +3155,7 @@
 
         // The third mode only makes sense with a second chart to compare
         // against, so the button stays hidden until there is one.
+        let savedPeople = [];
         async function loadSavedPeople() {
             try {
                 const resp = await fetch('/api/persons', { headers: authHeaders() });
@@ -2869,6 +3163,7 @@
                 const data = await resp.json();
                 const others = (data.persons || []).filter(p => p.id !== {{ person.id }});
                 if (!others.length) return;
+                savedPeople = others;
 
                 document.getElementById('modeSaved').hidden = false;
                 document.getElementById('saved-people').innerHTML = others.map(p => `
@@ -2888,40 +3183,36 @@
             } catch (e) { /* the two other modes still work */ }
         }
 
-        // Full chart-to-chart comparison, rendered into the love panel.
+        // Човек от списъка: същият човешки изглед като при „Знам рождените
+        // данни“ (плочки, не списък с главни букви). Разчитането с AI остава
+        // това за двойката — вече е кеширано за онези, които са го поискали.
         async function runSynastry(otherId) {
             const el = document.getElementById('love-content');
             const aiEl = document.getElementById('love-ai-content');
-            // Режимът „Друг мой профил“ не минава през submitPartnerChart,
-            // затова резултатният панел трябва да се покаже изрично тук.
+            const other = savedPeople.find(p => p.id === otherId);
+            // Режимът не минава през submitPartnerChart, затова резултатният
+            // панел трябва да се покаже изрично тук.
             document.getElementById('love-result').style.display = 'block';
-            el.innerHTML = crystalLoader('Сравняваме двете карти...');
+            el.innerHTML = crystalLoader('Сравняваме двете карти…');
             aiEl.innerHTML = '';
             unlockPanel(el);
+            if (!other) { el.innerHTML = '<div class="error">Този човек не е намерен в списъка ти.</div>'; return; }
             try {
-                const resp = await guardedFetch('/api/synastry', {
+                const resp = await guardedFetch('/api/love-match', {
                     method: 'POST',
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ person1_id: {{ person.id }}, person2_id: otherId }),
+                    body: JSON.stringify({
+                        person_id: {{ person.id }},
+                        partner_name: other.name,
+                        partner_year: other.year, partner_month: other.month, partner_day: other.day,
+                        partner_hour: other.hour, partner_minute: other.minute,
+                        partner_time_unknown: !!other.time_unknown,
+                        partner_lat: other.lat, partner_lon: other.lon,
+                        partner_timezone: other.timezone || 'Europe/Sofia',
+                    }),
                 });
-                if (!resp.ok) {
-                    const d = await resp.json().catch(() => ({}));
-                    const msg = typeof d.detail === 'string' ? d.detail
-                              : (d.detail && d.detail.message) || ('Грешка ' + resp.status);
-                    throw new Error(msg);
-                }
-                const d = await resp.json();
-                let html = '<div class="love-strips">';
-                (d.aspects || []).slice(0, 12).forEach(a => {
-                    html += `<div class="love-strip">
-                        <span class="love-strip-label">${escapeHtmlText(a.active_bg || a.active)}
-                            ${escapeHtmlText(a.type_bg || a.type)}
-                            ${escapeHtmlText(a.passive_bg || a.passive)}</span>
-                        <span>${a.meaning ? escapeHtmlText(a.meaning) : ''}</span>
-                    </div>`;
-                });
-                html += '</div>';
-                el.innerHTML = html;
+                if (!resp.ok) throw await apiError(resp);
+                el.innerHTML = renderLoveMatch(await resp.json());
                 window.track('generate_synastry', { partner_id: otherId, content_type: 'synastry' });
                 loadSynastryAI(otherId);
             } catch (e) {
@@ -2935,7 +3226,7 @@
 
         async function loadSynastryAI(otherId, refresh) {
             const el = document.getElementById('love-ai-content');
-            el.innerHTML = crystalLoader('Разчитаме съвместимостта...');
+            el.innerHTML = crystalLoader('Разчитаме съвместимостта…', true);
             try {
                 const url = '/api/synastry/interpretation' + (refresh ? '?refresh=true' : '');
                 const resp = await readingFetch(url, {
@@ -2959,44 +3250,87 @@
             }
         }
 
-        function closePartnerPlaces() {
-            const box = document.getElementById('pPlaceResults');
-            box.classList.remove('open');
-            box.innerHTML = '';
-        }
+        /* ---------- място на раждане с подсказки ----------
+           Една реализация за формата на партньора и за поправката на данните.
+           Кликът чете data-атрибути, не вмъква текст в onclick (апострофи). */
+        const placeTimers = {};
+        function attachPlaceSearch(o) {
+            // o: { input, box, scope, onPick(place), onType() }
+            const input = document.getElementById(o.input);
+            const box = document.getElementById(o.box);
+            if (!input || !box) return;
+            const close = () => { box.classList.remove('open'); box.innerHTML = ''; };
 
-        function pickPartnerPlace(lat, lon, tz, label) {
-            document.getElementById('pLat').value = lat;
-            document.getElementById('pLon').value = lon;
-            if (tz) document.getElementById('pTimezone').value = tz;
-            document.getElementById('pPlace').value = label;
-            closePartnerPlaces();
-        }
-
-        async function searchPartnerPlace(query) {
-            const box = document.getElementById('pPlaceResults');
-            box.innerHTML = '<div class="place-status">Търсене...</div>';
-            box.classList.add('open');
-            try {
-                const resp = await fetch('/api/geocode?q=' + encodeURIComponent(query), { headers: authHeaders() });
-                if (!resp.ok) throw await apiError(resp);
-                const data = await resp.json();
-                const results = data.results || [];
-                if (!results.length) {
-                    box.innerHTML = '<div class="place-status">Няма намерени места.</div>';
-                    return;
+            async function search(query) {
+                box.innerHTML = '<div class="place-status">Търсим…</div>';
+                box.classList.add('open');
+                try {
+                    const resp = await fetch('/api/geocode?q=' + encodeURIComponent(query), { headers: authHeaders() });
+                    if (!resp.ok) throw await apiError(resp);
+                    const data = await resp.json();
+                    // Едно и също място не се показва два пъти; България е първа.
+                    const seen = new Set();
+                    const results = (data.results || []).filter(r => {
+                        const k = (r.place || r.label) + '|' + (r.country || '');
+                        if (seen.has(k)) return false;
+                        seen.add(k);
+                        return true;
+                    }).sort((a, b) => (b.country === 'България') - (a.country === 'България'));
+                    if (!results.length) {
+                        box.innerHTML = '<div class="place-status">Няма намерени места.</div>';
+                        return;
+                    }
+                    box.innerHTML = results.map(r => `
+                        <div class="place-item" role="button" tabindex="0"
+                             data-lat="${r.lat}" data-lon="${r.lon}"
+                             data-tz="${escapeHtmlText(r.timezone || '')}"
+                             data-label="${escapeHtmlText(r.place || r.label)}">
+                            <div class="pl-name">${escapeHtmlText(r.place || r.label)}</div>
+                            <div class="pl-detail">${escapeHtmlText(r.label)}</div>
+                        </div>`).join('');
+                } catch (e) {
+                    box.innerHTML = '<div class="place-status">' + friendlyErrorHtml(e) + '</div>';
                 }
-                box.innerHTML = results.map(r => {
-                    const name = escapeHtmlText(r.place || r.label);
-                    return `<div class="place-item" onclick="pickPartnerPlace(${r.lat}, ${r.lon}, '${escapeHtmlText(r.timezone || '')}', '${name.replace(/'/g, "\\'")}')">
-                        <div class="pl-name">${name}</div>
-                        <div class="pl-detail">${escapeHtmlText(r.label)}</div>
-                    </div>`;
-                }).join('');
-            } catch (e) {
-                box.innerHTML = '<div class="place-status">' + friendlyErrorHtml(e) + '</div>';
             }
+
+            function pick(item) {
+                input.value = item.dataset.label;
+                o.onPick({ lat: item.dataset.lat, lon: item.dataset.lon,
+                           tz: item.dataset.tz, label: item.dataset.label });
+                close();
+            }
+            box.addEventListener('click', (e) => {
+                const item = e.target.closest('.place-item');
+                if (item) pick(item);
+            });
+            box.addEventListener('keydown', (e) => {
+                const item = e.target.closest('.place-item');
+                if (item && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(item); }
+            });
+            // Debounced so we stay within Nominatim's one-request-per-second policy.
+            input.addEventListener('input', () => {
+                if (o.onType) o.onType();
+                const q = input.value.trim();
+                clearTimeout(placeTimers[o.input]);
+                if (q.length < 2) { close(); return; }
+                placeTimers[o.input] = setTimeout(() => search(q), 600);
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest(o.scope)) close();
+            });
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            attachPlaceSearch({
+                input: 'pPlace', box: 'pPlaceResults', scope: '#mode-full-panel .place-group',
+                // Ново място = нови координати; старите вече не важат.
+                onType: () => { pLat.value = ''; pLon.value = ''; },
+                onPick: (p) => {
+                    pLat.value = p.lat; pLon.value = p.lon;
+                    if (p.tz) pTimezone.value = p.tz;
+                },
+            });
+        });
 
         function submitPartnerChart() {
             const err = document.getElementById('partnerError');
@@ -3005,12 +3339,12 @@
             const lat = val('pLat'), lon = val('pLon');
 
             if (!year || !month || !day) {
-                err.textContent = 'Моля, попълни дата на раждане (година, месец, ден).';
+                err.textContent = 'Попълни датата на раждане: ден, месец и година.';
                 err.style.display = 'block';
                 return;
             }
             if (!lat || !lon) {
-                err.textContent = 'Моля, потърси мястото на раждане или въведи координати.';
+                err.textContent = 'Избери мястото на раждане от списъка с подсказки.';
                 err.style.display = 'block';
                 return;
             }
@@ -3131,7 +3465,7 @@
         const SECTION_ICONS = {
             wheel: '⊕', profile: '☉', planets: '☿', aspects: '△',
             horoscope: '☽', period: '♃', numerology: '7',
-            love: '♀', akashic: '☊',
+            love: '♀', akashic: '☊', moon: '◐',
         };
         // Some names do not fit one card on a narrow phone. A shortened label
         // beats one cut off mid-word — the full name stays on the tab, in the
@@ -3152,8 +3486,10 @@
 
             grid.innerHTML = '';
             document.querySelectorAll('#tabStrip .tab').forEach(tab => {
+                // Таб-връзка (Луна) няма showTab — води към своята страница.
+                const href = tab.getAttribute('href');
                 const target = ((tab.getAttribute('onclick') || '')
-                    .match(/showTab\('([^']+)'\)/) || [])[1];
+                    .match(/showTab\('([^']+)'\)/) || [])[1] || (href ? tab.dataset.feature : '');
                 if (!target) return;
                 const feature = tab.dataset.feature || '';
                 const locked = tab.classList.contains('tab-locked');
@@ -3188,7 +3524,7 @@
                     fullName + (locked && offer
                         ? ' — заключено, ' + money(offer.price_cents, offer.currency)
                         : ''));
-                card.addEventListener('click', () => showTab(target));
+                card.addEventListener('click', () => { if (href) location.href = href; else showTab(target); });
                 grid.appendChild(card);
             });
         }
@@ -3198,20 +3534,6 @@
                 card.classList.toggle('is-active', card.dataset.target === activeTarget);
             });
         }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const input = document.getElementById('pPlace');
-            if (!input) return;
-            input.addEventListener('input', () => {
-                const q = input.value.trim();
-                clearTimeout(partnerPlaceTimer);
-                if (q.length < 2) { closePartnerPlaces(); return; }
-                partnerPlaceTimer = setTimeout(() => searchPartnerPlace(q), 600);
-            });
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('#mode-full-panel .place-group')) closePartnerPlaces();
-            });
-        });
 
         async function loadSignPicker() {
             const el = document.getElementById('sign-picker');
@@ -3249,9 +3571,102 @@
             return 'asp-neutral';
         }
 
+        // Резултатът от сравнението — един изглед за зодията, за въведените
+        // данни и за човека от списъка: плочки с изречение, не редове с главни
+        // букви. „Точен до“ вместо „орб“ — виж exact_label на сървъра.
+        function exactText(orb) {
+            const n = Number(orb);
+            if (!isFinite(n)) return '';
+            return n < 0.05 ? 'почти точен' : 'точен до ' + n.toFixed(1).replace('.', ',') + '°';
+        }
+
+        function renderLoveMatch(d) {
+            let html = `<div class="love-pair">
+                <div class="love-side">
+                    <span class="love-glyph">${d.you.sun_symbol || '✦'}</span>
+                    <div class="love-side-label">Ти</div>
+                    <div class="love-side-sign">${d.you.sun_bg || ''}</div>
+                    <div class="love-side-meta">${d.you.element_bg} · ${d.you.modality_bg}</div>
+                </div>
+                <div class="love-link">
+                    ${d.sun_aspect ? `<span class="love-aspect ${aspectClass(d.sun_aspect.name)}">${d.sun_aspect.name}</span>` : ''}
+                </div>
+                <div class="love-side">
+                    <span class="love-glyph">${d.partner.symbol}</span>
+                    <div class="love-side-label">${d.mode === 'full' ? escapeHtmlText(d.partner.name || 'Партньор') : 'Партньор'}</div>
+                    <div class="love-side-sign">${d.partner.sign_bg || ''}</div>
+                    <div class="love-side-meta">${d.partner.element_bg} · ${d.partner.modality_bg}</div>
+                </div>
+            </div>`;
+
+            if (d.mode === 'full') {
+                // Their own placements, then the real cross-aspects between the charts.
+                if (d.partner_points && d.partner_points.length) {
+                    html += '<h3 class="prof-h3">Картата на партньора</h3><div class="love-cards">';
+                    d.partner_points.forEach(pt => {
+                        html += `<div class="love-card">
+                            <div class="love-card-top">
+                                <span class="love-card-glyph">${pt.sign_symbol}</span>
+                                <div>
+                                    <div class="love-card-label">${pt.label}</div>
+                                    <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                                    ${pt.house_bg ? `<div class="love-side-meta">${pt.house_bg}</div>` : ''}
+                                </div>
+                            </div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+                if (d.cross_aspects && d.cross_aspects.length) {
+                    html += '<h3 class="prof-h3">Как се срещат двете карти</h3><div class="love-cards">';
+                    d.cross_aspects.forEach(c => {
+                        html += `<div class="love-card ${aspectClass(c.aspect)}">
+                            <div class="love-card-top">
+                                <span class="love-card-glyph">${c.mine_symbol}</span>
+                                <div>
+                                    <div class="love-card-label">Ти: ${c.mine_bg} · Партньор: ${c.theirs_bg}</div>
+                                    <div class="love-card-sign">${c.mine_sign_bg} — ${c.theirs_sign_bg}</div>
+                                </div>
+                                <span class="love-badge">${c.aspect}</span>
+                            </div>
+                            <p class="love-card-meaning">${c.meaning} <span class="love-orb">${exactText(c.orb)}</span></p>
+                        </div>`;
+                    });
+                    html += '</div>';
+                } else {
+                    html += '<p style="color:var(--text-muted); margin-bottom:16px;">Няма аспекти между любовните точки на двете карти.</p>';
+                }
+            } else {
+                html += '<div class="love-cards">';
+                (d.points || []).forEach(pt => {
+                    if (!pt.aspect) return;
+                    html += `<div class="love-card ${aspectClass(pt.aspect)}">
+                        <div class="love-card-top">
+                            <span class="love-card-glyph">${pt.sign_symbol}</span>
+                            <div>
+                                <div class="love-card-label">${pt.label}</div>
+                                <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
+                            </div>
+                            <span class="love-badge">${pt.aspect}</span>
+                        </div>
+                        <p class="love-card-meaning">${pt.aspect_meaning}</p>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            if (d.elements || d.modalities) {
+                html += '<div class="love-strips">';
+                if (d.elements) html += `<div class="love-strip"><span class="love-strip-label">Стихии</span><span>${d.elements}</span></div>`;
+                if (d.modalities) html += `<div class="love-strip"><span class="love-strip-label">Качества</span><span>${d.modalities}</span></div>`;
+                html += '</div>';
+            }
+            return html;
+        }
+
         async function loadLoveMatch() {
             const el = document.getElementById('love-content');
-            el.innerHTML = crystalLoader('Изчисляване...');
+            el.innerHTML = crystalLoader('Изчисляваме…');
             unlockPanel(el);
             try {
                 const resp = await guardedFetch('/api/love-match', {
@@ -3259,97 +3674,8 @@
                     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                     body: JSON.stringify(lovePayload)
                 });
-                if (!resp.ok) {
-                    const d = await resp.json().catch(() => ({}));
-                    // detail can be an object; never interpolate it raw.
-                    const msg = typeof d.detail === 'string' ? d.detail
-                              : (d.detail && d.detail.message) || ('Грешка ' + resp.status);
-                    throw new Error(msg);
-                }
-                const d = await resp.json();
-
-                let html = `<div class="love-pair">
-                    <div class="love-side">
-                        <span class="love-glyph">${d.you.sun_symbol || '✦'}</span>
-                        <div class="love-side-label">Ти</div>
-                        <div class="love-side-sign">${d.you.sun_bg || ''}</div>
-                        <div class="love-side-meta">${d.you.element_bg} · ${d.you.modality_bg}</div>
-                    </div>
-                    <div class="love-link">
-                        ${d.sun_aspect ? `<span class="love-aspect ${aspectClass(d.sun_aspect.name)}">${d.sun_aspect.name}</span>` : ''}
-                    </div>
-                    <div class="love-side">
-                        <span class="love-glyph">${d.partner.symbol}</span>
-                        <div class="love-side-label">${d.mode === 'full' ? escapeHtmlText(d.partner.name || 'Партньор') : 'Партньор'}</div>
-                        <div class="love-side-sign">${d.partner.sign_bg || ''}</div>
-                        <div class="love-side-meta">${d.partner.element_bg} · ${d.partner.modality_bg}</div>
-                    </div>
-                </div>`;
-
-                if (d.mode === 'full') {
-                    // Their own placements, then the real cross-aspects between the charts.
-                    if (d.partner_points && d.partner_points.length) {
-                        html += '<h3 class="prof-h3">Картата на партньора</h3><div class="love-cards">';
-                        d.partner_points.forEach(pt => {
-                            html += `<div class="love-card">
-                                <div class="love-card-top">
-                                    <span class="love-card-glyph">${pt.sign_symbol}</span>
-                                    <div>
-                                        <div class="love-card-label">${pt.label}</div>
-                                        <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
-                                        <div class="love-side-meta">${pt.house_bg}</div>
-                                    </div>
-                                </div>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    }
-                    if (d.cross_aspects && d.cross_aspects.length) {
-                        html += '<h3 class="prof-h3">Аспекти между двете карти</h3><div class="love-cards">';
-                        d.cross_aspects.forEach(c => {
-                            html += `<div class="love-card ${aspectClass(c.aspect)}">
-                                <div class="love-card-top">
-                                    <span class="love-card-glyph">${c.mine_symbol}</span>
-                                    <div>
-                                        <div class="love-card-label">твоят ${c.mine_bg} · неговият ${c.theirs_bg}</div>
-                                        <div class="love-card-sign">${c.mine_sign_bg} — ${c.theirs_sign_bg}</div>
-                                    </div>
-                                    <span class="love-badge">${c.aspect}</span>
-                                </div>
-                                <p class="love-card-meaning">${c.meaning} <span class="love-orb">орб ${c.orb}°</span></p>
-                            </div>`;
-                        });
-                        html += '</div>';
-                    } else {
-                        html += '<p style="color:var(--text-muted); margin-bottom:16px;">Няма аспекти в рамките на орба между любовните точки на двете карти.</p>';
-                    }
-                } else {
-                    html += '<div class="love-cards">';
-                    (d.points || []).forEach(pt => {
-                        if (!pt.aspect) return;
-                        html += `<div class="love-card ${aspectClass(pt.aspect)}">
-                            <div class="love-card-top">
-                                <span class="love-card-glyph">${pt.sign_symbol}</span>
-                                <div>
-                                    <div class="love-card-label">${pt.label}</div>
-                                    <div class="love-card-sign">${pt.name_bg} в ${pt.sign_bg}</div>
-                                </div>
-                                <span class="love-badge">${pt.aspect}</span>
-                            </div>
-                            <p class="love-card-meaning">${pt.aspect_meaning}</p>
-                        </div>`;
-                    });
-                    html += '</div>';
-                }
-
-                if (d.elements || d.modalities) {
-                    html += '<div class="love-strips">';
-                    if (d.elements) html += `<div class="love-strip"><span class="love-strip-label">Стихии</span><span>${d.elements}</span></div>`;
-                    if (d.modalities) html += `<div class="love-strip"><span class="love-strip-label">Качества</span><span>${d.modalities}</span></div>`;
-                    html += '</div>';
-                }
-
-                el.innerHTML = html;
+                if (!resp.ok) throw await apiError(resp);
+                el.innerHTML = renderLoveMatch(await resp.json());
             } catch (e) {
                 document.getElementById('love-ai-content').innerHTML = '';
                 if (e instanceof LockedFeature) {
@@ -3364,7 +3690,7 @@
 
         async function loadLoveAI(refresh) {
             const el = document.getElementById('love-ai-content');
-            el.innerHTML = crystalLoader('Разчитане на връзката...');
+            el.innerHTML = crystalLoader('Разчитаме връзката ви…', true);
             unlockPanel(el);
             try {
                 const url = '/api/love-match/interpretation' + (refresh ? '?refresh=true' : '');
@@ -3386,6 +3712,118 @@
                     return;
                 }
                 el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
+            }
+        }
+
+        /* ---------- поправка на рождените данни ----------
+           Най-честата грешка е грешен ден, час или място. Досега единственият
+           път беше да се изтрие картата — заедно с вече платените разчитания. */
+        function openEditBirth() {
+            const $ = id => document.getElementById(id);
+            $('editError').style.display = 'none';
+            $('edDay').value = BIRTH.day;
+            $('edMonth').value = BIRTH.month;
+            $('edYear').value = BIRTH.year;
+            $('edUnknown').checked = !!BIRTH.time_unknown;
+            $('edHour').value = BIRTH.time_unknown ? 12 : BIRTH.hour;
+            $('edMinute').value = BIRTH.time_unknown ? 0 : BIRTH.minute;
+            $('edHour').disabled = $('edMinute').disabled = !!BIRTH.time_unknown;
+            $('edPlace').value = BIRTH.place || '';
+            $('edLat').value = BIRTH.lat;
+            $('edLon').value = BIRTH.lon;
+            $('edTz').value = BIRTH.timezone || 'Europe/Sofia';
+            const overlay = $('editOverlay');
+            overlay.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            $('edDay').focus();
+        }
+
+        function closeEditBirth() {
+            document.getElementById('editOverlay').classList.remove('open');
+            document.body.style.overflow = '';
+            const btn = document.getElementById('editBirthBtn');
+            if (btn) btn.focus();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.getElementById('editOverlay').classList.contains('open')) closeEditBirth();
+        });
+        document.addEventListener('DOMContentLoaded', () => {
+            const overlay = document.getElementById('editOverlay');
+            overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeEditBirth(); });
+            attachPlaceSearch({
+                input: 'edPlace', box: 'edPlaceResults', scope: '#edPlaceGroup',
+                // Написано ново място, което още не е избрано, няма координати —
+                // иначе старите координати щяха да останат под новото име.
+                onType: () => { edLat.value = ''; edLon.value = ''; },
+                onPick: (p) => {
+                    edLat.value = p.lat; edLon.value = p.lon;
+                    if (p.tz) edTz.value = p.tz;
+                },
+            });
+        });
+
+        async function saveBirth(ev) {
+            ev.preventDefault();
+            const $ = id => document.getElementById(id);
+            const err = $('editError');
+            const fail = (msg) => { err.textContent = msg; err.style.display = 'block'; };
+            err.style.display = 'none';
+
+            const unknown = $('edUnknown').checked;
+            const num = id => Number($(id).value);
+            const year = num('edYear'), month = num('edMonth'), day = num('edDay');
+            const hour = unknown ? 12 : num('edHour'), minute = unknown ? 0 : num('edMinute');
+            if (!$('edYear').value || !$('edMonth').value || !$('edDay').value) {
+                return fail('Попълни датата на раждане: ден, месец и година.');
+            }
+            const probe = new Date(year, month - 1, day);
+            if (probe.getFullYear() !== year || probe.getMonth() !== month - 1 || probe.getDate() !== day) {
+                return fail('Тази дата не съществува. Провери деня и месеца.');
+            }
+            if (probe > new Date()) return fail('Датата на раждане не може да е в бъдещето.');
+            if (!unknown && (!$('edHour').value || !$('edMinute').value
+                    || hour < 0 || hour > 23 || minute < 0 || minute > 59)) {
+                return fail('Часът е от 0 до 23, минутите — от 0 до 59. Ако не го знаеш, отбележи „Не знам часа“.');
+            }
+            if (!$('edLat').value || !$('edLon').value) {
+                return fail('Избери мястото на раждане от списъка с подсказки.');
+            }
+
+            const payload = {
+                year, month, day, hour, minute,
+                lat: Number($('edLat').value), lon: Number($('edLon').value),
+                timezone: $('edTz').value || 'Europe/Sofia',
+                time_unknown: unknown,
+                place: $('edPlace').value.trim() || null,
+            };
+            const same = ['year', 'month', 'day', 'lat', 'lon', 'timezone'].every(k => payload[k] === BIRTH[k])
+                && payload.time_unknown === BIRTH.time_unknown
+                && (unknown || (hour === BIRTH.hour && minute === BIRTH.minute))
+                && (payload.place || null) === (BIRTH.place || null);
+            if (same) {
+                closeEditBirth();
+                uiToast('Данните са същите — няма какво да променяме.');
+                return;
+            }
+
+            const btn = $('editSaveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Запазваме…';
+            try {
+                const resp = await fetch('/api/persons/{{ person.id }}/natal', {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!resp.ok) throw await apiError(resp);
+                closeEditBirth();
+                uiToast('Данните са поправени. Разчитанията се пишат наново.', 'ok');
+                setTimeout(() => location.reload(), 900);
+            } catch (e) {
+                fail(friendlyError(e));
+                btn.disabled = false;
+                btn.textContent = 'Запази';
             }
         }
 
@@ -3416,7 +3854,7 @@
                             <div>
                                 <div class="karm-label">${labels[key]}</div>
                                 <div class="karm-value">${pt.name_bg} в ${pt.sign_bg}</div>
-                                <div class="karm-house">${pt.house_bg}${pt.retrograde ? ' · ретрограден' : ''}</div>
+                                <div class="karm-house">${[TIME_UNKNOWN ? '' : pt.house_bg, pt.retrograde ? 'ретрограден' : ''].filter(Boolean).join(' · ')}</div>
                             </div>
                         </div>
                         ${pt.meaning ? `<p class="karm-meaning">${pt.meaning}</p>` : ''}
@@ -3424,17 +3862,13 @@
                 });
 
                 let extra = '';
-                if (d.twelfth_house && d.twelfth_house.length) {
+                if (!TIME_UNKNOWN && d.twelfth_house && d.twelfth_house.length) {
                     extra += `<div class="karm-strip"><span class="karm-strip-label">12-ти дом</span>
                         <span>${d.twelfth_house.map(o => `${o.sign_symbol} ${o.name_bg} в ${o.sign_bg}`).join(' · ')}</span></div>`;
                 }
                 if (d.retrogrades && d.retrogrades.length) {
                     extra += `<div class="karm-strip"><span class="karm-strip-label">Ретроградни</span>
-                        <span>${d.retrogrades.map(o => `${o.sign_symbol} ${o.name_bg} (${o.house_bg})`).join(' · ')}</span></div>`;
-                }
-                if (d.life_path) {
-                    extra += `<div class="karm-strip"><span class="karm-strip-label">Число на съдбата</span>
-                        <span>${d.life_path}</span></div>`;
+                        <span>${d.retrogrades.map(o => `${o.sign_symbol} ${o.name_bg}${TIME_UNKNOWN || !o.house_bg ? '' : ' (' + o.house_bg + ')'}`).join(' · ')}</span></div>`;
                 }
 
                 el.innerHTML = `<div class="karm-grid">${cards}</div>` + extra;
@@ -3454,7 +3888,7 @@
 
         async function loadAkashicAI(refresh) {
             const el = document.getElementById('akashic-ai-content');
-            el.innerHTML = crystalLoader('Отваряне на записа...');
+            el.innerHTML = crystalLoader('Отваряме записа…', true);
             unlockPanel(el);
             try {
                 const url = '/api/persons/{{ person.id }}/akashic/interpretation' + (refresh ? '?refresh=true' : '');
