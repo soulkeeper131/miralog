@@ -150,6 +150,11 @@
             transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
             z-index: 200;
         }
+        /* На телефон бутонът за тема остава горе и се скролва със страницата —
+           закрепен, застъпваше менюто „⋯“ и бутоните в шапката на картата. */
+        @media (max-width: 600px) {
+            .theme-toggle { position: absolute; }
+        }
         .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-card); }
         .theme-toggle:active { transform: translateY(0); }
         .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -1552,7 +1557,10 @@
         .asp-more { padding: 6px 14px 12px 48px; background: var(--surface-thistle); font-size: .84rem; line-height: 1.6; color: var(--text-meaning); }
 
         /* ═══ Дневният хороскоп ═══ */
-        .dh-glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 0 0 14px; }
+        /* Настроение и енергия една до друга, фокусът (фраза) на цял ред — в три
+           тесни колони „Спокойствие“ се пречупваше по средата. */
+        .dh-glance { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 14px; }
+        .dh-chip.c-focus { grid-column: 1 / -1; }
         .dh-chip {
             border-radius: 12px; padding: 8px 8px 9px; text-align: center; min-width: 0;
             border: 1px solid var(--border-soft);
@@ -1561,7 +1569,7 @@
         .dh-chip.c-energy { background: var(--surface-icy); }
         .dh-chip.c-focus { background: var(--surface-petal); }
         .dh-chip .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim); font-weight: 600; }
-        .dh-chip .v { color: var(--text-heading); font-weight: 600; font-size: .86rem; line-height: 1.25; overflow-wrap: anywhere; }
+        .dh-chip .v { color: var(--text-heading); font-weight: 600; font-size: .86rem; line-height: 1.25; overflow-wrap: break-word; }
         .dh-block { margin: 0 0 14px; }
         .dh-h { font-size: 1.02rem; font-weight: 600; letter-spacing: -0.01em; color: var(--text-heading); margin: 0 0 6px; }
         .dh-essence {
