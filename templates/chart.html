@@ -1609,6 +1609,7 @@
             border: 1px solid var(--border); background: transparent; color: var(--accent-light);
             font-family: var(--font-body); transition: background-color .15s ease, color .15s ease, border-color .15s ease;
         }
+        a.ra-btn { text-decoration: none; }
         .ra-ico { font-size: 1.15rem; line-height: 1.1; }
         .ra-lbl { font-size: .72rem; font-weight: 500; line-height: 1.2; white-space: nowrap; }
         .ra-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -2667,6 +2668,8 @@
             // докато пристигне. Оставяме четене, сваляне и споделяне; изпращането
             // по поща е за траен документ като личния портрет.
             const isDaily = key.startsWith('horoscope:');
+            const base = key.split(':')[0];
+            const mod = ({ 'love-full': 'love', synastry: 'love' })[base] || base;
             // „Разчети наново“ е премахнато: повторното генериране харчи AI
             // токени и пари без добавена стойност за клиента. Разчитането се
             // кешира и се показва винаги; регенериране остава само за админ/API.
@@ -2675,9 +2678,13 @@
                 <button class="ra-btn" onclick="downloadReadingPdf('${key}')" title="Свали като PDF" aria-label="Свали като PDF">${raInner('⬇', 'PDF')}</button>` +
                 (isDaily ? '' : `
                 <button class="ra-btn" onclick="openEmailModal('${key}')" title="Изпрати разчитането на имейл" aria-label="Изпрати разчитането на имейл">${raInner('✉', 'Имейл')}</button>`) + `
-                <button class="ra-btn" onclick="shareReading('${key}')" title="Сподели линк" aria-label="Сподели линк">${raInner('🔗', 'Сподели')}</button>
+                <button class="ra-btn" onclick="shareReading('${key}')" title="Сподели линк" aria-label="Сподели линк">${raInner('🔗', 'Сподели')}</button>` +
+                (REVIEWABLE.indexOf(mod) !== -1 ? `
+                <a class="ra-btn" href="/otzivi?modul=${mod}&napishi=1#napishi" data-cta="reading:review" title="Оцени разчитането" aria-label="Оцени разчитането">${raInner('★', 'Оцени')}</a>` : '') + `
             </div>`;
         }
+        // Модулът зад ключа на разчитането (както reading_base на сървъра) — за „Оцени“.
+        const REVIEWABLE = {{ ['chart', 'planets', 'aspects', 'horoscope', 'profile', 'period', 'love', 'akashic', 'numerology', 'moon'] | tojson }};
         // Действията (слушай, PDF, сподели) са НАД текста — разчитанията са
         // дълги и долу никой не ги намираше.
         function readingHtml(data) {
@@ -4488,7 +4495,7 @@
             }
         }
     </script>
-    <script src="/static/consent.js?v=9"></script>
+    <script src="/static/consent.js?v=10"></script>
 
     <div id="floating-player" class="floating-player" style="display:none" role="region" aria-label="Аудио плейър">
         <div class="fp-head">

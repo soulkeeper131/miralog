@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    {% if seo_image %}<meta property="og:image" content="{{ seo_image }}">{% endif %}
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('miralog_theme');
+                var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            } catch (e) { /* private mode */ }
+        })();
+    </script>
+    {% include "_critical.html" %}
+    <link rel="stylesheet" href="/static/landing.min.css?v=10">
+{% include "_analytics.html" %}
+<link rel="stylesheet" href="/static/consent.css?v=5">
+    <style>
+        .rv-page { padding: clamp(28px, 5vw, 48px) 0 var(--space-section); }
+        .rv-page h1 { font-family: var(--font-display); font-size: clamp(1.9rem, 5vw, 2.6rem); color: var(--text-heading); text-align: center; margin: 0 0 8px; }
+        .rv-lede { text-align: center; color: var(--text-muted); max-width: 52ch; margin: 0 auto 22px; line-height: 1.6; }
+        .rv-filter { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 26px; }
+        .rv-filter a { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 14px; border-radius: 999px;
+            border: 1px solid var(--border); background: var(--bg-card); color: var(--text); text-decoration: none; font-size: .88rem; }
+        .rv-filter a.on { border-color: var(--accent); background: var(--surface-thistle); color: var(--text-heading); font-weight: 600; }
+        .rv-filter small { color: var(--gilt); }
+        .rv-write { max-width: 640px; margin: 44px auto 0; padding: 24px 22px; border-radius: 20px; background: var(--bg-card);
+            border: 1px solid var(--accent-light); box-shadow: var(--shadow-card); scroll-margin-top: 80px; }
+        .rv-write h2 { font-family: var(--font-display); color: var(--text-heading); font-size: 1.45rem; margin: 0 0 6px; }
+        .rv-write .hint { color: var(--text-muted); font-size: .86rem; margin: 0 0 16px; line-height: 1.55; }
+        .rv-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+        .rv-field label { font-size: .86rem; color: var(--text-heading); font-weight: 600; }
+        .rv-field input, .rv-field select, .rv-field textarea { font: inherit; color: var(--text); background: var(--bg-input);
+            border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; min-height: 48px; }
+        .rv-field textarea { min-height: 130px; resize: vertical; }
+        .rv-field input:focus, .rv-field select:focus, .rv-field textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        .rv-count-chars { font-size: .76rem; color: var(--text-dim); text-align: right; }
+        .rv-pick { display: flex; gap: 4px; }
+        .rv-pick button { width: 48px; height: 48px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input);
+            font-size: 1.5rem; color: var(--border); cursor: pointer; }
+        .rv-pick button.on { color: #e8b84a; border-color: #e8b84a; }
+        .rv-pick button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .rv-msg { margin-top: 12px; font-size: .92rem; }
+        .rv-msg.ok { color: var(--gilt); } .rv-msg.err { color: #e5677b; }
+        .rv-guest { display: flex; gap: 10px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+    {% include "_site_nav.html" %}
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <main class="wrap rv-page">
+        <h1>Отзиви{% if current %} за „{{ features[current].name }}“{% endif %}</h1>
+        <p class="rv-lede">Пишат само хора с акаунт, които имат разчитането. Всеки отзив минава през преглед,
+            преди да се покаже. Не изтриваме отзиви, защото са критични.</p>
+
+        <nav class="rv-filter" aria-label="Отзиви по разчитане">
+            <a href="/otzivi" class="{{ 'on' if not current else '' }}">Всички</a>
+            {% for key, f in features.items() %}
+            <a href="/otzivi?modul={{ key }}" class="{{ 'on' if current == key else '' }}">{{ f.name }}{% if by_feature[key].count %} <small>★ {{ "%.1f"|format(by_feature[key].avg)|replace('.', ',') }} ({{ by_feature[key].count }})</small>{% endif %}</a>
+            {% endfor %}
+        </nav>
+
+        {% set rv_list = reviews %}{% set rv_sum = summary %}{% set rv_key = current %}
+        {% include "_reviews_block.html" %}
+
+        <section class="rv-write" id="napishi" aria-labelledby="rvWriteTitle">
+            <h2 id="rvWriteTitle">Напиши отзив</h2>
+            <div id="rvGuest" {% if viewer().logged_in %}hidden{% endif %}>
+                <p class="hint">Отзив може да остави всеки с акаунт за разчитане, което има отключено.
+                    Наталната карта и дневният хороскоп са безплатни.</p>
+                <div class="rv-guest">
+                    <a class="btn btn-primary" href="/login?next={{ ('/otzivi?' ~ ('modul=' ~ current ~ '&' if current else '') ~ 'napishi=1#napishi') | urlencode }}" data-cta="reviews:login">Влез и напиши</a>
+                    <a class="btn btn-ghost" href="/start" data-cta="reviews:start">Създай безплатна карта</a>
+                </div>
+            </div>
+            <form id="rvForm" {% if not viewer().logged_in %}hidden{% endif %} novalidate>
+                <p class="hint">Показва се след преглед, обикновено до ден. Може да го поправиш по всяко време.</p>
+                <div class="rv-field">
+                    <label for="rvFeature">За кое разчитане</label>
+                    <select id="rvFeature" required></select>
+                </div>
+                <div class="rv-field">
+                    <label id="rvRatingLabel">Оценка</label>
+                    <div class="rv-pick" role="radiogroup" aria-labelledby="rvRatingLabel" id="rvPick">
+                        {% for i in range(1, 6) %}<button type="button" role="radio" aria-checked="false" data-v="{{ i }}" aria-label="{{ i }} от 5">★</button>{% endfor %}
+                    </div>
+                </div>
+                <div class="rv-field">
+                    <label for="rvTitle">Заглавие <span style="font-weight:400;color:var(--text-dim)">(по желание)</span></label>
+                    <input id="rvTitle" maxlength="80" placeholder="напр. Точно описа характера ми">
+                </div>
+                <div class="rv-field">
+                    <label for="rvBody">Какво ти хареса или не</label>
+                    <textarea id="rvBody" maxlength="1500" required placeholder="Как ти помогна разчитането, кое беше най-вярно, какво би искал/а да е по-различно…"></textarea>
+                    <div class="rv-count-chars" id="rvChars">0 / 1500</div>
+                </div>
+                <div class="rv-field">
+                    <label for="rvAuthor">Име, с което да се покаже</label>
+                    <input id="rvAuthor" maxlength="40" autocomplete="nickname">
+                </div>
+                <button class="btn btn-primary" type="submit" id="rvSubmit">Изпрати отзива</button>
+                <button class="btn btn-ghost" type="button" id="rvDelete" hidden>Изтрий отзива</button>
+                <div class="rv-msg" id="rvMsg" role="status" aria-live="polite"></div>
+            </form>
+        </section>
+    </main>
+    {% include "_site_footer.html" %}
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            try {
+                if (isLight) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('miralog_theme', 'dark'); }
+                else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('miralog_theme', 'light'); }
+            } catch (e) { /* private mode */ }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        (function () {
+            const CURRENT = {{ (current or '') | tojson }};
+            let token = '';
+            try { token = localStorage.getItem('miralog_token') || ''; } catch (e) {}
+            const form = document.getElementById('rvForm'), guest = document.getElementById('rvGuest');
+            const sel = document.getElementById('rvFeature'), body = document.getElementById('rvBody');
+            const msg = document.getElementById('rvMsg'), pick = document.getElementById('rvPick');
+            let rating = 0, mine = {};
+            function setRating(v) {
+                rating = v;
+                pick.querySelectorAll('button').forEach(function (b) {
+                    const on = Number(b.dataset.v) <= v;
+                    b.classList.toggle('on', on);
+                    b.setAttribute('aria-checked', String(Number(b.dataset.v) === v));
+                });
+            }
+            pick.addEventListener('click', function (e) { const b = e.target.closest('button'); if (b) setRating(Number(b.dataset.v)); });
+            body.addEventListener('input', function () { document.getElementById('rvChars').textContent = body.value.length + ' / 1500'; });
+            function fill(key) {
+                const r = mine[key];
+                document.getElementById('rvTitle').value = (r && r.title) || '';
+                body.value = (r && r.body) || '';
+                body.dispatchEvent(new Event('input'));
+                setRating((r && r.rating) || 0);
+                document.getElementById('rvDelete').hidden = !r;
+                msg.className = 'rv-msg' + (r ? ' ok' : '');
+                msg.textContent = r ? (r.status === 'approved' ? 'Отзивът ти е публикуван. Ако го промениш, пак ще мине през преглед.'
+                    : r.status === 'pending' ? 'Отзивът ти чака преглед.' : 'Отзивът ти не беше одобрен. Може да го поправиш.') : '';
+            }
+            if (!token) { form.hidden = true; guest.hidden = false; return; }
+            fetch('/api/reviews/mine', { headers: { Authorization: 'Bearer ' + token } })
+                .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                .then(function (d) {
+                    mine = d.reviews || {};
+                    if (!d.features.length) { form.hidden = true; guest.hidden = false; return; }
+                    guest.hidden = true; form.hidden = false;
+                    sel.innerHTML = d.features.map(function (f) {
+                        return '<option value="' + f.key + '">' + f.name.replace(/</g, '&lt;') + (f.review ? ' — твоят отзив' : '') + '</option>';
+                    }).join('');
+                    if (CURRENT && d.features.some(function (f) { return f.key === CURRENT; })) sel.value = CURRENT;
+                    document.getElementById('rvAuthor').value = d.author || '';
+                    fill(sel.value);
+                    if (new URLSearchParams(location.search).get('napishi')) document.getElementById('napishi').scrollIntoView();
+                })
+                .catch(function () { form.hidden = true; guest.hidden = false; });
+            sel.addEventListener('change', function () { fill(sel.value); });
+            document.getElementById('rvDelete').addEventListener('click', function () {
+                if (!confirm('Да изтрия ли отзива ти за това разчитане?')) return;
+                fetch('/api/reviews/' + encodeURIComponent(sel.value), { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } })
+                    .then(function (r) { if (!r.ok) throw new Error(); delete mine[sel.value]; fill(sel.value);
+                        msg.className = 'rv-msg ok'; msg.textContent = 'Отзивът е изтрит.'; })
+                    .catch(function () { msg.className = 'rv-msg err'; msg.textContent = 'Не успяхме да го изтрием. Опитай пак.'; });
+            });
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                msg.className = 'rv-msg err';
+                if (!rating) { msg.textContent = 'Избери оценка от 1 до 5 звезди.'; return; }
+                if (body.value.trim().length < 20) { msg.textContent = 'Напиши поне 20 знака.'; body.focus(); return; }
+                const btn = document.getElementById('rvSubmit'); btn.disabled = true;
+                fetch('/api/reviews', { method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                    body: JSON.stringify({ feature: sel.value, rating: rating, body: body.value,
+                        title: document.getElementById('rvTitle').value, author: document.getElementById('rvAuthor').value }) })
+                    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+                    .then(function (res) {
+                        if (!res.ok) throw new Error(typeof res.d.detail === 'string' ? res.d.detail : 'Не успяхме да запишем отзива.');
+                        mine[sel.value] = { rating: rating, title: document.getElementById('rvTitle').value, body: body.value, status: 'pending' };
+                        msg.className = 'rv-msg ok';
+                        msg.textContent = 'Благодарим! Отзивът ще се покаже след преглед.';
+                        if (typeof window.track === 'function') window.track('review_submit', { item_id: sel.value, rating: rating });
+                    })
+                    .catch(function (err) { msg.className = 'rv-msg err'; msg.textContent = err.message; })
+                    .finally(function () { btn.disabled = false; });
+            });
+        })();
+    </script>
+<script src="/static/consent.js?v=10"></script>
+</body>
+</html>

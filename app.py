@@ -687,6 +687,46 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_event_time ON events(event, at)")
+        # Отзиви от вписани потребители: по един на модул (поправката го връща
+        # за одобрение). Показват се само одобрените — и те стават звездите
+        # (Product + AggregateRating) на страницата на модула.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                feature_key TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                title TEXT,
+                body TEXT NOT NULL,
+                author TEXT NOT NULL,
+                verified INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
+                moderated_at TEXT,
+                reply TEXT,
+                reply_at TEXT
+            )
+        """)
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_user_feature ON reviews(user_id, feature_key)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_feature_status ON reviews(feature_key, status)")
+        # Съобщения от контактната форма.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                user_id INTEGER,
+                name TEXT,
+                email TEXT NOT NULL,
+                topic TEXT,
+                message TEXT NOT NULL,
+                page TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                reply TEXT,
+                replied_at TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_contact_status ON contact_messages(status, created_at)")
         # Всеки създаден Stripe Checkout — за изоставените плащания. ref
         # пътува в metadata и при плащане редът се отбелязва като платен.
         conn.execute("""
@@ -2272,6 +2312,8 @@ RATE_LIMITS = {
     "reset_email": (3, 3600),    # писма за нова парола до един адрес на час
     "geocode": (60, 600),        # търсения на място без вход от един IP за 10 мин
     "events": (120, 600),        # събития от страницата (заключен модул и т.н.)
+    "review": (10, 3600),        # отзиви (запис/поправка) от един акаунт на час
+    "contact": (5, 3600),        # съобщения от контактната форма от един IP на час
 }
 RATE_HITS: dict = {}
 _RATE_LOCK = threading.Lock()
@@ -5175,6 +5217,8 @@ def api_admin_delete_user(user_id: int, admin: dict = Depends(require_admin)):
         # подразбиране), затова остават като сираци — а ако по-късно нов
         # акаунт получи същото id, наследява платените модули безплатно.
         conn.execute("DELETE FROM feature_purchases WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM reviews WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM contact_messages WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM oauth_accounts WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM share_links WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -6625,6 +6669,7 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
             "problems": notify_enabled("problems"),
             "daily": notify_enabled("daily"),
             "saft": notify_enabled("saft"),
+            "messages": notify_enabled("messages"),
             "fallback": (smtp_setting("smtp_from") or smtp_setting("smtp_user") or ""),
         },
         "legal": {key: (get_setting(f"legal_{key}") or default)
@@ -6697,7 +6742,7 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     if isinstance(notify, dict):
         if "email" in notify:
             set_setting("notify_email", str(notify.get("email") or "").strip())
-        for kind in ("new_users", "payments", "problems", "daily", "saft"):
+        for kind in ("new_users", "payments", "problems", "daily", "saft", "messages"):
             if kind in notify:
                 set_setting(f"notify_{kind}", "1" if notify.get(kind) else "0")
 
@@ -9701,6 +9746,9 @@ def api_delete_account(data: Optional[AccountDelete] = None,
             conn.execute(f"DELETE FROM share_links WHERE person_id IN ({qs})", person_ids)
         conn.execute("DELETE FROM persons WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM feature_purchases WHERE user_id = ?", (user_id,))
+        # Отзивът носи името на човека, а съобщенията — имейла му.
+        conn.execute("DELETE FROM reviews WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM contact_messages WHERE user_id = ?", (user_id,))
         # Плащанията и фактурите остават: счетоводните документи се пазят по
         # закон (ЗСч, Н-18), а без тях одиторският файл за вече подаден месец
         # би се променил. В тях няма лични данни — имейлът е в users и си
@@ -12577,6 +12625,7 @@ def sitemap_xml(request: Request):
     # Every module gets its own landing page — the long-tail content that the
     # search engines actually find people through.
     entries += [(f"/{p['slug']}", "monthly", "0.8", evergreen) for p in FEATURE_PAGES]
+    entries += [("/otzivi", "weekly", "0.6", evergreen), ("/kontakti", "yearly", "0.3", evergreen)]
     # Daily horoscopes per zodiac sign (12) + the hub. These refresh daily, so
     # they get a high change frequency and priority — they are the freshest,
     # most-searched content on the site.
@@ -13007,7 +13056,37 @@ def _feature_context(request: Request, page: dict) -> dict:
         FEATURE_PAGES_BY_SLUG[s] for s in page.get("related", [])
         if s in FEATURE_PAGES_BY_SLUG
     ]
+    ctx["reviews"] = approved_reviews(page["key"], 6)
+    ctx["review_sum"] = review_summary(page["key"])
+    price_cents = 0 if page.get("included") else next(
+        (r["price_cents"] for r in pricing["rows"] if r["key"] == page["key"]), None)
+    ctx["product_ld"] = product_ld(page, ctx, price_cents, ctx["review_sum"],
+                                   approved_reviews(page["key"], 10))
     return ctx
+
+
+def product_ld(page: dict, ctx: dict, price_cents: Optional[int], summary: dict, reviews: list) -> dict:
+    """JSON-LD Product за страницата на модула: цена и (ако има) оценки."""
+    url = ctx.get("seo_url")
+    data = {"@context": "https://schema.org", "@type": "Product", "name": page["name"],
+            "description": ctx.get("seo_description"), "sku": page["key"], "url": url,
+            "brand": {"@type": "Brand", "name": brand_name()}, "category": "Астрологично разчитане"}
+    if ctx.get("seo_image"):
+        data["image"] = ctx["seo_image"]
+    if price_cents is not None:
+        data["offers"] = {"@type": "Offer", "price": f"{price_cents / 100:.2f}", "priceCurrency": "EUR",
+                          "availability": "https://schema.org/InStock", "url": url,
+                          "seller": {"@type": "Organization", "name": brand_name()}}
+    if summary.get("count"):
+        data["aggregateRating"] = {"@type": "AggregateRating", "ratingValue": summary["avg"],
+                                   "reviewCount": summary["count"], "bestRating": 5, "worstRating": 1}
+        data["review"] = [{
+            "@type": "Review", "author": {"@type": "Person", "name": r["author"]},
+            "datePublished": r["date"], "reviewBody": r["body"],
+            **({"name": r["title"]} if r.get("title") else {}),
+            "reviewRating": {"@type": "Rating", "ratingValue": r["rating"], "bestRating": 5, "worstRating": 1},
+        } for r in reviews]
+    return data
 
 
 def _feature_route(page: dict):
@@ -13024,6 +13103,333 @@ for _fp in FEATURE_PAGES:
         methods=["GET"], response_class=HTMLResponse,
         name=f"feature_{_fp['key']}", include_in_schema=False,
     )
+
+
+# --- Отзиви от потребителите --------------------------------------------------
+# Пише само вписан човек и само за модул, който има отключен (безплатните са
+# отключени при регистрацията). Всеки отзив чака одобрение в админа: на сайта и
+# в разметката за Google (Product + AggregateRating) влизат само одобрените.
+# „Проверена покупка“ = модулът е платен (не е от безплатните при регистрация).
+REVIEW_MIN, REVIEW_MAX = 20, 1500
+REVIEW_STATUSES = ("pending", "approved", "rejected")
+
+
+def reviewable_features() -> dict:
+    """Модулите, за които може да се пише отзив: ключ → (име, slug на страницата)."""
+    names = {f["key"]: f["name"] for f in FEATURE_CATALOGUE}
+    return {p["key"]: {"name": names.get(p["key"], p.get("name", p["key"])), "slug": p["slug"]}
+            for p in FEATURE_PAGES if p["key"] in names}
+
+
+def _clean_text(value, limit: int) -> str:
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(value or ""))
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text[:limit]
+
+
+def default_review_author(user_id: int) -> str:
+    """„Мария И.“ — името за показване или името от първата карта, с инициал."""
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT display_name FROM users WHERE id = ?", (user_id,)).fetchone()
+        full = (row[0] if row else "") or ""
+        if not full.strip():
+            p = conn.execute("SELECT name FROM persons WHERE user_id = ? ORDER BY id LIMIT 1",
+                             (user_id,)).fetchone()
+            full = (p[0] if p else "") or ""
+    parts = full.split()
+    if not parts:
+        return "Потребител"
+    return parts[0][:30] + (f" {parts[-1][0]}." if len(parts) > 1 else "")
+
+
+def review_summary(feature_key: Optional[str] = None) -> dict:
+    """Брой и средна оценка на одобрените отзиви (за модул или общо)."""
+    sql = "SELECT COUNT(*), AVG(rating) FROM reviews WHERE status = 'approved'"
+    args: tuple = ()
+    if feature_key:
+        sql += " AND feature_key = ?"
+        args = (feature_key,)
+    with sqlite3.connect(DB_PATH) as conn:
+        count, avg = conn.execute(sql, args).fetchone()
+    return {"count": int(count or 0), "avg": round(float(avg), 1) if avg else None}
+
+
+def approved_reviews(feature_key: Optional[str] = None, limit: int = 20, offset: int = 0) -> list:
+    sql = ("SELECT id, feature_key, rating, title, body, author, verified, created_at, reply"
+           " FROM reviews WHERE status = 'approved'")
+    args: list = []
+    if feature_key:
+        sql += " AND feature_key = ?"
+        args.append(feature_key)
+    sql += " ORDER BY COALESCE(moderated_at, created_at) DESC LIMIT ? OFFSET ?"
+    args += [int(limit), int(offset)]
+    features = reviewable_features()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, args)]
+    for r in rows:
+        r["feature_name"] = features.get(r["feature_key"], {}).get("name", r["feature_key"])
+        r["date"] = str(r["created_at"])[:10]
+    return rows
+
+
+templates.env.globals["review_summary"] = review_summary
+templates.env.globals["approved_reviews"] = approved_reviews
+
+
+class ReviewRequest(BaseModel):
+    feature: str
+    rating: int
+    body: str
+    title: Optional[str] = None
+    author: Optional[str] = None
+
+
+@app.get("/api/reviews")
+def api_reviews(feature: Optional[str] = None, limit: int = 20, offset: int = 0):
+    """Одобрените отзиви (публично) и обобщението по модули."""
+    if feature and feature not in reviewable_features():
+        raise HTTPException(404, "Няма такъв модул.")
+    limit = max(1, min(int(limit or 20), 50))
+    return {"reviews": approved_reviews(feature, limit, max(0, int(offset or 0))),
+            "summary": review_summary(feature),
+            "by_feature": {k: dict(review_summary(k), name=v["name"], slug=v["slug"])
+                           for k, v in reviewable_features().items()}}
+
+
+@app.get("/api/reviews/mine")
+def api_my_reviews(user: Tuple[int, str] = Depends(get_current_user)):
+    """Моите отзиви и за кои модули мога да пиша."""
+    row = get_user_by_id(user[0])
+    unlocked = set(unlocked_features(row) or [])
+    features = reviewable_features()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        mine = {r["feature_key"]: dict(r) for r in conn.execute(
+            "SELECT feature_key, rating, title, body, author, status, reply FROM reviews WHERE user_id = ?",
+            (user[0],))}
+    return {"author": default_review_author(user[0]),
+            "features": [{"key": k, "name": v["name"], "review": mine.get(k)}
+                         for k, v in features.items() if k in unlocked],
+            "reviews": mine}
+
+
+@app.post("/api/reviews")
+def api_review_save(data: ReviewRequest, request: Request,
+                    user: Tuple[int, str] = Depends(get_current_user)):
+    """Нов отзив или поправка на моя (тогава пак чака одобрение)."""
+    rate_limit("review", f"u{user[0]}")
+    features = reviewable_features()
+    if data.feature not in features:
+        raise HTTPException(400, "Избери за кое разчитане е отзивът.")
+    row = get_user_by_id(user[0])
+    if data.feature not in set(unlocked_features(row) or []):
+        raise HTTPException(403, "Може да оцениш само разчитане, което имаш отключено.")
+    if not (1 <= int(data.rating) <= 5):
+        raise HTTPException(400, "Оценката е от 1 до 5 звезди.")
+    body = _clean_text(data.body, REVIEW_MAX)
+    if len(body) < REVIEW_MIN:
+        raise HTTPException(400, f"Напиши поне {REVIEW_MIN} знака — какво ти хареса или не.")
+    if re.search(r"https?://|www\.", body, re.I):
+        raise HTTPException(400, "Без линкове в отзива, моля.")
+    title = _clean_text(data.title, 80) or None
+    author = _clean_text(data.author, 40) or default_review_author(user[0])
+    verified = 1 if (data.feature not in FREE_ON_SIGNUP
+                     and data.feature in set(purchased_features(user[0]))) else 0
+    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO reviews (user_id, feature_key, rating, title, body, author, verified, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)"
+            " ON CONFLICT(user_id, feature_key) DO UPDATE SET rating = excluded.rating,"
+            " title = excluded.title, body = excluded.body, author = excluded.author,"
+            " verified = excluded.verified, status = 'pending', updated_at = excluded.created_at,"
+            " moderated_at = NULL",
+            (user[0], data.feature, int(data.rating), title, body, author, verified, now))
+    record_event("review_submit", user_id=user[0], request=request, feature=data.feature,
+                 meta={"rating": int(data.rating)})
+    notify_owner("messages", f"{brand_name()}: нов отзив за одобрение ({int(data.rating)}★)",
+                 f"{features[data.feature]['name']} — {int(data.rating)} от 5\n"
+                 f"От: {author} ({row.get('email')})\n\n{title or ''}\n{body}\n\n"
+                 "Одобри или откажи: Админ → Отзиви и писма.")
+    return {"ok": True, "status": "pending"}
+
+
+@app.delete("/api/reviews/{feature}")
+def api_review_delete(feature: str, user: Tuple[int, str] = Depends(get_current_user)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM reviews WHERE user_id = ? AND feature_key = ?", (user[0], feature))
+    return {"ok": True}
+
+
+@app.get("/api/admin/reviews")
+def api_admin_reviews(status: str = "pending", admin: dict = Depends(require_admin)):
+    if status not in REVIEW_STATUSES + ("all",):
+        raise HTTPException(400, "Непознат статус.")
+    sql = ("SELECT r.*, u.email FROM reviews r LEFT JOIN users u ON u.id = r.user_id")
+    args: tuple = ()
+    if status != "all":
+        sql += " WHERE r.status = ?"
+        args = (status,)
+    sql += " ORDER BY r.created_at DESC LIMIT 200"
+    features = reviewable_features()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, args)]
+        counts = dict(conn.execute("SELECT status, COUNT(*) FROM reviews GROUP BY status").fetchall())
+    for r in rows:
+        r["feature_name"] = features.get(r["feature_key"], {}).get("name", r["feature_key"])
+    return {"reviews": rows, "counts": counts}
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+def api_admin_review_update(review_id: int, payload: dict, admin: dict = Depends(require_admin)):
+    """Одобряване/отказ и отговор от нас (показва се под отзива)."""
+    sets, args = [], []
+    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    if "status" in payload:
+        if payload["status"] not in REVIEW_STATUSES:
+            raise HTTPException(400, "Непознат статус.")
+        sets += ["status = ?", "moderated_at = ?"]
+        args += [payload["status"], now]
+    if "reply" in payload:
+        reply = _clean_text(payload.get("reply"), 1000) or None
+        sets += ["reply = ?", "reply_at = ?"]
+        args += [reply, now if reply else None]
+    if not sets:
+        raise HTTPException(400, "Няма какво да се промени.")
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(f"UPDATE reviews SET {', '.join(sets)} WHERE id = ?", args + [review_id])
+        if not cur.rowcount:
+            raise HTTPException(404, "Отзивът не е намерен.")
+    audit("review_moderated", f"Отзив #{review_id}: {payload.get('status') or 'отговор'}",
+          actor=admin["email"])
+    return {"ok": True}
+
+
+@app.delete("/api/admin/reviews/{review_id}")
+def api_admin_review_delete(review_id: int, admin: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+    audit("review_deleted", f"Изтрит отзив #{review_id}", actor=admin["email"])
+    return {"ok": True}
+
+
+# --- Контактна форма -------------------------------------------------------------
+CONTACT_TOPICS = {"question": "Въпрос", "payment": "Плащане или фактура",
+                  "problem": "Технически проблем", "reading": "За разчитане",
+                  "idea": "Предложение", "partnership": "Сътрудничество", "other": "Друго"}
+
+
+class ContactRequest(BaseModel):
+    name: Optional[str] = None
+    email: str
+    topic: Optional[str] = None
+    message: str
+    page: Optional[str] = None
+    website: Optional[str] = None     # капан за ботове: човек не го вижда и не го попълва
+
+
+@app.post("/api/contact")
+def api_contact(data: ContactRequest, request: Request):
+    rate_limit("contact", client_ip(request))
+    if (data.website or "").strip():
+        return {"ok": True}           # бот — не му казваме
+    email = (data.email or "").strip().lower()
+    if not valid_email(email):
+        raise HTTPException(400, "Въведи имейл, на който да ти отговорим.")
+    message = _clean_text(data.message, 4000)
+    if len(message) < 10:
+        raise HTTPException(400, "Напиши малко повече — с какво можем да помогнем?")
+    name = _clean_text(data.name, 80) or None
+    topic = data.topic if data.topic in CONTACT_TOPICS else "other"
+    user_id = _user_id_for_log(request)
+    now = datetime.datetime.utcnow().isoformat(timespec="seconds")
+    with sqlite3.connect(DB_PATH) as conn:
+        msg_id = conn.execute(
+            "INSERT INTO contact_messages (created_at, user_id, name, email, topic, message, page)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (now, user_id, name, email, topic, message, _clean_text(data.page, 200) or None)).lastrowid
+    record_event("contact", user_id=user_id, request=request, feature=topic)
+    notify_owner("messages", f"{brand_name()}: съобщение — {CONTACT_TOPICS[topic]}",
+                 f"От: {name or '—'} <{email}>{f' (акаунт #{user_id})' if user_id else ''}\n"
+                 f"Тема: {CONTACT_TOPICS[topic]}\n\n{message}\n\n"
+                 f"Отговори от Админ → Отзиви и писма (#{msg_id}) или направо на {email}.")
+    return {"ok": True, "id": msg_id, "event_id": f"contact-{msg_id}"}
+
+
+@app.get("/api/admin/messages")
+def api_admin_messages(status: str = "new", admin: dict = Depends(require_admin)):
+    sql = "SELECT * FROM contact_messages"
+    args: tuple = ()
+    if status in ("new", "answered", "closed"):
+        sql += " WHERE status = ?"
+        args = (status,)
+    sql += " ORDER BY created_at DESC LIMIT 200"
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(sql, args)]
+        counts = dict(conn.execute("SELECT status, COUNT(*) FROM contact_messages GROUP BY status").fetchall())
+    for r in rows:
+        r["topic_name"] = CONTACT_TOPICS.get(r["topic"] or "", r["topic"] or "")
+    return {"messages": rows, "counts": counts}
+
+
+@app.post("/api/admin/messages/{msg_id}/reply")
+def api_admin_message_reply(msg_id: int, payload: dict, admin: dict = Depends(require_admin)):
+    """Отговор по имейл от адреса на сайта; съобщението става „отговорено“."""
+    text = _clean_text(payload.get("text"), 6000)
+    if len(text) < 2:
+        raise HTTPException(400, "Напиши отговора.")
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT email, message, topic FROM contact_messages WHERE id = ?",
+                           (msg_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Съобщението не е намерено.")
+    quoted = "\n".join("> " + line for line in (row[1] or "").splitlines())
+    body = f"{text}\n\n—\n{brand_name()}\n\nТвоето съобщение:\n{quoted}"
+    send_email(row[0], f"{brand_name()}: отговор — {CONTACT_TOPICS.get(row[2] or '', 'съобщение')}",
+               body, html=_email_html(body), campaign="contact_reply")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE contact_messages SET status = 'answered', reply = ?, replied_at = ? WHERE id = ?",
+                     (text, datetime.datetime.utcnow().isoformat(timespec="seconds"), msg_id))
+    audit("contact_replied", f"Отговор на съобщение #{msg_id}", actor=admin["email"])
+    return {"ok": True}
+
+
+@app.patch("/api/admin/messages/{msg_id}")
+def api_admin_message_update(msg_id: int, payload: dict, admin: dict = Depends(require_admin)):
+    status = payload.get("status")
+    if status not in ("new", "answered", "closed"):
+        raise HTTPException(400, "Непознат статус.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE contact_messages SET status = ? WHERE id = ?", (status, msg_id))
+    return {"ok": True}
+
+
+@app.get("/otzivi", response_class=HTMLResponse)
+async def reviews_page(request: Request, modul: Optional[str] = None):
+    features = reviewable_features()
+    current = modul if modul in features else None
+    ctx = seo_context(request, path="/otzivi")
+    ctx["seo_title"] = f"Отзиви за {brand_name()} — какво казват хората за разчитанията"
+    ctx["seo_description"] = ("Истински отзиви от потребители на " + brand_name()
+                              + " за наталната карта, хороскопите и разчитанията — с оценки по модули.")
+    ctx.update({"request": request, "features": features, "current": current,
+                "reviews": approved_reviews(current, 50),
+                "summary": review_summary(current),
+                "by_feature": {k: review_summary(k) for k in features}})
+    return HTMLResponse(templates.get_template("reviews.html").render(ctx))
+
+
+@app.get("/kontakti", response_class=HTMLResponse)
+async def contact_page(request: Request):
+    ctx = seo_context(request, path="/kontakti")
+    ctx["seo_title"] = f"Контакти — {brand_name()}"
+    ctx["seo_description"] = f"Пиши ни: въпрос, плащане, проблем или предложение — {brand_name()} отговаря по имейл."
+    ctx.update({"request": request, "topics": CONTACT_TOPICS})
+    return HTMLResponse(templates.get_template("contact.html").render(ctx))
 
 
 # --- Дневен хороскоп по зодия (SEO страници) ---

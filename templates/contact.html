@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ seo_title }}</title>
+    <meta name="description" content="{{ seo_description }}">
+    <link rel="canonical" href="{{ seo_url }}">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{ seo_title }}">
+    <meta property="og:description" content="{{ seo_description }}">
+    <meta property="og:url" content="{{ seo_url }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <script type="application/ld+json">{{ {"@context": "https://schema.org", "@type": "ContactPage", "name": seo_title, "url": seo_url,
+        "mainEntity": {"@type": "Organization", "name": brand().name, "url": seo_url.rsplit('/', 1)[0] ~ '/',
+                       "contactPoint": {"@type": "ContactPoint", "contactType": "customer support", "availableLanguage": ["bg"],
+                                        "url": seo_url}}} | tojson }}</script>
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('miralog_theme');
+                var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            } catch (e) { /* private mode */ }
+        })();
+    </script>
+    {% include "_critical.html" %}
+    <link rel="stylesheet" href="/static/landing.min.css?v=10">
+{% include "_analytics.html" %}
+<link rel="stylesheet" href="/static/consent.css?v=5">
+    <style>
+        .ct-page { padding: clamp(28px, 5vw, 48px) 0 var(--space-section); }
+        .ct-page h1 { font-family: var(--font-display); font-size: clamp(1.9rem, 5vw, 2.6rem); color: var(--text-heading); text-align: center; margin: 0 0 8px; }
+        .ct-lede { text-align: center; color: var(--text-muted); max-width: 52ch; margin: 0 auto 26px; line-height: 1.6; }
+        .ct-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; max-width: 920px; margin: 0 auto; align-items: start; }
+        @media (max-width: 760px) { .ct-grid { grid-template-columns: 1fr; } }
+        .ct-card { padding: 24px 22px; border-radius: 20px; background: var(--bg-card); border: 1px solid var(--border-soft); box-shadow: var(--shadow-card); }
+        .ct-card.main { border-color: var(--accent-light); }
+        .ct-card h2 { font-family: var(--font-display); color: var(--text-heading); font-size: 1.3rem; margin: 0 0 12px; }
+        .ct-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+        .ct-field label { font-size: .86rem; color: var(--text-heading); font-weight: 600; }
+        .ct-field input, .ct-field select, .ct-field textarea { font: inherit; color: var(--text); background: var(--bg-input);
+            border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; min-height: 48px; }
+        .ct-field textarea { min-height: 150px; resize: vertical; }
+        .ct-field input:focus, .ct-field select:focus, .ct-field textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        .ct-trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+        .ct-msg { margin-top: 12px; font-size: .92rem; } .ct-msg.ok { color: var(--gilt); } .ct-msg.err { color: #e5677b; }
+        .ct-note { font-size: .8rem; color: var(--text-dim); margin-top: 10px; line-height: 1.5; }
+        .ct-side p { color: var(--text-soft); font-size: .92rem; line-height: 1.6; margin: 0 0 12px; }
+        .ct-side a { color: var(--accent-light); }
+        .ct-side ul { padding-left: 1.1em; margin: 0 0 12px; color: var(--text-soft); font-size: .9rem; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    {% include "_site_nav.html" %}
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <main class="wrap ct-page">
+        <h1>Пиши ни</h1>
+        <p class="ct-lede">Въпрос за разчитане, плащане или фактура, нещо не работи, или имаш идея? Отговаряме по имейл, обикновено до един работен ден.</p>
+        <div class="ct-grid">
+            <form class="ct-card main" id="ctForm" novalidate>
+                <h2>Съобщение</h2>
+                <div class="ct-field">
+                    <label for="ctName">Име</label>
+                    <input id="ctName" maxlength="80" autocomplete="name">
+                </div>
+                <div class="ct-field">
+                    <label for="ctEmail">Имейл за отговор</label>
+                    <input id="ctEmail" type="email" required autocomplete="email" inputmode="email">
+                </div>
+                <div class="ct-field">
+                    <label for="ctTopic">Тема</label>
+                    <select id="ctTopic">
+                        {% for key, name in topics.items() %}<option value="{{ key }}">{{ name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="ct-field">
+                    <label for="ctMessage">Съобщение</label>
+                    <textarea id="ctMessage" maxlength="4000" required placeholder="Опиши накратко — ако е за плащане, добави и датата или номера на поръчката."></textarea>
+                </div>
+                <div class="ct-trap" aria-hidden="true"><label for="ctWebsite">Не попълвай</label><input id="ctWebsite" tabindex="-1" autocomplete="off"></div>
+                <button class="btn btn-primary" type="submit" id="ctSubmit">Изпрати</button>
+                <div class="ct-msg" id="ctMsg" role="status" aria-live="polite"></div>
+                <p class="ct-note">Пазим съобщението и имейла ти само за да ти отговорим. Виж <a href="/privacy">поверителността</a>.</p>
+            </form>
+            <aside class="ct-card ct-side">
+                <h2>Бързи отговори</h2>
+                <ul>
+                    <li>Забравена парола: <a href="/forgot-password">нова парола</a></li>
+                    <li>Твоите карти и разчитания: <a href="/dashboard">Моите карти</a></li>
+                    <li>Цени и пакет: <a href="/#ceni">Цени</a></li>
+                    <li>Какво казват другите: <a href="/otzivi">Отзиви</a></li>
+                </ul>
+                {% set _legal_email = legal_contact_email() %}
+                {% if _legal_email %}<p>Имейл: <a href="mailto:{{ _legal_email }}">{{ _legal_email }}</a></p>{% endif %}
+                {% if legal().company_name and '[[' not in legal().company_name %}
+                <p>{{ legal().company_name }}{% if legal().address and '[[' not in legal().address %}<br>{{ legal().address }}{% endif %}</p>
+                {% endif %}
+            </aside>
+        </div>
+    </main>
+    {% include "_site_footer.html" %}
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            try {
+                if (isLight) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('miralog_theme', 'dark'); }
+                else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('miralog_theme', 'light'); }
+            } catch (e) { /* private mode */ }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+
+        (function () {
+            const form = document.getElementById('ctForm'), msg = document.getElementById('ctMsg');
+            try {
+                const saved = localStorage.getItem('miralog_email');
+                if (saved) document.getElementById('ctEmail').value = saved;
+            } catch (e) {}
+            const topic = new URLSearchParams(location.search).get('tema');
+            if (topic && document.querySelector('#ctTopic option[value="' + CSS.escape(topic) + '"]')) document.getElementById('ctTopic').value = topic;
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                const email = document.getElementById('ctEmail').value.trim();
+                const text = document.getElementById('ctMessage').value.trim();
+                msg.className = 'ct-msg err';
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = 'Въведи имейл, на който да ти отговорим.'; return; }
+                if (text.length < 10) { msg.textContent = 'Напиши малко повече — с какво можем да помогнем?'; return; }
+                const btn = document.getElementById('ctSubmit'); btn.disabled = true;
+                fetch('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: document.getElementById('ctName').value, email: email,
+                        topic: document.getElementById('ctTopic').value, message: text,
+                        page: document.referrer || '', website: document.getElementById('ctWebsite').value }) })
+                    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+                    .then(function (res) {
+                        if (!res.ok) throw new Error(typeof res.d.detail === 'string' ? res.d.detail : 'Не успяхме да изпратим съобщението.');
+                        form.reset();
+                        msg.className = 'ct-msg ok';
+                        msg.textContent = 'Получихме го — ще ти отговорим на ' + email + '.';
+                        if (typeof window.track === 'function') window.track('contact', { topic: document.getElementById('ctTopic').value, event_id: res.d.event_id });
+                    })
+                    .catch(function (err) { msg.className = 'ct-msg err'; msg.textContent = err.message; })
+                    .finally(function () { btn.disabled = false; });
+            });
+        })();
+    </script>
+<script src="/static/consent.js?v=10"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{# Отзивите като блок: обобщение със звезди и последните одобрени.
+   Нужни: rv_list (approved_reviews), rv_sum (review_summary), rv_key (модул или
+   None за всички), rv_title. Звездите за Google са отделно (Product JSON-LD). #}
+{% macro stars(n) -%}
+<span class="rv-stars" aria-label="{{ n }} от 5">{% for i in range(5) %}<span class="{{ 'on' if i < n|round(0, 'common') else '' }}">★</span>{% endfor %}</span>
+{%- endmacro %}
+<style>
+    .rv-head { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: -6px 0 22px; }
+    .rv-score { font-family: var(--font-display); font-size: 2.2rem; font-weight: 700; color: var(--gilt); line-height: 1; }
+    .rv-count { color: var(--text-muted); font-size: .9rem; }
+    .rv-stars { color: var(--border); letter-spacing: 2px; font-size: 1.05rem; white-space: nowrap; }
+    .rv-stars .on { color: #e8b84a; }
+    .rv-grid { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+    .rv-grid > li { flex: 1 1 280px; max-width: 380px; }
+    .rv-card { background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: 16px; padding: 18px 18px 16px;
+        box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 8px; }
+    .rv-card h3 { font-family: var(--font-display); font-size: 1.04rem; color: var(--text-heading); margin: 0; }
+    .rv-card p { margin: 0; color: var(--text-soft); font-size: .92rem; line-height: 1.6; white-space: pre-line; }
+    .rv-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: .8rem; color: var(--text-dim); margin-top: auto; }
+    .rv-meta strong { color: var(--text-heading); font-weight: 600; }
+    .rv-badge { font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: var(--gilt-soft); color: var(--gilt); }
+    .rv-mod { font-size: .78rem; color: var(--accent-light); }
+    .rv-reply { margin-top: 4px; padding: 10px 12px; border-radius: 10px; background: var(--surface-thistle); font-size: .86rem; color: var(--text); }
+    .rv-reply b { color: var(--text-heading); }
+    .rv-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+    .rv-empty { text-align: center; color: var(--text-muted); margin: 0 auto 6px; max-width: 46ch; }
+</style>
+{% if rv_sum.count %}
+<div class="rv-head">
+    <span class="rv-score">{{ "%.1f"|format(rv_sum.avg)|replace('.', ',') }}</span>
+    {{ stars(rv_sum.avg) }}
+    <span class="rv-count">{{ rv_sum.count }} {{ 'отзив' if rv_sum.count == 1 else 'отзива' }}</span>
+</div>
+<ul class="rv-grid">
+    {% for r in rv_list %}
+    <li class="rv-card">
+        {{ stars(r.rating) }}
+        {% if r.title %}<h3>{{ r.title }}</h3>{% endif %}
+        <p>{{ r.body }}</p>
+        {% if r.reply %}<div class="rv-reply"><b>Отговор от {{ brand().name }}:</b> {{ r.reply }}</div>{% endif %}
+        <div class="rv-meta">
+            <strong>{{ r.author }}</strong>
+            {% if r.verified %}<span class="rv-badge">✓ Купено разчитане</span>{% endif %}
+            {% if not rv_key %}<span class="rv-mod">{{ r.feature_name }}</span>{% endif %}
+            <time datetime="{{ r.date }}">{{ r.date[8:10] }}.{{ r.date[5:7] }}.{{ r.date[:4] }}</time>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="rv-empty">Още няма отзиви{% if rv_key %} за това разчитане{% endif %}. Ако вече го имаш — кажи как ти се стори.</p>
+{% endif %}
+<div class="rv-actions">
+    {% if rv_sum.count %}<a class="btn btn-ghost" href="/otzivi{{ '?modul=' ~ rv_key if rv_key else '' }}" data-cta="reviews:all">Всички отзиви</a>{% endif %}
+    <a class="btn btn-ghost" href="/otzivi?{{ 'modul=' ~ rv_key ~ '&' if rv_key else '' }}napishi=1#napishi" data-cta="reviews:write">★ Напиши отзив</a>
+</div>

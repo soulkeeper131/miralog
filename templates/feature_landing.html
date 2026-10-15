@@ -24,18 +24,9 @@
     <meta name="twitter:description" content="{{ seo_description }}">
     {% if seo_image %}<meta name="twitter:image" content="{{ seo_image }}">{% endif %}
 
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "Service",
-        "name": "{{ page.name }}",
-        "serviceType": "{{ page.name }}",
-        "provider": { "@type": "Organization", "name": "{{ brand().name }}", "url": "{{ seo_url }}" },
-        "url": "{{ seo_url }}",
-        "inLanguage": "bg",
-        "description": "{{ seo_description }}"
-    }
-    </script>
+    {# Product, а не Service: Google показва звезди (review snippet) само за
+       продукти, не за услуга или за самата фирма на собствения ѝ сайт. #}
+    <script type="application/ld+json">{{ product_ld | tojson }}</script>
     {% if page.faq %}
     <script type="application/ld+json">
     {
@@ -213,6 +204,17 @@
         </div>
     </section>
 
+    <section id="otzivi">
+        <div class="wrap">
+            <div class="sec-head">
+                <h2>Какво казват хората</h2>
+                <p>Отзиви от потребители с акаунт, които имат това разчитане.</p>
+            </div>
+            {% set rv_list = reviews %}{% set rv_sum = review_sum %}{% set rv_key = page.key %}
+            {% include "_reviews_block.html" %}
+        </div>
+    </section>
+
     {% if page.faq %}
     <section>
         <div class="wrap">
@@ -299,6 +301,6 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=9"></script>
+    <script src="/static/consent.js?v=10"></script>
 </body>
 </html>

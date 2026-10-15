@@ -444,6 +444,21 @@
         </div>
     </section>
 
+    {% set _rs = review_summary() %}
+    {% if _rs.count %}
+    <section id="otzivi">
+        <div class="wrap">
+            <div class="sec-head">
+                <span class="mark">★</span>
+                <h2>Какво казват хората</h2>
+                <p>Отзиви от потребители с акаунт — за разчитанията, които имат.</p>
+            </div>
+            {% set rv_list = approved_reviews(None, 6) %}{% set rv_sum = _rs %}{% set rv_key = None %}
+            {% include "_reviews_block.html" %}
+        </div>
+    </section>
+    {% endif %}
+
     <section>
         <div class="wrap">
             <div class="final">
@@ -506,6 +521,6 @@
             io.observe(sec);
         })();
     </script>
-    <script src="/static/consent.js?v=9"></script>
+    <script src="/static/consent.js?v=10"></script>
 </body>
 </html>

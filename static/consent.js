@@ -152,6 +152,7 @@
         purchase: 'Purchase',
         sign_up: 'CompleteRegistration',
         generate_lead: 'Lead',             // безплатната карта на /start
+        contact: 'Contact',                // контактната форма
         generate_synastry: 'ViewContent',
         generate_numerology: 'ViewContent',
     };

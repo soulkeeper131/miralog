@@ -526,7 +526,9 @@
                     const target = onAdminHost ? '/admin' : ('https://{{ admin_host }}/admin?token=' + encodeURIComponent(data.token));
                     window.location.replace(target);
                 } else {
-                    window.location.replace('/dashboard');
+                    // ?next=/otzivi… — обратно там, откъдето е дошъл (само наш адрес).
+                    const nxt = new URLSearchParams(location.search).get('next') || '';
+                    window.location.replace(/^\/[^\/\\]/.test(nxt) ? nxt : '/dashboard');
                 }
             } catch (err) {
                 errorEl.textContent = friendlyError(err);
@@ -543,6 +545,6 @@
             }
         });
     </script>
-    <script src="/static/consent.js?v=9"></script>
+    <script src="/static/consent.js?v=10"></script>
 </body>
 </html>

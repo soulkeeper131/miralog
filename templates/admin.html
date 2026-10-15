@@ -483,6 +483,7 @@
                 <div class="tab" role="tab" tabindex="0" data-tab="settings">Настройки</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="audit">Активност</div>
                 <div class="tab" role="tab" tabindex="0" data-tab="ai">AI разходи</div>
+                <div class="tab" role="tab" tabindex="0" data-tab="feedback">Отзиви и писма <span id="fbBadge"></span></div>
                 <div class="tab" role="tab" tabindex="0" data-tab="logs">Логове</div>
             </div>
 
@@ -609,6 +610,24 @@
                         </select>
                     </div>
                     <div id="aiBody"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-feedback">
+                <div class="section">
+                    <h2>Отзиви</h2>
+                    <p class="hint">На сайта и в звездите за Google влизат само одобрените. Критичните не ги отказвай само защото са критични — отговори им. Отказвай спам, обиди, лични данни, реклама.</p>
+                    <div class="toolbar">
+                        <select id="rvStatus"><option value="pending">Чакат одобрение</option><option value="approved">Одобрени</option><option value="rejected">Отказани</option><option value="all">Всички</option></select>
+                    </div>
+                    <div id="rvBody"></div>
+                </div>
+                <div class="section">
+                    <h2>Съобщения от контактната форма</h2>
+                    <div class="toolbar">
+                        <select id="msgStatus"><option value="new">Нови</option><option value="answered">Отговорени</option><option value="closed">Затворени</option><option value="all">Всички</option></select>
+                    </div>
+                    <div id="msgBody"></div>
                 </div>
             </div>
 
@@ -752,6 +771,7 @@
             logs: loadLogs,
             ai: loadAiUsage,
             reports: loadReports,
+            feedback: loadFeedback,
         };
         const loaded = {};
         function showTab(name, tabEl) {
@@ -771,6 +791,103 @@
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showTab(tabEl.dataset.tab, tabEl); }
             });
         });
+
+        /* ---------- Отзиви и съобщения ---------- */
+        function starsTxt(n) { return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n); }
+        async function loadFeedback() { await Promise.all([loadReviewsAdmin(), loadMessagesAdmin()]); }
+        async function loadReviewsAdmin() {
+            const el = document.getElementById('rvBody');
+            el.innerHTML = '<div class="hint">Зареждане…</div>';
+            try {
+                const d = await api('/api/admin/reviews?status=' + document.getElementById('rvStatus').value);
+                const c = d.counts || {};
+                updateFeedbackBadge(c.pending || 0, null);
+                if (!d.reviews.length) { el.innerHTML = '<div class="empty">Няма отзиви тук.</div>'; return; }
+                el.innerHTML = d.reviews.map(function (r) {
+                    return '<div class="card" style="margin-bottom:12px;padding:14px 16px;" data-rv="' + r.id + '">' +
+                        '<div><strong>' + escapeHtml(starsTxt(r.rating)) + '</strong> · ' + escapeHtml(r.feature_name) +
+                        ' · ' + escapeHtml(r.author) + ' <span class="hint">(' + escapeHtml(r.email || '#' + r.user_id) + ')</span>' +
+                        (r.verified ? ' · <span class="hint">купено</span>' : '') + ' · <span class="hint">' + escapeHtml(sofia(r.updated_at || r.created_at)) + ' · ' + escapeHtml(({ pending: 'чака', approved: 'одобрен', rejected: 'отказан' })[r.status] || r.status) + '</span></div>' +
+                        (r.title ? '<div style="margin-top:6px;font-weight:600;">' + escapeHtml(r.title) + '</div>' : '') +
+                        '<div style="margin-top:6px;white-space:pre-line;">' + escapeHtml(r.body) + '</div>' +
+                        '<div class="form-group" style="margin-top:10px;"><textarea class="rv-reply" placeholder="Отговор от нас (по желание, показва се под отзива)">' + escapeHtml(r.reply || '') + '</textarea></div>' +
+                        '<div class="btn-row">' +
+                            (r.status !== 'approved' ? '<button class="btn btn-sm" data-act="approved">Одобри</button>' : '') +
+                            (r.status !== 'rejected' ? '<button class="btn btn-ghost btn-sm" data-act="rejected">Откажи</button>' : '') +
+                            '<button class="btn btn-ghost btn-sm" data-act="reply">Запази отговора</button>' +
+                            '<button class="btn btn-danger btn-sm" data-act="delete">Изтрий</button></div></div>';
+                }).join('');
+                el.querySelectorAll('[data-rv]').forEach(function (card) {
+                    card.addEventListener('click', async function (e) {
+                        const b = e.target.closest('button[data-act]'); if (!b) return;
+                        const id = card.dataset.rv, act = b.dataset.act;
+                        try {
+                            if (act === 'delete') {
+                                if (!confirm('Да изтрия ли отзива завинаги?')) return;
+                                await api('/api/admin/reviews/' + id, { method: 'DELETE', headers: authHeaders() });
+                            } else {
+                                const body = act === 'reply' ? { reply: card.querySelector('.rv-reply').value }
+                                    : { status: act, reply: card.querySelector('.rv-reply').value };
+                                await api('/api/admin/reviews/' + id, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(body) });
+                            }
+                            loadReviewsAdmin();
+                        } catch (err) { alert(err.message); }
+                    });
+                });
+            } catch (e) { el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>'; }
+        }
+        async function loadMessagesAdmin() {
+            const el = document.getElementById('msgBody');
+            el.innerHTML = '<div class="hint">Зареждане…</div>';
+            try {
+                const d = await api('/api/admin/messages?status=' + document.getElementById('msgStatus').value);
+                updateFeedbackBadge(null, (d.counts || {}).new || 0);
+                if (!d.messages.length) { el.innerHTML = '<div class="empty">Няма съобщения тук.</div>'; return; }
+                el.innerHTML = d.messages.map(function (m) {
+                    return '<div class="card" style="margin-bottom:12px;padding:14px 16px;" data-msg="' + m.id + '">' +
+                        '<div><strong>' + escapeHtml(m.topic_name) + '</strong> · ' + escapeHtml(m.name || '—') +
+                        ' &lt;<a href="mailto:' + escapeHtml(m.email) + '">' + escapeHtml(m.email) + '</a>&gt;' +
+                        (m.user_id ? ' · акаунт #' + m.user_id : '') + ' · <span class="hint">' + escapeHtml(sofia(m.created_at)) + ' · ' + escapeHtml(({ new: 'ново', answered: 'отговорено', closed: 'затворено' })[m.status] || m.status) + '</span></div>' +
+                        '<div style="margin-top:6px;white-space:pre-line;">' + escapeHtml(m.message) + '</div>' +
+                        (m.reply ? '<div class="hint" style="margin-top:8px;white-space:pre-line;">Отговорено ' + escapeHtml(sofia(m.replied_at)) + ':\n' + escapeHtml(m.reply) + '</div>' : '') +
+                        '<div class="form-group" style="margin-top:10px;"><textarea class="msg-reply" placeholder="Отговор — тръгва по имейл до клиента"></textarea></div>' +
+                        '<div class="btn-row"><button class="btn btn-sm" data-act="reply">Изпрати отговора</button>' +
+                            (m.status !== 'closed' ? '<button class="btn btn-ghost btn-sm" data-act="closed">Затвори без отговор</button>' : '') + '</div></div>';
+                }).join('');
+                el.querySelectorAll('[data-msg]').forEach(function (card) {
+                    card.addEventListener('click', async function (e) {
+                        const b = e.target.closest('button[data-act]'); if (!b) return;
+                        const id = card.dataset.msg;
+                        try {
+                            if (b.dataset.act === 'reply') {
+                                const text = card.querySelector('.msg-reply').value.trim();
+                                if (!text) { alert('Напиши отговора.'); return; }
+                                b.disabled = true;
+                                await api('/api/admin/messages/' + id + '/reply', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ text: text }) });
+                            } else {
+                                await api('/api/admin/messages/' + id, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ status: 'closed' }) });
+                            }
+                            loadMessagesAdmin();
+                        } catch (err) { b.disabled = false; alert(err.message); }
+                    });
+                });
+            } catch (e) { el.innerHTML = '<div class="error">' + escapeHtml(e.message) + '</div>'; }
+        }
+        const _fbCounts = { rv: 0, msg: 0 };
+        function updateFeedbackBadge(rv, msg) {
+            if (rv !== null) _fbCounts.rv = rv;
+            if (msg !== null) _fbCounts.msg = msg;
+            const n = _fbCounts.rv + _fbCounts.msg;
+            document.getElementById('fbBadge').textContent = n ? '(' + n + ')' : '';
+        }
+        // Бройката чакащи се вижда на таба още при отваряне на панела.
+        setTimeout(function () {
+            if (forbidden) return;
+            api('/api/admin/reviews?status=pending').then(function (d) { updateFeedbackBadge((d.counts || {}).pending || 0, null); }).catch(function () {});
+            api('/api/admin/messages?status=new').then(function (d) { updateFeedbackBadge(null, (d.counts || {}).new || 0); }).catch(function () {});
+        }, 1500);
+        document.getElementById('rvStatus').addEventListener('change', loadReviewsAdmin);
+        document.getElementById('msgStatus').addEventListener('change', loadMessagesAdmin);
 
         /* ---------- НАП (Н-18) ---------- */
         async function loadNap() {
@@ -2190,6 +2307,9 @@
                     '<label class="check"><input type="checkbox" id="ntSaft"' +
                         (nt.saft !== false ? ' checked' : '') +
                         '> Одиторски файл за НАП — готовият файл на 1-во число и напомняне преди 15-о</label>' +
+                    '<label class="check"><input type="checkbox" id="ntMessages"' +
+                        (nt.messages !== false ? ' checked' : '') +
+                        '> Нов отзив за одобрение и ново съобщение от контактната форма</label>' +
                     '<div class="form-grid" style="margin-top:12px;">' +
                         '<div class="form-group"><label for="ntEmail">Адрес за известия</label>' +
                             '<input type="email" id="ntEmail" value="' +
@@ -2517,6 +2637,7 @@
                         problems: document.getElementById('ntProblems').checked,
                         daily: document.getElementById('ntDaily').checked,
                         saft: document.getElementById('ntSaft').checked,
+                        messages: document.getElementById('ntMessages').checked,
                     },
                 }, 'Настройките за известия са запазени.');
             });

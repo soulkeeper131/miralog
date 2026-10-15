@@ -16,6 +16,8 @@
         </nav>
         <p>
             <a href="/#ceni">Цени</a> ·
+            <a href="/otzivi">Отзиви</a> ·
+            <a href="/kontakti">Контакти</a> ·
             {% if viewer().logged_in %}<a href="/dashboard">Моите карти</a>{% else %}<a href="/login">Вход</a>{% endif %}
             {% set _legal_email = legal_contact_email() %}
             {% if _legal_email %} · <a href="mailto:{{ _legal_email }}">{{ _legal_email }}</a>{% endif %}
