@@ -2026,6 +2026,33 @@ RATE_HITS: dict = {}
 _RATE_LOCK = threading.Lock()
 
 
+# Мрежите на Cloudflare (https://www.cloudflare.com/ips). Когато сайтът е зад
+# проксито им („оранжевият облак“), към Coolify се свързва Cloudflare, а не
+# посетителят — истинският IP е в CF-Connecting-IP, която Cloudflare винаги
+# пише сам. Вярваме ѝ само когато връзката наистина идва от тези мрежи.
+CLOUDFLARE_NETS = (
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32",
+    "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
+)
+_CF_NETWORKS = None
+
+
+def _from_cloudflare(ip: str) -> bool:
+    import ipaddress
+    global _CF_NETWORKS
+    if _CF_NETWORKS is None:
+        _CF_NETWORKS = [ipaddress.ip_network(n) for n in CLOUDFLARE_NETS]
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in _CF_NETWORKS if n.version == addr.version)
+
+
 def client_ip(request: Request) -> str:
     """IP на посетителя. Празно, когато не може да се установи със сигурност.
 
@@ -2049,6 +2076,13 @@ def client_ip(request: Request) -> str:
         # Без заглавката всички посетители биха делили един брояч и биха се
         # спрели взаимно — по-добре без ограничение по IP.
         return ""
+    if _from_cloudflare(forwarded):
+        real = (request.headers.get("cf-connecting-ip") or "").strip()
+        try:
+            ipaddress.ip_address(real)
+        except ValueError:
+            return ""  # същото като по-горе: по-добре без лимит, отколкото общ
+        return real
     return forwarded
 
 

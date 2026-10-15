@@ -161,6 +161,29 @@ def test_unknown_ip_behind_proxy_is_not_guessed(app):
     assert app.client_ip(r) == ""
 
 
+def test_real_ip_behind_cloudflare(app):
+    """Зад Cloudflare към Coolify се свързва Cloudflare: всички посетители
+    биха били няколко IP на Cloudflare и лимитите биха спирали истински хора."""
+    r = _req({"X-Forwarded-For": "5.6.7.8, 162.158.1.2", "CF-Connecting-IP": "5.6.7.8"},
+             client=("10.0.1.7", 5000))
+    assert app.client_ip(r) == "5.6.7.8"
+    r = _req({"X-Forwarded-For": "2a06:98c1::5", "CF-Connecting-IP": "2001:db8::1"},
+             client=("10.0.1.7", 5000))
+    assert app.client_ip(r) == "2001:db8::1"
+
+
+def test_cf_header_is_ignored_when_not_from_cloudflare(app):
+    """Сървърът е достъпен и пряко: тогава CF-Connecting-IP е написан от клиента."""
+    r = _req({"X-Forwarded-For": "5.6.7.8", "CF-Connecting-IP": "1.1.1.1"},
+             client=("10.0.1.7", 5000))
+    assert app.client_ip(r) == "5.6.7.8"
+
+
+def test_cloudflare_without_the_header_is_not_guessed(app):
+    r = _req({"X-Forwarded-For": "162.158.1.2"}, client=("10.0.1.7", 5000))
+    assert app.client_ip(r) == ""
+
+
 # --- 4. Ограничения на опитите ------------------------------------------------
 
 def test_forgot_password_mails_one_address_at_most_three_times(app, user, monkeypatch):
