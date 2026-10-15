@@ -78,13 +78,13 @@
         <div class="wrap">
             <div class="page-nav">
                 <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
-                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                    <img class="page-logo" src="{{ brand().logo_small }}" alt="{{ brand().name }}">
                 </a>
                 <a class="back-link" href="/">← Начало</a>
             </div>
             <div class="hero-glyph" aria-hidden="true">{{ planet.glyph }}</div>
             <p><span class="kicker">Позиция в наталната карта</span></p>
-            <h1>{{ planet.name }} в {{ sign.name }}</h1>
+            <h1>{{ planet.name }} {{ sign.name|v_before }} {{ sign.name }}</h1>
             <p class="lede">Какво означава тази позиция — общото значение за характера, любовта и работата.</p>
             <div class="cta-row">
                 {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_sign:start">{{ _c.label }}</a>
@@ -106,7 +106,7 @@
 
             <div class="wall">
                 <h3>Това е общият случай — не точното ти разчитане</h3>
-                <p>Горното описва {{ planet.name|lower }} в {{ sign.name }} общо за всички, родени с тази позиция. В <strong>твоята</strong> карта значението зависи от дома, в който пада, и от аспектите с другите планети — една и съща позиция може да значи нещо съвсем различно при двама души.</p>
+                <p>Горното описва {{ planet.name|lower }} {{ sign.name|v_before }} {{ sign.name }} общо за всички, родени с тази позиция. В <strong>твоята</strong> карта значението зависи от дома, в който пада, и от аспектите с другите планети — една и съща позиция може да значи нещо съвсем различно при двама души.</p>
                 <div class="cta-row">
                     {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_sign:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
@@ -125,7 +125,7 @@
         <div class="wrap">
             <div class="sec-head">
                 <span class="mark">{{ planet.glyph }}</span>
-                <h2>Другите планети в {{ sign.name }}</h2>
+                <h2>Другите планети {{ sign.name|v_before }} {{ sign.name }}</h2>
                 <p>Виж какво значат останалите планети в същия знак.</p>
             </div>
             <div class="related related--chips">
@@ -211,7 +211,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=10"></script>
+    <script src="/static/consent.js?v=11"></script>
     {% if not body_html %}
     <script>
         (async function() {

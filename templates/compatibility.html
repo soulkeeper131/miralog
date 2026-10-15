@@ -91,7 +91,7 @@
         <div class="wrap">
             <div class="page-nav">
                 <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
-                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                    <img class="page-logo" src="{{ brand().logo_small }}" alt="{{ brand().name }}">
                 </a>
                 <a class="back-link" href="/savmestimost">← Всички двойки</a>
             </div>
@@ -246,7 +246,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=10"></script>
+    <script src="/static/consent.js?v=11"></script>
     {% if not body_html %}
     <script>
         (async function() {

@@ -35,14 +35,8 @@ n.queue=[]}(window, document);
 // Meta's own gate. Nothing leaves the browser until this is lifted.
 fbq('consent', 'revoke');
 window.FB_PIXEL_ID = '{{ fbid }}';
-// The script itself loads after `load` so it never blocks rendering. It sets
-// no cookie on its own — only init does, and that waits for consent.
-window.addEventListener('load', function () {
-  var t = document.createElement('script');
-  t.async = true;
-  t.src = 'https://connect.facebook.net/en_US/fbevents.js';
-  document.head.appendChild(t);
-});
+// Самият скрипт (118 KB) се тегли чак след съгласие — consent.js → grant().
+// Преди това нищо от Meta не може да тръгне, а скриптът само бавеше страницата.
 </script>
 {# Без <noscript> пиксел: той пращаше PageView без съгласие. #}
 <!-- End Meta Pixel -->
@@ -85,11 +79,16 @@ window.addEventListener('load', function () {
 
   // gtag loads after `load` so it never blocks the main thread. The consent
   // layer above keeps it dormant until the visitor opts in.
+  // След `load` и когато браузърът е свободен (до 1,5 s): събитията чакат в
+  // dataLayer, а страницата не се бави от 180 KB чужд код.
   window.addEventListener('load', function () {
-    var g = document.createElement('script');
-    g.async = true;
-    g.src = 'https://www.googletagmanager.com/gtag/js?id={{ gid }}';
-    document.head.appendChild(g);
+    var go = function () {
+      var g = document.createElement('script');
+      g.async = true;
+      g.src = 'https://www.googletagmanager.com/gtag/js?id={{ gid }}';
+      document.head.appendChild(g);
+    };
+    if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 1500 }); else setTimeout(go, 300);
   });
 </script>
 {% endif %}

@@ -1156,6 +1156,10 @@ def brand() -> dict:
         "tagline": values["brand_tagline"],
         "domain": values["brand_domain"],
         "logo": values["brand_logo"],
+        # Малкото лого в горния ъгъл (показва се 40×40): 7 KB WebP вместо
+        # 68 KB PNG на всяка страница. Каченото от админа се ползва както е.
+        "logo_small": ("/static/logo-header-80.webp" if values["brand_logo"] == "/static/logo-header.png"
+                       else values["brand_logo"]),
         "logo_full": values["brand_logo_full"],
         "slug": brand_slug(values["brand_name"]),
     }
@@ -1456,6 +1460,22 @@ def _is_oauth_auth_path(path: str) -> bool:
         and parts[2] in OAUTH_ENDPOINTS
         and parts[3] in ("start", "callback")
     )
+
+
+@app.middleware("http")
+async def strip_trailing_slash(request: Request, call_next):
+    """/horoskop/ → /horoskop с 301. Вграденото пренасочване на Starlette беше
+    307 към http:// (зад проксито не знае, че е https) — временно и към
+    небезопасния адрес. Относителният адрес оставя браузъра на същия протокол."""
+    path = request.url.path or "/"
+    if (len(path) > 1 and path.endswith("/") and request.method in ("GET", "HEAD")
+            and not path.startswith(("/api/", "/static/", "/uploads/"))):
+        # „/“ + без крайните наклонени — никога „//друг-сайт“ (отворено пренасочване).
+        target = "/" + path.strip("/")
+        if request.url.query:
+            target += "?" + request.url.query
+        return RedirectResponse(target, status_code=301)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -4369,6 +4389,14 @@ HOUSE_TOPICS = {
 }
 
 
+def v_before(word: str) -> str:
+    """„в“ или „във“ пред думата: „във Водолей“, „във Везни“, „в Овен“."""
+    return "във" if (word or "")[:1].lower() in ("в", "ф") else "в"
+
+
+templates.env.filters["v_before"] = v_before
+
+
 def house_in_sign(planet_sign_idx: int, sign_idx: int) -> int:
     """Домът на планета за зодия: домовете са по цял знак — 1-ви дом е самият знак."""
     return (planet_sign_idx - sign_idx) % 12 + 1
@@ -4912,6 +4940,9 @@ def public_base_url(request: Optional[Request] = None) -> str:
     if request is None:
         return "http://127.0.0.1:8000"
     base = str(request.base_url).rstrip("/")
+    # www.<домейн> е същият сайт: canonical и og:url винаги без www, иначе
+    # Google вижда два сайта с еднакво съдържание.
+    base = re.sub(r"^(https?://)www\.", r"\1", base)
     # Trust the proxy's own header before rewriting anything.
     proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
     if proto == "https" and base.startswith("http://"):
@@ -12913,6 +12944,12 @@ async def share_page(request: Request, token: str):
                         status_code=200 if meta else 404,
                         headers={"X-Robots-Tag": "noindex, nofollow"})
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    """Браузърите и ботовете искат /favicon.ico — досега получаваха 404."""
+    return RedirectResponse("/static/favicon-32.png", status_code=301)
+
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def privacy_page(request: Request):
     return HTMLResponse(templates.get_template("privacy.html").render({"request": request}))
@@ -14163,10 +14200,11 @@ async def planet_sign_page(request: Request, planet_slug: str, sign_slug: str):
 
     cached = get_planet_sign(planet["key"], sign["sign"])
     ctx = seo_context(request, path=f"/{planet_slug}-v-{sign_slug}")
-    ctx["seo_title"] = f"{planet['name']} в {sign['name']} — какво означава | {brand_name()}"
-    ctx["seo_description"] = (f"{planet['name']} в {sign['name']}: общото значение за характера, любовта и работата. "
+    v = v_before(sign["name"])
+    ctx["seo_title"] = f"{planet['name']} {v} {sign['name']}: характер, любов, работа | {brand_name()}"
+    ctx["seo_description"] = (f"{planet['name']} {v} {sign['name']}: общото значение за характера, любовта и работата. "
                               f"Виж какво значи конкретно в твоята натална карта.")
-    ctx["seo_keywords"] = f"{planet['name'].lower()} в {sign['name'].lower()}, {planet['name'].lower()} в знак {sign['name'].lower()}"
+    ctx["seo_keywords"] = f"{planet['name'].lower()} {v} {sign['name'].lower()}, {planet['name'].lower()} в знак {sign['name'].lower()}"
     ctx["planet"] = planet
     ctx["sign"] = sign
     ctx["planets"] = PLANETS

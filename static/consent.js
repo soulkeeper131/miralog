@@ -36,6 +36,13 @@
         // after, so an accepting visitor is still counted.
         loadRecorder();
         if (typeof window.fbq === 'function' && window.FB_PIXEL_ID) {
+            if (!document.getElementById('fb-pixel-js')) {
+                var fb = document.createElement('script');
+                fb.id = 'fb-pixel-js';
+                fb.async = true;
+                fb.src = 'https://connect.facebook.net/en_US/fbevents.js';
+                document.head.appendChild(fb);
+            }
             window.fbq('consent', 'grant');
             window.fbq('init', window.FB_PIXEL_ID);
             window.fbq('track', 'PageView');

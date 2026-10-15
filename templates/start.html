@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/ui.css?v=2">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         /* The mark takes you home — the convention every visitor knows. */
@@ -667,7 +667,7 @@
 
     <div class="wrap">
         <div class="page-nav">
-            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
+            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo_small }}" alt="{{ brand().name }}"></a>
             <a href="/" class="back-link">← Начало</a>
         </div>
 
@@ -1850,6 +1850,6 @@
         });
 
     </script>
-    <script src="/static/consent.js?v=10"></script>
+    <script src="/static/consent.js?v=11"></script>
 </body>
 </html>

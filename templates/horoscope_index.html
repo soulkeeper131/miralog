@@ -112,7 +112,7 @@
         <div class="wrap">
             <div class="page-nav">
                 <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
-                    <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+                    <img class="page-logo" src="{{ brand().logo_small }}" alt="{{ brand().name }}">
                 </a>
                 <a class="back-link" href="/">← Начало</a>
             </div>
@@ -286,7 +286,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=10"></script>
+    <script src="/static/consent.js?v=11"></script>
     {% set _sc = primary_cta('horoscope', 'Твоят личен хороскоп') %}
     {% with sticky_href = (_sc.href if _sc.logged_in else '/start?from=horoscope'),
             sticky_label = ('☽ Отвори личния си хороскоп' if _sc.logged_in else '☽ Личен хороскоп — безплатно'),
