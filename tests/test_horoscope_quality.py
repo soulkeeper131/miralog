@@ -298,8 +298,19 @@ def test_wrong_number_of_sections_or_size_is_rejected(app, sign_reply, personal_
         _validate_sign(app, nine)
     with pytest.raises(ReadingRejected, match="размерът"):
         _validate_sign(app, sign_reply(sentences=1))
-    with pytest.raises(ReadingRejected, match="размерът"):
+    # Прекалено дълъг, но цял — само бележка (SoftRejected носи годния текст).
+    with pytest.raises(bg_text.SoftRejected, match="знака"):
         _validate_sign(app, sign_reply(sentences=40))
+
+
+def test_long_personal_horoscope_is_accepted(app, personal_reply):
+    """Истинските лични хороскопи (9 раздела) излизат по 8–10 хил. знака —
+    на production се отхвърляха и пишеха втори път."""
+    raw = personal_reply(sentences=8)
+    body = raw.split("---END---", 1)[1]
+    assert 8000 < len(body) < 11000
+    out = validate_horoscope(raw, titles=app.PERSONAL_SECTION_TITLES)
+    assert out.startswith("---SUMMARY---")
     five = make_reply(app.SIGN_SECTION_TITLES[:5])
     with pytest.raises(ReadingRejected, match="разделите са 5"):
         _validate_sign(app, five)

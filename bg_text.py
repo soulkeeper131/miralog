@@ -279,9 +279,14 @@ def validate_horoscope(raw: str, *, titles: list, teaser: bool = False,
         lines[i] = f"{n}. **{titles[n - 1]}**" + (f" {h.group(3)}" if h.group(3) else "")
     body = "\n".join(lines[marks[0][0]:]).strip()
 
-    if not (READING_MIN_CHARS <= len(body) <= READING_MAX_CHARS):
+    # Прекалено кратък е счупен текст; прекалено дълъг е цял — само го отбелязваме
+    # (личните с 9 раздела излизат по 8–10 хил. знака и се отхвърляха напразно).
+    max_chars = READING_MAX_CHARS * len(titles) // 6
+    if len(body) < READING_MIN_CHARS:
         raise ReadingRejected(f"размерът на текста е {len(body)} знака "
-                              f"(очакват се {READING_MIN_CHARS}-{READING_MAX_CHARS})")
+                              f"(очакват се поне {READING_MIN_CHARS})")
+    if len(body) > max_chars:
+        soft.append(f"текстът е {len(body)} знака (до {max_chars})")
     if body.rstrip("*_ \n\t")[-1:] not in _SENTENCE_END:
         raise ReadingRejected("текстът не свършва с цяло изречение (отрязан е)")
 
