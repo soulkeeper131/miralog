@@ -149,6 +149,27 @@ def create_feature_checkout(
     return session.url
 
 
+def _bundle_line(items: list, brand: str, bundle_name: str) -> list:
+    """Пакетът е един ред в Stripe: „Всички модули (6 разчитания) — 25 €“.
+
+    Досега страницата за плащане показваше шестте модула с разделената между
+    тях цена на пакета (4,20 €, 4,16 €…) — изглеждаше като други цени, не като
+    отстъпка. Кои модули влизат и колко се пада на всеки остава в metadata
+    (feature_keys / feature_amounts) — по нея се отключва и пишат документите."""
+    names = ", ".join(i["name"] for i in items)
+    return [{
+        "price_data": {
+            "currency": (items[0].get("currency") or "eur").lower(),
+            "unit_amount": sum(int(i["amount_cents"]) for i in items),
+            "product_data": {
+                "name": f"{brand} — {bundle_name} ({len(items)} разчитания)",
+                "description": f"Включва: {names}."[:500],
+            },
+        },
+        "quantity": 1,
+    }]
+
+
 def create_features_checkout(
     *,
     customer_email: str,
@@ -160,6 +181,7 @@ def create_features_checkout(
     brand: str = "АстроКарта",
     bundle: bool = False,
     extra_metadata: Optional[dict] = None,
+    bundle_name: str = "Всички модули",
 ) -> str:
     """Checkout for several one-off unlocks at once.
 
@@ -179,7 +201,7 @@ def create_features_checkout(
         # Dashboard (банков превод, SEPA и др.). От API 2026-09-30.endive
         # (stripe 16) „payment_method_types“ дава 400 и плащане не тръгва.
         "allowed_payment_method_types": ["card"],
-        "line_items": [{
+        "line_items": _bundle_line(items, brand, bundle_name) if bundle else [{
             "price_data": {
                 "currency": (i.get("currency") or "eur").lower(),
                 "unit_amount": int(i["amount_cents"]),

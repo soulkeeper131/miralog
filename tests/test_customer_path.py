@@ -60,3 +60,51 @@ def test_locked_message_has_no_gender_or_package(app, user):
         check(user=(user["id"], user["email"])) if "user" in check.__code__.co_varnames else check((user["id"], user["email"]))
     msg = e.value.detail["message"]
     assert "пакета" not in msg and "включена" not in msg
+
+
+def _capture_stripe(monkeypatch):
+    import billing
+    sent = {}
+
+    class _S:
+        url = "https://checkout.stripe.com/x"
+
+    class _Checkout:
+        class Session:
+            @staticmethod
+            def create(**params):
+                sent.update(params)
+                return _S()
+
+    class _Stripe:
+        checkout = _Checkout
+
+    monkeypatch.setattr(billing, "get_stripe", lambda: _Stripe)
+    return billing, sent
+
+
+def test_bundle_is_one_line_on_the_stripe_page(app, monkeypatch):
+    """Пакетът се показваше като 6 модула по 4,16 € — като други цени, не като отстъпка."""
+    billing, sent = _capture_stripe(monkeypatch)
+    keys = ["profile", "period", "love", "akashic", "numerology", "moon"]
+    items = app.bundle_line_items(keys)
+    billing.create_features_checkout(customer_email="a@b.bg", customer_id=None, user_id=1, items=items,
+                                     success_url="https://x/s", cancel_url="https://x/c", bundle=True)
+    lines = sent["line_items"]
+    assert len(lines) == 1
+    assert lines[0]["price_data"]["unit_amount"] == app.BUNDLE_PRICE_CENTS
+    assert "Всички модули (6 разчитания)" in lines[0]["price_data"]["product_data"]["name"]
+    assert "Акашови записи" in lines[0]["price_data"]["product_data"]["description"]
+    # По metadata се отключва и пишат документите — не се е променила.
+    meta = sent["metadata"]
+    assert meta["bundle"] == "1" and meta["feature_keys"].split(",") == keys
+    assert sum(int(x.split(":")[1]) for x in meta["feature_amounts"].split(",")) == app.BUNDLE_PRICE_CENTS
+
+
+def test_separate_modules_stay_separate_lines(app, monkeypatch):
+    billing, sent = _capture_stripe(monkeypatch)
+    items = [{"key": "moon", "name": "Луна", "amount_cents": 299, "currency": "EUR"},
+             {"key": "love", "name": "Любов", "amount_cents": 500, "currency": "EUR"}]
+    billing.create_features_checkout(customer_email="a@b.bg", customer_id=None, user_id=1, items=items,
+                                     success_url="https://x/s", cancel_url="https://x/c")
+    assert [l["price_data"]["unit_amount"] for l in sent["line_items"]] == [299, 500]
