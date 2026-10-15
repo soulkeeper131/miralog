@@ -41,8 +41,10 @@ const BASE = 'http://localhost:8000', OUT = process.argv[2];
   ok(restored && (await p.inputValue('#fName')) === 'Мария Тестова', 'след презареждане картата се връща сама (данните не се губят)');
 
   await p.locator('#offerGrid label:has(input.offer-check[value="moon"])').click();   // както клиентът — по картата
-  const tog = p.locator('details.email-toggle summary'); if (!(await p.locator('#fEmail').isVisible())) await tog.click();
-  await p.fill('#fEmail', 'maria.e2e@example.com'); await p.fill('#fPassword', 'Parola-2026x');
+  // Имейлът е винаги видим; паролата е по избор и стои сгъната под „искам да си сложа парола сега“.
+  await p.fill('#fEmail', 'maria.e2e@example.com');
+  if (!(await p.locator('#fPassword').isVisible())) await p.locator('details.pass-toggle summary').click();
+  await p.fill('#fPassword', 'Parola-2026x');
   await p.locator('#termsAgree').check({ force: true });
   await p.locator('#saveBtn').click();
   const waiver = await dialog('Съгласен съм, продължи').catch(() => '');
@@ -60,7 +62,8 @@ const BASE = 'http://localhost:8000', OUT = process.argv[2];
 
   // Заключен модул → Отключи → съгласие → (тестово) отключване
   const picker = p.locator('#mod-root .mod-close, #mod-root [aria-label="Затвори"]').first();
-  if (await picker.isVisible().catch(() => false)) { await picker.click(); log.push('ℹ️ изборът на модули се отвори сам при първото влизане — затворих го'); }
+  if (await p.locator('.onb-sheet').isVisible().catch(() => false)) { await p.locator('#onb-skip').click(); log.push('ℹ️ въвеждането в 3 стъпки се отвори при първото влизане — пропуснах го'); }
+  else if (await picker.isVisible().catch(() => false)) { await picker.click(); log.push('ℹ️ изборът на модули се отвори сам при първото влизане — затворих го'); }
   else { await p.keyboard.press('Escape'); }
   await p.waitForTimeout(500);
   const card = p.locator('[data-section="akashic"], .section-card:has-text("Акашови")').first();
