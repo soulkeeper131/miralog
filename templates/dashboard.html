@@ -138,7 +138,8 @@
             border: 1px solid var(--border);
             background: var(--bg-card);
             color: var(--text);
-            font-size: 1.1rem;
+            font-size: 1.4rem;
+            line-height: 1;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
@@ -190,11 +191,14 @@
             color: var(--text-heading);
             font-size: 1.9rem;
         }
+        .topbar-left > div { min-width: 0; }
         .topbar .greeting {
             color: var(--text-muted);
             font-size: 0.85rem;
             line-height: 1.4;
             margin-top: 1px;
+            /* Дълго име не бива да пробива реда на телефон. */
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
         .topbar-right {
             display: flex;
@@ -241,6 +245,7 @@
         .btn-danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
         .btn-danger:hover { background: var(--danger-tint); }
         .btn-large { padding: 14px 28px; font-size: 1.05rem; min-height: 48px; min-width: 48px; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
         .btn-icon { padding: 10px; min-width: 44px; min-height: 44px; }
 
         /* Section headers */
@@ -291,7 +296,22 @@
             display: flex;
             gap: 8px;
             flex-shrink: 0;
+            align-items: center;
         }
+        /* „⋯“: изтриването е рядко и необратимо — не стои до главния бутон. */
+        .person-menu { position: relative; }
+        .person-menu > .btn { font-size: 1.2rem; letter-spacing: 1px; padding: 6px 10px; }
+        .menu-pop {
+            position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 150px;
+            padding: 4px; border-radius: 10px; background: var(--bg-card);
+            border: 1px solid var(--border); box-shadow: var(--shadow-card);
+        }
+        .menu-item {
+            display: block; width: 100%; min-height: 44px; padding: 10px 12px; text-align: left;
+            border: none; border-radius: 8px; background: none; cursor: pointer;
+            font: inherit; font-weight: 500; color: var(--danger);
+        }
+        .menu-item:hover, .menu-item:focus-visible { background: var(--danger-tint); outline: none; }
 
         /* „Днес“ води към дневния хороскоп, „Карта“ към цялата карта —
            основният бутон остава един. */
@@ -301,6 +321,16 @@
         /* Разчитанията на акаунта — веднъж за всички хора, защото покупките
            са на акаунта, а не на картата. */
         .mod-status { margin: 22px 0 6px; }
+        .mod-status + .mod-status { margin-top: 18px; }
+        .mod-status .section-header { flex-wrap: wrap; gap: 8px 12px; }
+        /* За кого се отварят разчитанията, когато в акаунта има повече хора. */
+        .mod-for { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text-muted); }
+        .mod-for select {
+            min-height: 40px; max-width: 200px; padding: 6px 10px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+            font: inherit; font-size: 16px;
+        }
+        .mod-for select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .mod-chips {
             display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
         }
@@ -345,12 +375,18 @@
             border-radius: 12px;
         }
         .empty p { margin-bottom: 6px; }
+        .empty .empty-title { color: var(--text-heading); font-size: 1.1rem; font-weight: 600; line-height: 1.4; }
+        .empty .btn { margin-top: 14px; }
 
         /* Add bar */
         .add-bar {
             text-align: center;
             margin: 28px 0;
         }
+        /* „2 от 3 карти“ до бутона — лимитът се вижда, преди формата да е попълнена. */
+        .quota { margin-top: 8px; font-size: .85rem; color: var(--text-muted); }
+        .quota-note { max-width: 460px; margin: 8px auto 0; font-size: .85rem; line-height: 1.5; color: var(--text-muted); }
+        .quota-note a { color: var(--accent-light); }
 
         /* Loading / error */
         .loading {
@@ -453,11 +489,14 @@
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
         .hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+        .hint-time { margin: -6px 0 12px; }
 
         .place-group { position: relative; }
+        /* В потока, не отгоре: в диалога със скрол absolute списъкът се
+           режеше от рамката му. */
         .place-results {
-            display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 20;
-            margin-top: 4px; max-height: 240px; overflow-y: auto;
+            display: none; position: static;
+            margin-top: 6px; max-height: 220px; overflow-y: auto;
             background: var(--bg-card); border: 1px solid var(--border);
             border-radius: 12px; box-shadow: var(--shadow-card);
         }
@@ -471,6 +510,7 @@
         .place-item:hover, .place-item.active { background: var(--surface-thistle); }
         .place-item .pl-name { color: var(--text-heading); font-weight: 600; }
         .place-item .pl-detail { color: var(--text-muted); font-size: 0.78rem; }
+        .field-error { margin-top: 6px; font-size: .82rem; line-height: 1.4; color: var(--danger-text); }
         .place-status { padding: 12px 14px; font-size: 0.82rem; color: var(--text-muted); text-align: center; }
         .modal-actions {
             display: flex;
@@ -551,7 +591,7 @@
                 <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="brand-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
                 <div>
                     <h1>{{ brand().name }}</h1>
-                    <div class="greeting">Здравей, <span id="userEmail">...</span>!</div>
+                    <div class="greeting" id="greeting">Здравей!</div>
                 </div>
             </div>
             <div class="topbar-right">
@@ -562,7 +602,7 @@
                 <a class="btn btn-cancel" id="settingsLink" href="#"><span class="btn-ico" aria-hidden="true">⚙</span>Настройки</a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <button class="btn btn-danger" onclick="logout()">Изход</button>
-                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Светла или тъмна тема" aria-label="Светла или тъмна тема"></button>
             </div>
         </div>
 
@@ -575,20 +615,31 @@
         </div>
 
         <div id="personsList">
-            <div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Зареждане на хората...</div>
+            <div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Зареждане на хората…</div>
         </div>
 
-        <!-- Какво е отключено в акаунта и какво още може да се прочете.
-             Скрито, докато няма поне един човек (връзките водят към негова карта). -->
-        <section class="mod-status" id="modStatus" aria-label="Твоите разчитания" hidden>
-            <div class="section-header"><h2>Твоите разчитания</h2></div>
+        <!-- Какво вече е твое (безплатното и купеното) и какво още може да се
+             прочете. Скрито, докато няма поне един човек: връзките водят към
+             негова карта. -->
+        <section class="mod-status" id="modOwn" aria-label="Твоите разчитания" hidden>
+            <div class="section-header">
+                <h2>Твоите разчитания</h2>
+                <label class="mod-for" id="modFor" hidden>Отваряй за
+                    <select id="modPerson" aria-label="За кого да се отварят разчитанията"></select></label>
+            </div>
+            <div class="mod-chips" id="ownChips"></div>
+        </section>
+        <section class="mod-status" id="modMore" aria-label="Още разчитания" hidden>
+            <div class="section-header"><h2>Още разчитания</h2></div>
             <div id="modBundle"></div>
             <div class="mod-chips" id="modChips"></div>
         </section>
 
         <!-- Add button -->
-        <div class="add-bar">
-            <button class="btn btn-primary btn-large" onclick="openAddModal()">＋ Добави човек</button>
+        <div class="add-bar" id="addBar">
+            <button class="btn btn-primary btn-large" id="addBtn" onclick="openAddModal()">＋ Добави човек</button>
+            <div class="quota" id="quotaInfo" hidden></div>
+            <p class="quota-note" id="quotaNote" hidden></p>
         </div>
     </div>
 
@@ -604,46 +655,48 @@
         <a href="#" id="adminLinkMobile" hidden>
             <span class="bn-ico" aria-hidden="true">⚒</span>Админ</a>
         <button type="button" onclick="toggleTheme()" id="themeToggleMobile"
-                aria-label="Смяна на тема">
-            <span class="bn-ico" aria-hidden="true">☀</span>Тема</button>
+                aria-label="Светла или тъмна тема">
+            <span class="bn-ico" aria-hidden="true">◐</span>Тема</button>
         <button type="button" onclick="logout()" class="bn-danger">
             <span class="bn-ico" aria-hidden="true">↪</span>Изход</button>
     </nav>
 
     <!-- Add Person Modal -->
     <div class="modal-overlay" id="addModal">
-        <div class="modal">
-            <h2>Добави човек</h2>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+            <h2 id="addTitle">Добави човек</h2>
             <div id="modalError" class="error-banner" style="display:none;"></div>
             <form id="addPersonForm">
                 <div class="form-group">
                     <label for="addName">Име</label>
-                    <input type="text" id="addName" required placeholder="Име на човека">
+                    <input type="text" id="addName" required placeholder="Име на човека" autocomplete="off">
                 </div>
+                <!-- Ден · Месец · Година — като на /start: българинът пише ден първи. -->
                 <div class="row-3">
                     <div class="form-group">
-                        <label for="addYear">Година</label>
-                        <input type="number" id="addYear" required placeholder="1988" min="1800" max="2100">
+                        <label for="addDay">Ден</label>
+                        <input type="number" id="addDay" required placeholder="8" min="1" max="31" inputmode="numeric">
                     </div>
                     <div class="form-group">
                         <label for="addMonth">Месец</label>
-                        <input type="number" id="addMonth" required placeholder="1" min="1" max="12">
+                        <input type="number" id="addMonth" required placeholder="1" min="1" max="12" inputmode="numeric">
                     </div>
                     <div class="form-group">
-                        <label for="addDay">Ден</label>
-                        <input type="number" id="addDay" required placeholder="8" min="1" max="31">
+                        <label for="addYear">Година</label>
+                        <input type="number" id="addYear" required placeholder="1988" min="1800" max="2100" inputmode="numeric">
                     </div>
                 </div>
                 <div class="row">
                     <div class="form-group">
-                        <label for="addHour">Час <span class="hint">(местно време, както е в акта за раждане)</span></label>
-                        <input type="number" id="addHour" value="12" min="0" max="23">
+                        <label for="addHour">Час</label>
+                        <input type="number" id="addHour" value="12" min="0" max="23" inputmode="numeric">
                     </div>
                     <div class="form-group">
                         <label for="addMinute">Минути</label>
-                        <input type="number" id="addMinute" value="0" min="0" max="59">
+                        <input type="number" id="addMinute" value="0" min="0" max="59" inputmode="numeric">
                     </div>
                 </div>
+                <div class="hint hint-time">Местно време, както е в акта за раждане.</div>
                 <label class="time-unknown-row">
                     <input type="checkbox" id="addTimeUnknown"
                            onchange="addHour.disabled = addMinute.disabled = this.checked">
@@ -651,24 +704,14 @@
                 </label>
                 <div class="form-group place-group">
                     <label for="addPlace">Място на раждане</label>
-                    <input type="text" id="addPlace" placeholder="Напр. София, Пловдив, Видин..." autocomplete="off">
+                    <input type="text" id="addPlace" placeholder="Напр. София, Пловдив, Видин…" autocomplete="off">
+                    <div id="placeError" class="field-error" role="alert" hidden></div>
                     <div id="placeResults" class="place-results"></div>
-                    <div class="hint">Потърси населено място — координатите и часовата зона се попълват автоматично.</div>
                 </div>
-                <div class="row">
-                    <div class="form-group">
-                        <label for="addLat">Геогр. ширина</label>
-                        <input type="number" id="addLat" step="any" required placeholder="42.6977">
-                    </div>
-                    <div class="form-group">
-                        <label for="addLon">Геогр. дължина</label>
-                        <input type="number" id="addLon" step="any" required placeholder="23.3219">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="addTimezone">Часова зона</label>
-                    <input type="text" id="addTimezone" value="Europe/Sofia" placeholder="Europe/Sofia">
-                </div>
+                <!-- Попълват се от избраното място; човекът не ги вижда. -->
+                <input type="hidden" id="addLat">
+                <input type="hidden" id="addLon">
+                <input type="hidden" id="addTimezone" value="Europe/Sofia">
                 <div class="modal-actions">
                     <button type="button" class="btn btn-cancel" onclick="closeAddModal()">Отказ</button>
                     <button type="submit" class="btn btn-primary" id="addSubmitBtn">Добави</button>
@@ -683,14 +726,9 @@
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
         }
 
+        // Темата е ◐: ☾ е Луната, а долната лента ги бъркаше.
         function updateThemeToggleIcon() {
-            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
-            // The bottom bar keeps its label, so only its glyph changes.
-            // Monochrome here: a colour emoji among the outline icons stands
-            // out as a mistake rather than a highlight.
-            const mobileIco = document.querySelector('#themeToggleMobile .bn-ico');
-            if (mobileIco) mobileIco.textContent = isLight ? '☾' : '☀';
+            document.getElementById('themeToggle').textContent = '◐';
         }
         function toggleTheme() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -728,9 +766,14 @@
             window.location.replace('/login');
         }
 
-        // Show email
-        const email = localStorage.getItem('miralog_email') || '...';
-        document.getElementById('userEmail').textContent = email;
+        // Поздравът е с името, не с имейла: първо името от Настройки, после
+        // първото име на първата карта (обикновено собствената), иначе без име.
+        let accountName = '';
+        let firstCardName = '';
+        function renderGreeting() {
+            const name = (accountName || firstCardName.split(/\s+/)[0] || '').trim();
+            document.getElementById('greeting').textContent = name ? 'Здравей, ' + name + '!' : 'Здравей!';
+        }
         document.getElementById('settingsLink').href = '/settings';
         // synastryLink е премахнат от навигацията.
         document.getElementById('moonLink').href = '/moon';
@@ -744,12 +787,8 @@
                 const resp = await fetch('/api/auth/me', { headers: authHeaders() });
                 if (!resp.ok) return;
                 const me = await resp.json();
-                // Влезлите през началната страница нямат запазен имейл в
-                // браузъра — поздравът оставаше „Здравей, ...!“.
-                if (me.email) {
-                    document.getElementById('userEmail').textContent = me.email;
-                    try { localStorage.setItem('miralog_email', me.email); } catch (e) {}
-                }
+                accountName = (me.display_name || '').trim();
+                renderGreeting();
                 if (me.is_admin) {
                     // Админ панелът е на отделен поддомейн, а localStorage е per-origin,
                     // затова токенът се подава през ?token= (admin.html го чете от URL).
@@ -787,51 +826,116 @@
             return resp.json();
         }
 
+        // Последно отворената карта: чиповете с разчитания водят към нея,
+        // а не към „първата“ — иначе при няколко души не е ясно за кого са.
+        const LAST_KEY = 'miralog_last_person';
+        function rememberPerson(id) {
+            try { localStorage.setItem(LAST_KEY, String(id)); } catch (e) { /* private mode */ }
+        }
+        // „Първата“ е най-старата карта: списъкът е по азбучен ред, а първата
+        // направена обикновено е на самия човек (тя го поздравява).
+        function oldestPerson(persons) {
+            return persons.reduce((a, p) => (p.id < a.id ? p : a), persons[0]);
+        }
+        function targetPerson(persons) {
+            let saved = 0;
+            try { saved = Number(localStorage.getItem(LAST_KEY)) || 0; } catch (e) {}
+            return persons.find(p => p.id === saved) || oldestPerson(persons);
+        }
+
+        let allPersons = [];
+        let lastQuota = null;
+        let moduleData = null;
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+
         async function fetchPersons() {
             const listEl = document.getElementById('personsList');
-            listEl.innerHTML = crystalLoader('Зареждане на хората...');
+            listEl.innerHTML = crystalLoader('Зареждане на хората…');
             try {
                 const data = await apiGet('/api/persons');
                 if (!data) return;
 
                 const persons = data.persons || [];
+                allPersons = persons;
+                lastQuota = data.quota;
+                firstCardName = persons.length ? oldestPerson(persons).name || '' : '';
+                renderGreeting();
+                renderQuota(lastQuota, persons);
                 if (persons.length === 0) {
-                    document.getElementById('modStatus').hidden = true;
+                    document.getElementById('modOwn').hidden = true;
+                    document.getElementById('modMore').hidden = true;
+                    // Нов акаунт: първият „човек“ е самият той — казваме го така.
                     listEl.innerHTML = `
                         <div class="empty">
-                            <p>Все още няма добавени хора.</p>
-                            <p>Добави първия човек, за да видиш наталната му карта.</p>
+                            <p class="empty-title">Въведи рождените си данни и виж безплатната си карта</p>
+                            <p>Натална карта и дневен хороскоп са безплатни.</p>
+                            <button type="button" class="btn btn-primary btn-large" data-cta="dashboard:create_mine"
+                                    onclick="openAddModal(true)">Създай моята карта</button>
                         </div>`;
                     return;
                 }
 
                 let html = '';
                 persons.forEach(p => {
-                    const hour = String(p.hour).padStart(2, '0');
-                    const minute = String(p.minute).padStart(2, '0');
+                    const hour = pad2(p.hour);
+                    const minute = pad2(p.minute);
                     // Името на мястото, не координатите; ако няма (стари карти), нищо.
                     const place = p.place ? ' • ' + escapeHtml(p.place) : '';
+                    const name = escapeHtml(p.name);
                     html += `
                         <div class="person-card">
                             <div class="person-info">
-                                <h3>${escapeHtml(p.name)}</h3>
+                                <h3>${name}</h3>
                                 <div class="meta">
-                                    ${p.day}.${p.month}.${p.year}, ${p.time_unknown ? 'час неизвестен' : hour + ':' + minute + ' ч.'}${place}
+                                    ${pad2(p.day)}.${pad2(p.month)}.${p.year}, ${p.time_unknown ? 'час неизвестен' : hour + ':' + minute + ' ч.'}${place}
                                 </div>
                             </div>
                             <div class="person-actions">
                                 <a href="/chart/${p.id}#horoscope" class="btn btn-cancel btn-today"
-                                   data-cta="dashboard:today"
-                                   aria-label="Дневен хороскоп за ${escapeHtml(p.name)}">☽ Днес</a>
-                                <a href="/chart/${p.id}" class="btn btn-primary" data-cta="dashboard:chart">Карта</a>
-                                <button class="btn btn-danger btn-icon" onclick="deletePerson(${p.id})" title="Изтрий">✕</button>
+                                   data-cta="dashboard:today" onclick="rememberPerson(${p.id})"
+                                   aria-label="Хороскоп за днес — ${name}">☽ Хороскоп за днес</a>
+                                <a href="/chart/${p.id}" class="btn btn-primary" data-cta="dashboard:chart"
+                                   onclick="rememberPerson(${p.id})" aria-label="Карта — ${name}">Карта</a>
+                                <div class="person-menu">
+                                    <button type="button" class="btn btn-cancel btn-icon" aria-haspopup="true"
+                                            aria-expanded="false" aria-label="Още за ${name}" title="Още"
+                                            onclick="toggleMenu(event, ${p.id})">⋯</button>
+                                    <div class="menu-pop" id="menu-${p.id}" hidden>
+                                        <button type="button" class="menu-item" onclick="deletePerson(${p.id})">Изтрий</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>`;
                 });
                 listEl.innerHTML = html;
-                loadModuleStatus(persons[0].id);
+                loadModuleStatus();
             } catch (err) {
                 listEl.innerHTML = `<div class="error-banner">${friendlyErrorHtml(err)}</div>`;
+            }
+        }
+
+        // „2 от 3 карти“ до бутона; при лимит — неактивен бутон и обяснение,
+        // а не отказ чак след попълнена форма.
+        function renderQuota(q, persons) {
+            const btn = document.getElementById('addBtn');
+            const info = document.getElementById('quotaInfo');
+            const note = document.getElementById('quotaNote');
+            // Празният акаунт има собствен бутон в списъка.
+            document.getElementById('addBar').hidden = !persons.length;
+            info.hidden = note.hidden = true;
+            btn.disabled = false;
+            if (!q || !q.limit) return;
+            info.textContent = q.used + ' от ' + q.limit + (q.limit === 1 ? ' карта' : ' карти');
+            info.hidden = false;
+            if (!q.can_add) {
+                btn.disabled = true;
+                const t = targetPerson(persons);
+                const link = q.unlock && t
+                    ? ` <a href="/chart/${t.id}?unlock=${encodeURIComponent(q.unlock)}" data-cta="dashboard:unlock_${escapeHtml(q.unlock)}">Отключи</a>`
+                    : '';
+                note.innerHTML = escapeHtml(q.message || '') + link;
+                note.hidden = false;
             }
         }
 
@@ -846,70 +950,131 @@
             profile: 'Профил', period: 'Период', love: 'Любов',
             akashic: 'Акашови записи', numerology: 'Нумерология', moon: 'Лунен календар',
         };
+        // Каталогът дава за Луната ◐ — същото като бутона за тема; тук е ☾.
+        const MOD_GLYPH = { moon: '☾' };
+        // Безплатното в акаунта: показва се като твое, не като нещо за купуване.
+        const FREE_OWN = ['chart', 'horoscope'];
 
-        /* Отключените разчитания с отметка, заключените с цена; пакетът — само
-           ако остават поне две заключени (сървърът връща bundle само тогава).
-           Връзките са към първата карта: покупките са на акаунта, а картата е
-           само мястото, откъдето се отварят. Грешка тук не бива да чупи таблото. */
-        async function loadModuleStatus(firstPersonId) {
-            const box = document.getElementById('modStatus');
+        /* Две групи: „Твоите разчитания“ — безплатните и купените, с отметка,
+           и „Още разчитания“ — заключените с цена (пакетът — само ако остават
+           поне две, сървърът връща bundle само тогава). Покупките са на
+           акаунта, а картата е мястото, откъдето се отварят: при няколко
+           души се избира за коя. Грешка тук не бива да чупи таблото. */
+        async function loadModuleStatus() {
             try {
                 // peek: таблото само гледа и не взима запомнения при регистрация избор.
-                const data = await apiGet('/api/features?peek=1');
-                if (!data) return;
-                const items = (data.catalogue || []).filter(i => !i.included && (i.unlocked || i.offer));
-                if (!items.length) { box.hidden = true; return; }
-
-                const locked = items.filter(i => !i.unlocked);
-                const base = '/chart/' + firstPersonId;
-                document.getElementById('modChips').innerHTML = items.map(i => {
-                    const name = escapeHtml(MOD_SHORT[i.key] || i.name);
-                    const key = escapeHtml(i.key);
-                    if (i.unlocked) {
-                        const href = i.key === 'moon' ? '/moon' : base + '#' + encodeURIComponent(i.key);
-                        return `<a class="mod-chip is-on" href="${href}" data-cta="dashboard:open_${key}"
-                                   aria-label="${name} — отключено">
-                            <span class="mod-chip-ico" aria-hidden="true">✓</span>
-                            <span class="mod-chip-text"><span class="mod-chip-name">${name}</span></span></a>`;
-                    }
-                    const price = money(i.offer.price_cents, i.offer.currency);
-                    return `<a class="mod-chip" href="${base}?unlock=${encodeURIComponent(i.key)}"
-                               data-cta="dashboard:unlock_${key}"
-                               aria-label="${name} — заключено, ${price}. Отключи">
-                        <span class="mod-chip-ico" aria-hidden="true">${escapeHtml(i.glyph || '✦')}</span>
-                        <span class="mod-chip-text"><span class="mod-chip-name">${name}</span>
-                            <span class="mod-chip-price">${price}</span></span></a>`;
-                }).join('');
-
-                const b = data.bundle;
-                const bundleBox = document.getElementById('modBundle');
-                if (b && locked.length >= 2) {
-                    // „Всички“ само ако наистина са всички; иначе „останалите“.
-                    const all = b.keys.length >= items.length;
-                    bundleBox.innerHTML = `
-                        <div class="mod-bundle-card">
-                            <div>
-                                <strong>${all ? 'Всички' : 'Останалите'} ${b.keys.length} разчитания — ${money(b.price_cents, b.currency)}
-                                    вместо ${money(b.full_price_cents, b.currency)}</strong>
-                                <span>Плащаш веднъж, остават ти завинаги.</span>
-                            </div>
-                            <a class="btn btn-primary" href="${base}?unlock=bundle"
-                               data-cta="dashboard:bundle">Вземи всички</a>
-                        </div>`;
-                } else {
-                    bundleBox.innerHTML = '';
-                }
-                box.hidden = false;
-            } catch (e) { box.hidden = true; }
+                moduleData = await apiGet('/api/features?peek=1');
+                renderModules();
+            } catch (e) {
+                document.getElementById('modOwn').hidden = true;
+                document.getElementById('modMore').hidden = true;
+            }
         }
+
+        function renderModules() {
+            const data = moduleData;
+            const own = document.getElementById('modOwn');
+            const more = document.getElementById('modMore');
+            if (!data || !allPersons.length) { own.hidden = more.hidden = true; return; }
+
+            const multi = allPersons.length > 1;
+            const target = targetPerson(allPersons);
+            const base = '/chart/' + target.id;
+            const forName = multi ? ' — за ' + escapeHtml(target.name) : '';
+
+            // „Отваряй за“ има смисъл само при повече от един човек.
+            const forBox = document.getElementById('modFor');
+            forBox.hidden = !multi;
+            if (multi) {
+                document.getElementById('modPerson').innerHTML = allPersons.map(p =>
+                    `<option value="${p.id}"${p.id === target.id ? ' selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+            }
+
+            const catalogue = data.catalogue || [];
+            const ownItems = catalogue.filter(i => FREE_OWN.includes(i.key) || (!i.included && i.unlocked));
+            const lockedItems = catalogue.filter(i => !i.included && !i.unlocked && i.offer);
+
+            document.getElementById('ownChips').innerHTML = ownItems.map(i => {
+                const name = escapeHtml(MOD_SHORT[i.key] || i.name);
+                const key = escapeHtml(i.key);
+                const free = FREE_OWN.includes(i.key);
+                const href = i.key === 'moon' ? '/moon'
+                    : i.key === 'chart' ? base : base + '#' + encodeURIComponent(i.key);
+                const aria = name + (free ? ' — безплатно' : ' — отключено') + (i.key === 'moon' ? '' : forName);
+                return `<a class="mod-chip is-on" href="${href}" data-cta="dashboard:open_${key}"
+                           onclick="rememberPerson(${target.id})" aria-label="${aria}">
+                    <span class="mod-chip-ico" aria-hidden="true">✓</span>
+                    <span class="mod-chip-text"><span class="mod-chip-name">${name}</span>
+                        ${free ? '<span class="mod-chip-price">безплатно</span>' : ''}</span></a>`;
+            }).join('');
+            own.hidden = !ownItems.length;
+
+            document.getElementById('modChips').innerHTML = lockedItems.map(i => {
+                const name = escapeHtml(MOD_SHORT[i.key] || i.name);
+                const key = escapeHtml(i.key);
+                const price = money(i.offer.price_cents, i.offer.currency);
+                return `<a class="mod-chip" href="${base}?unlock=${encodeURIComponent(i.key)}"
+                           data-cta="dashboard:unlock_${key}"
+                           aria-label="${name} — заключено, ${price}. Отключи${forName}">
+                    <span class="mod-chip-ico" aria-hidden="true">${escapeHtml(MOD_GLYPH[i.key] || i.glyph || '✦')}</span>
+                    <span class="mod-chip-text"><span class="mod-chip-name">${name}</span>
+                        <span class="mod-chip-price">${price}</span></span></a>`;
+            }).join('');
+
+            const b = data.bundle;
+            const bundleBox = document.getElementById('modBundle');
+            if (b && lockedItems.length >= 2) {
+                // „Всички“ само ако наистина са всички; иначе „останалите“.
+                const paidOwned = ownItems.filter(i => !FREE_OWN.includes(i.key)).length;
+                const all = b.keys.length >= lockedItems.length + paidOwned;
+                bundleBox.innerHTML = `
+                    <div class="mod-bundle-card">
+                        <div>
+                            <strong>${all ? 'Всички' : 'Останалите'} ${b.keys.length} разчитания — ${money(b.price_cents, b.currency)}
+                                вместо ${money(b.full_price_cents, b.currency)}</strong>
+                            <span>Плащаш веднъж, остават ти завинаги.</span>
+                        </div>
+                        <a class="btn btn-primary" href="${base}?unlock=bundle" onclick="rememberPerson(${target.id})"
+                           data-cta="dashboard:bundle">Вземи всички</a>
+                    </div>`;
+            } else {
+                bundleBox.innerHTML = '';
+            }
+            more.hidden = !lockedItems.length;
+        }
+
+        document.getElementById('modPerson').addEventListener('change', function () {
+            rememberPerson(this.value);
+            renderModules();
+            // Връзката „Отключи“ при лимит също сочи към избраната карта.
+            renderQuota(lastQuota, allPersons);
+        });
 
         function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            return String(text == null ? '' : text)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
+        // --- Меню „⋯“ на картата ---
+        function closeMenus() {
+            document.querySelectorAll('.menu-pop').forEach(m => { m.hidden = true; });
+            document.querySelectorAll('.person-menu > .btn').forEach(b => b.setAttribute('aria-expanded', 'false'));
+        }
+        function toggleMenu(ev, id) {
+            ev.stopPropagation();
+            const pop = document.getElementById('menu-' + id);
+            const wasOpen = !pop.hidden;
+            closeMenus();
+            if (!wasOpen) {
+                pop.hidden = false;
+                ev.currentTarget.setAttribute('aria-expanded', 'true');
+            }
+        }
+        document.addEventListener('click', closeMenus);
+
         async function deletePerson(id) {
+            closeMenus();
             const ok = await uiConfirm('Картата и всички разчитания към нея се изтриват безвъзвратно.', {
                 title: 'Да изтрия ли този човек?', ok: 'Изтрий', danger: true });
             if (!ok) return;
@@ -931,6 +1096,7 @@
 
         // --- Place search (geocoding) ---
         let placeTimer = null;
+        let placeSeq = 0;
 
         function closePlaceResults() {
             const box = document.getElementById('placeResults');
@@ -938,49 +1104,96 @@
             box.innerHTML = '';
         }
 
+        function showPlaceError(msg) {
+            const el = document.getElementById('placeError');
+            el.textContent = msg || '';
+            el.hidden = !msg;
+        }
+
         function pickPlace(lat, lon, tz, label) {
+            clearTimeout(placeTimer);
+            placeSeq++;
             document.getElementById('addLat').value = lat;
             document.getElementById('addLon').value = lon;
             if (tz) document.getElementById('addTimezone').value = tz;
             document.getElementById('addPlace').value = label;
+            showPlaceError('');
             closePlaceResults();
         }
 
         async function searchPlace(query) {
+            const seq = ++placeSeq;
             const box = document.getElementById('placeResults');
-            box.innerHTML = '<div class="place-status">Търсене...</div>';
+            box.innerHTML = '<div class="place-status">Търсене…</div>';
             box.classList.add('open');
             try {
                 const resp = await fetch('/api/geocode?q=' + encodeURIComponent(query), { headers: authHeaders() });
                 if (resp.status === 401) { logout(); return; }
                 if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
+                if (seq !== placeSeq) return;   // междувременно е избрано или променено
                 const results = data.results || [];
                 if (!results.length) {
                     box.innerHTML = '<div class="place-status">Няма намерени места.</div>';
                     return;
                 }
-                box.innerHTML = results.map(r => {
+                box.innerHTML = results.map((r, idx) => {
                     const name = escapeHtml(r.place || r.label);
                     const detail = escapeHtml(r.label);
-                    const tz = escapeHtml(r.timezone || '');
-                    return `<div class="place-item" onclick="pickPlace(${r.lat}, ${r.lon}, '${tz}', '${name.replace(/'/g, "\\'")}')">
+                    return `<div class="place-item" role="button" tabindex="0" data-idx="${idx}">
                         <div class="pl-name">${name}</div>
                         <div class="pl-detail">${detail}</div>
                     </div>`;
                 }).join('');
+                box.querySelectorAll('.place-item').forEach(el => {
+                    const r = results[Number(el.dataset.idx)];
+                    const choose = () => pickPlace(r.lat, r.lon, r.timezone || '', r.place || r.label);
+                    el.addEventListener('click', choose);
+                    el.addEventListener('keydown', e => { if (e.key === 'Enter') choose(); });
+                });
+                // Списъкът е в потока на диалога; ако е под екрана — доближи го.
+                box.scrollIntoView({ block: 'nearest' });
             } catch (e) {
+                if (seq !== placeSeq) return;
                 box.innerHTML = '<div class="place-status">' + friendlyErrorHtml(e) + '</div>';
             }
+        }
+
+        // Написано, но неизбрано от списъка място: търсим първия резултат
+        // (както на /start) вместо да искаме координати.
+        async function ensurePlace() {
+            if (document.getElementById('addLat').value && document.getElementById('addLon').value) return true;
+            const typed = document.getElementById('addPlace').value.trim();
+            if (!typed) { showPlaceError('Въведи място на раждане.'); return false; }
+            // Търсенето от въвеждането вече не е нужно — това го замества.
+            clearTimeout(placeTimer);
+            placeSeq++;
+            try {
+                const resp = await fetch('/api/geocode?q=' + encodeURIComponent(typed), { headers: authHeaders() });
+                if (resp.status === 401) { logout(); return false; }
+                const data = resp.ok ? await resp.json() : { results: [] };
+                const r = (data.results || [])[0];
+                if (r) {
+                    pickPlace(r.lat, r.lon, r.timezone || '', r.place || r.label);
+                    return true;
+                }
+            } catch (e) { /* показваме съобщението по-долу */ }
+            closePlaceResults();
+            showPlaceError('Не намерихме такова място. Избери от списъка или опитай с по-голям град наблизо.');
+            return false;
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             const input = document.getElementById('addPlace');
             if (!input) return;
             input.addEventListener('input', () => {
+                // Променено място — старите координати вече не важат.
+                document.getElementById('addLat').value = '';
+                document.getElementById('addLon').value = '';
+                showPlaceError('');
                 const q = input.value.trim();
                 clearTimeout(placeTimer);
-                if (q.length < 2) { closePlaceResults(); return; }
+                if (q.length < 2) { placeSeq++; closePlaceResults(); return; }
                 // Debounced so we stay within Nominatim's one-request-per-second policy.
                 placeTimer = setTimeout(() => searchPlace(q), 600);
             });
@@ -990,14 +1203,27 @@
         });
 
         // --- Add person modal ---
-        function openAddModal() {
-            document.getElementById('addModal').classList.add('open');
-            document.getElementById('modalError').style.display = 'none';
+        function openAddModal(mine) {
+            const modal = document.getElementById('addModal');
             document.getElementById('addPersonForm').reset();
+            document.getElementById('modalError').style.display = 'none';
             document.getElementById('addTimezone').value = 'Europe/Sofia';
+            document.getElementById('addLat').value = '';
+            document.getElementById('addLon').value = '';
             document.getElementById('addHour').value = '12';
             document.getElementById('addMinute').value = '0';
+            document.getElementById('addHour').disabled = document.getElementById('addMinute').disabled = false;
+            showPlaceError('');
+            clearTimeout(placeTimer);
+            placeSeq++;
             closePlaceResults();
+            // Първата карта на нов акаунт е на самия човек.
+            document.getElementById('addTitle').textContent = mine ? 'Създай моята карта' : 'Добави човек';
+            document.getElementById('addSubmitBtn').textContent = mine ? 'Създай картата' : 'Добави';
+            document.getElementById('addName').placeholder = mine ? 'Как се казваш' : 'Име на човека';
+            if (mine && accountName) document.getElementById('addName').value = accountName;
+            modal.dataset.mine = mine ? '1' : '';
+            modal.classList.add('open');
             document.getElementById('addName').focus();
         }
 
@@ -1009,9 +1235,17 @@
             e.preventDefault();
             const modalError = document.getElementById('modalError');
             const submitBtn = document.getElementById('addSubmitBtn');
+            const idleText = document.getElementById('addModal').dataset.mine ? 'Създай картата' : 'Добави';
             modalError.style.display = 'none';
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Добавяне...';
+            submitBtn.textContent = 'Търсим мястото…';
+            if (!(await ensurePlace())) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = idleText;
+                document.getElementById('placeError').scrollIntoView({ block: 'nearest' });
+                return;
+            }
+            submitBtn.textContent = 'Добавяне…';
 
             const formData = new FormData();
             formData.append('name', document.getElementById('addName').value.trim());
@@ -1034,11 +1268,7 @@
                     body: formData
                 });
                 if (resp.status === 401) { logout(); return; }
-                if (!resp.ok) {
-                    const data = await resp.json().catch(() => ({}));
-                    const d = data.detail;
-                    throw new Error(typeof d === 'string' ? d : (d && d.message) || 'Грешка при добавяне');
-                }
+                if (!resp.ok) throw await apiError(resp);
                 closeAddModal();
                 fetchPersons();
             } catch (err) {
@@ -1046,7 +1276,7 @@
                 modalError.style.display = 'block';
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Добави';
+                submitBtn.textContent = idleText;
             }
         });
 
@@ -1057,7 +1287,7 @@
 
         // Close modal on Escape
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') closeAddModal();
+            if (e.key === 'Escape') { closeAddModal(); closeMenus(); }
         });
 
         // --- Init ---
@@ -1072,7 +1302,7 @@
             const b = saved.birth;
             const when = b.day + '.' + b.month + '.' + b.year;
             const ok = await uiConfirm('Имаш карта от преди малко — ' + (b.name || 'без име') + ', ' + when
-                + (saved.label ? ', ' + saved.label : '') + '. Да я запазим в профила ти?',
+                + (saved.label ? ', ' + saved.label : '') + '. Да я запазим в акаунта ти?',
                 { title: 'Запази картата', ok: 'Запази', cancel: 'Не, благодаря' });
             try { localStorage.removeItem('miralog_guest_birth'); } catch (e) {}
             if (!ok) return;

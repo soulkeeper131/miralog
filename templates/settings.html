@@ -247,8 +247,13 @@
         .btn-primary:hover { background: var(--accent-hover); }
         .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
+        /* Съобщенията остават на екрана, докато човекът скролира: бутонът е
+           долу, а банерът беше най-горе и изчезваше невиждан. Под бутона за
+           тема, който е закачен горе вдясно. */
+        #banner { position: sticky; top: 68px; z-index: 150; }
         .error-banner, .success-banner {
             border-radius: 8px; padding: 12px 16px; font-size: 0.9rem; margin-bottom: 16px;
+            box-shadow: var(--shadow-card, 0 4px 14px rgba(0,0,0,.25));
         }
         .error-banner { background: var(--danger-bg); border: 1px solid var(--danger); color: var(--danger-text); }
         .success-banner { background: var(--success-bg); border: 1px solid var(--success); color: var(--success-text); }
@@ -288,16 +293,16 @@
         <h1>Моят акаунт</h1>
         <div class="subtitle">Данните ти и отключените разчитания</div>
 
-        <div id="banner"></div>
+        <div id="banner" role="status" aria-live="polite"></div>
 
         <div id="settingsLoader" class="crystal-loader">
             <div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>
-            Зареждане на профила...
+            Зареждане…
         </div>
 
         <div id="settingsBody" hidden>
             <div class="section">
-                <h2>Профил</h2>
+                <h2>Данни за акаунта</h2>
                 <div class="desc">
                     Името се използва при обръщение в разчитанията, а имейлът — за вход
                     и за изпращане на хороскопите.
@@ -338,8 +343,8 @@
             </div>
 
             <div class="section">
-                <h2>Модули</h2>
-                <div class="desc">Какво си отключил. Всяка покупка е еднократна и остава завинаги.</div>
+                <h2>Разчитания</h2>
+                <div class="desc">Какво е отключено. Всяка покупка е еднократна и остава завинаги.</div>
                 <div id="planInfo"></div>
                 <div id="billingActions" style="margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;"></div>
             </div>
@@ -354,20 +359,18 @@
             <div class="section">
                 <h2>Дневен имейл</h2>
                 <div class="desc">
-                    Получавай напомняне за дневния хороскоп (или откъс, ако вече е генериран).
-                    Изисква отключен дневен хороскоп и конфигуриран SMTP.
+                    Всяка сутрин ти пращаме дневния хороскоп.
                 </div>
                 <label class="check" for="digestOptIn" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
-                    <input type="checkbox" id="digestOptIn"> Искам дневен digest по имейл
+                    <input type="checkbox" id="digestOptIn"> Искам дневния хороскоп на имейла си
                 </label>
             </div>
 
             <div class="section">
                 <h2>Защита на данните</h2>
                 <div class="desc">
-                    По GDPR можеш да изтеглиш всичките си данни в машинночетим формат (чл. 20)
-                    или да изтриеш акаунта и данните си (чл. 17 — „право да бъдеш забравен").
-                    Изтриването е необратимо. Виж и <a href="/privacy" style="color:var(--accent-light)">политиката за поверителност</a>.
+                    Можеш да изтеглиш данните си или да изтриеш акаунта. Изтриването е необратимо.
+                    Виж и <a href="/privacy" style="color:var(--accent-light)">политиката за поверителност</a>.
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:10px;">
                     <button type="button" class="btn btn-primary" id="exportBtn">Изтегли данните ми</button>
@@ -378,7 +381,7 @@
             <div class="section" id="adminSection" hidden>
                 <h2>Администрация</h2>
                 <div class="desc">
-                    Ключовете за AI, SMTP настройките, пакетите и потребителите се
+                    Ключовете за AI, настройките за имейл, цените и потребителите се
                     управляват от админ панела.
                 </div>
                 <a class="admin-link" id="adminLink" href="https://{{ admin_host }}/admin">⚙ Отвори админ панела</a>
@@ -431,10 +434,14 @@
         }
         document.getElementById('backLink').href = '/dashboard';
 
+        // Достатъчно дълго за прочитане (грешките — още повече) и закачено
+        // горе при скрол: бутоните са далеч под банера.
+        let bannerTimer = null;
         function showBanner(msg, kind) {
             const el = document.getElementById('banner');
             el.innerHTML = `<div class="${kind === 'error' ? 'error-banner' : 'success-banner'}">${msg}</div>`;
-            setTimeout(() => { el.innerHTML = ''; }, 4000);
+            clearTimeout(bannerTimer);
+            bannerTimer = setTimeout(() => { el.innerHTML = ''; }, kind === 'error' ? 10000 : 7000);
         }
 
         function revealSettings() {
@@ -456,7 +463,8 @@
 
         function renderPlan(acc) {
             const p = acc.plan || {};
-            const limit = p.max_persons ? p.max_persons + ' карти' : 'без ограничение';
+            const limit = p.max_persons
+                ? 'до ' + p.max_persons + (p.max_persons === 1 ? ' карта' : ' карти') : 'без ограничение';
             // Nothing expires: what the account owns is a list of modules
             // bought outright, so the panel reports those instead of a term.
             const owned = (acc.owned_modules || []);
@@ -481,7 +489,8 @@
 
             const actions = document.getElementById('billingActions');
             actions.innerHTML = '';
-            if (!acc.is_admin) {
+            // Когато всичко е купено, няма какво да се разглежда.
+            if (!acc.is_admin && acc.more_to_unlock) {
                 const pick = document.createElement('button');
                 pick.className = 'btn btn-primary';
                 pick.textContent = 'Разгледай разчитанията';
@@ -500,6 +509,7 @@
         }
 
         let loadedEmail = '';
+        let oauthLinked = false;
         // Нов токен (след смяна на имейл или парола) — в паметта и в бисквитката,
         // иначе страниците, които четат бисквитката, биха ползвали стария.
         function storeToken(token) {
@@ -516,6 +526,7 @@
                 document.getElementById('displayName').value = acc.display_name || '';
                 document.getElementById('accountEmail').value = acc.email || '';
                 loadedEmail = (acc.email || '').trim().toLowerCase();
+                oauthLinked = !!acc.oauth_linked;
                 renderPlan(acc);
                 if (acc.is_admin) {
                     document.getElementById('adminSection').hidden = false;
@@ -551,7 +562,9 @@
                 });
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(detailText(data.detail));
-                showBanner(e.target.checked ? 'Дневният digest е включен.' : 'Дневният digest е изключен.', 'success');
+                showBanner(e.target.checked
+                    ? 'Ще получаваш дневния хороскоп на имейла си.'
+                    : 'Спряхме дневния хороскоп по имейл.', 'success');
             } catch (err) {
                 e.target.checked = !e.target.checked;
                 showBanner(friendlyErrorHtml(err), 'error');
@@ -576,7 +589,7 @@
                 body.current_password = pwd;
             }
             btn.disabled = true;
-            btn.textContent = 'Запазване...';
+            btn.textContent = 'Запазване…';
             try {
                 const resp = await fetch('/api/account', {
                     method: 'POST',
@@ -591,7 +604,7 @@
                 }
                 // Новият имейл прекъсва старите сесии; тази продължава с нов токен.
                 storeToken(data.token);
-                showBanner('Профилът е запазен.', 'success');
+                showBanner('Данните са запазени.', 'success');
                 loadAccount();
             } catch (err) {
                 showBanner(friendlyErrorHtml(err), 'error');
@@ -612,7 +625,7 @@
             }
             const btn = document.getElementById('passwordBtn');
             btn.disabled = true;
-            btn.textContent = 'Запазване...';
+            btn.textContent = 'Запазване…';
             try {
                 const resp = await fetch('/api/account/password', {
                     method: 'POST',
@@ -656,10 +669,24 @@
         });
 
         document.getElementById('deleteBtn').addEventListener('click', async () => {
-            const ok = confirm('Сигурен ли си? Това ще изтрие акаунта и всичките ти данни завинаги. Действието е необратимо.');
+            const ok = await uiConfirm(
+                'Губиш и платените разчитания, и документите си. Действието е необратимо.',
+                { title: 'Да изтрия ли акаунта?', ok: 'Продължи', danger: true });
             if (!ok) return;
+            // Парола (или имейлът, ако акаунтът се ползва през Google/Facebook):
+            // отворена сесия сама не бива да стига за изтриване.
+            const confirmValue = await uiPrompt(oauthLinked
+                ? 'Въведи паролата си или, ако влизаш с Google или Facebook, имейла на акаунта.'
+                : 'За да изтрием акаунта, въведи паролата си.', {
+                title: 'Потвърди изтриването', type: oauthLinked ? 'text' : 'password',
+                ok: 'Изтрий акаунта' });
+            if (confirmValue === null) return;
             try {
-                const resp = await fetch('/api/account', { method: 'DELETE', headers: authHeaders() });
+                const resp = await fetch('/api/account', {
+                    method: 'DELETE',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: confirmValue }),
+                });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(detailText(data.detail));
@@ -687,8 +714,9 @@
                     const row = document.createElement('div');
                     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(127,127,127,.15);';
                     const text = document.createElement('div');
-                    text.textContent = '№ ' + d.number + ' от ' + d.issued_at + ' — ' +
-                        (d.amount_cents / 100).toFixed(2) + ' ' + (d.currency === 'EUR' ? '€' : d.currency);
+                    // „№ 0000000001 от 15.10.2026 — 5,00 €“: дата без часа, сума със запетая.
+                    text.textContent = '№ ' + d.number + ' от ' + String(d.issued_at || '').split(' ')[0] + ' — ' +
+                        (d.amount_cents / 100).toFixed(2).replace('.', ',') + ' ' + (d.currency === 'EUR' ? '€' : d.currency);
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'btn';

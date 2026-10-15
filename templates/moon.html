@@ -368,6 +368,17 @@
             'Third Quarter': '🌗', 'Balsamic': '🌘',
         };
 
+        const MOON_TEASER = `
+            <h4>Лунен календар</h4>
+            <p>За всеки ден от месеца — фазата на Луната и зодията, през която минава,
+               и какво е подходящо и какво е по-добре да избягваш в този ден.
+               Календарът е общ за всички и не зависи от твоята карта.</p>
+            <h4>Какво подхожда на деня</h4>
+            <p>Кога е добре да започваш, кога да довършваш и кога да си починеш —
+               според фазата и знака на Луната.</p>
+            <h4>Какво да избягваш</h4>
+            <p>Дните, в които решенията и разходите по-добре да изчакат.</p>`;
+
         const now = new Date();
         let viewYear = now.getFullYear();
         let viewMonth = now.getMonth() + 1;
@@ -399,7 +410,7 @@
                 ${d.moon_sign_advice ? `<p class="today-note">${escapeHtml(d.moon_sign_advice)}</p>` : ''}
                 ${d.note ? `<p class="today-note"><strong>${escapeHtml(d.note)}</strong></p>` : ''}
                 <div class="advice-cols">
-                    ${doList ? `<div class="advice-col col-do"><div class="advice-head">✓ Прави</div><ul>${doList}</ul></div>` : ''}
+                    ${doList ? `<div class="advice-col col-do"><div class="advice-head">✓ Подходящо</div><ul>${doList}</ul></div>` : ''}
                     ${avoidList ? `<div class="advice-col col-avoid"><div class="advice-head">✕ Избягвай</div><ul>${avoidList}</ul></div>` : ''}
                 </div>
             </div>`;
@@ -417,7 +428,7 @@
         async function loadCalendar() {
             const el = document.getElementById('calendar');
             document.getElementById('monthLabel').textContent = `${MONTHS[viewMonth - 1]} ${viewYear}`;
-            el.innerHTML = crystalLoader('Изчисляване на лунните фази...');
+            el.innerHTML = crystalLoader('Изчисляване на лунните фази…');
             document.getElementById('selected-day').innerHTML = '';
             try {
                 const resp = await guardedFetch(`/api/lunar-calendar?year=${viewYear}&month=${viewMonth}`, { headers: authHeaders() });
@@ -456,6 +467,11 @@
             } catch (e) {
                 if (e instanceof LockedFeature) {
                     renderLocked(el, e.detail, loadCalendar);
+                    // Общият текст на заключените екрани обещава градуси и домове
+                    // от картата, а лунният календар е общ за всички: фазата и
+                    // знакът на Луната за всеки ден. Обещаваме точно това.
+                    const teaser = el.querySelector('.locked-teaser');
+                    if (teaser) teaser.innerHTML = MOON_TEASER;
                     return;
                 }
                 el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';

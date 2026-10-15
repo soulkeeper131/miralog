@@ -207,7 +207,8 @@ def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
     regular, bold, _ = _register_fonts()
     buf = io.BytesIO()
 
-    generated = datetime.datetime.now().strftime("%d.%m.%Y")
+    # Датата е по София: сървърът е в UTC и след 21:00 показваше утрешния ден.
+    generated = datetime.datetime.now(ZoneInfo("Europe/Sofia")).strftime("%d.%m.%Y")
 
     def decorate(canvas, doc):
         canvas.saveState()
@@ -262,7 +263,7 @@ def build_reading_pdf(*, title: str, person_name: str, subtitle: str = "",
     story.extend([
         Spacer(1, 8 * mm),
         Paragraph(
-            f"Изготвено на {generated} · Позициите са изчислени със Swiss Ephemeris. "
+            f"Изготвено на {generated} · Позициите са изчислени с астрономическа точност. "
             "Разчитането е за размисъл и себепознание.",
             ParagraphStyle("MFoot", fontName=regular, fontSize=8, leading=12,
                            textColor=MUTED, alignment=TA_CENTER)),

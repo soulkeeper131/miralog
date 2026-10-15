@@ -3379,6 +3379,8 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
     return {
         "id": user_id,
         "email": email,
+        # За поздрава на таблото: имейлът не е обръщение.
+        "display_name": row.get("display_name") or "",
         "role": row.get("role", "user"),
         "is_admin": is_admin,
         "is_blocked": bool(row.get("is_blocked")),
@@ -8363,6 +8365,12 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
 
+def _has_oauth_link(user_id: int) -> bool:
+    with sqlite3.connect(DB_PATH) as conn:
+        return conn.execute("SELECT 1 FROM oauth_accounts WHERE user_id = ? LIMIT 1",
+                            (user_id,)).fetchone() is not None
+
+
 @app.get("/api/account")
 def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
     """The signed-in user's own profile and plan."""
@@ -8371,6 +8379,8 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
     if not row:
         raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     plan = effective_plan(row)
+    is_admin_row = row.get("role") == "admin"
+    unlocked_all = set(unlocked_features(row))
     return {
         "id": user_id,
         "email": row.get("email") or email,
@@ -8392,6 +8402,14 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
         ],
         "digest_opt_in": bool(row.get("digest_opt_in")),
         "stripe_enabled": billing.stripe_enabled(),
+        # Остава ли какво да се купи — иначе „Разгледай разчитанията“ води
+        # до празен списък.
+        "more_to_unlock": (not is_admin_row) and any(
+            f["key"] not in unlocked_all and feature_offer(f["key"])
+            for f in FEATURE_CATALOGUE),
+        # Влизал е през Google/Facebook: паролата може да не е негова, затова
+        # изтриването на акаунта приема и имейла.
+        "oauth_linked": _has_oauth_link(user_id),
     }
 
 @app.post("/api/account")
@@ -8546,15 +8564,33 @@ def api_export_account(user: Tuple[int, str] = Depends(get_current_user)):
         "feature_purchases": purchases,
     }
 
+class AccountDelete(BaseModel):
+    # Паролата; за влизащите през Google/Facebook — имейлът на акаунта.
+    confirm: Optional[str] = None
+
+
 @app.delete("/api/account")
-def api_delete_account(user: Tuple[int, str] = Depends(get_current_user)):
-    """GDPR чл. 17 — право на изтриване. Заличава акаунта и всички свързани данни."""
+def api_delete_account(data: Optional[AccountDelete] = None,
+                       user: Tuple[int, str] = Depends(get_current_user)):
+    """GDPR чл. 17 — право на изтриване. Заличава акаунта и всички свързани данни.
+
+    Изисква повторно потвърждение: изтриването е необратимо и с него отиват
+    платените разчитания, а отворена сесия (чужд телефон, откраднат токен)
+    не бива да стига за него.
+    """
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
         raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if row.get("role") == "admin":
         raise HTTPException(403, "Администраторският акаунт не може да се изтрие от тук.")
+    confirm = ((data.confirm if data else None) or "").strip()
+    by_password = bool(confirm) and verify_password(confirm, row.get("password_hash") or "")
+    by_email = (bool(confirm) and _has_oauth_link(user_id)
+                and confirm.lower() == (row.get("email") or "").strip().lower())
+    if not (by_password or by_email):
+        raise HTTPException(403, "За изтриване на акаунта въведи паролата си. "
+                                 "Ако влизаш с Google или Facebook — имейла на акаунта.")
 
     # Най-напред спираме евентуален активен абонамент в Stripe, за да не
     # продължи таксуването след изтриването (best-effort, никога не блокира).
@@ -8732,6 +8768,21 @@ def api_public_geocode(q: str, request: Request):
     return {"results": geocode_place(q)}
 
 # --- API Routes (AUTH REQUIRED) ---
+def person_limit_message(user_id: int, limit: int) -> str:
+    """Какво да направи човек, стигнал лимита на картите: едно изречение.
+
+    Сочи изхода, който наистина важи: който не е купил любовното разчитане,
+    получава с него още една карта — затова му го казваме, вместо да го
+    пращаме към по-голям план, който вече не съществува.
+    """
+    cards = f"{limit} {'карта' if limit == 1 else 'карти'}"
+    if "love" in purchased_features(user_id):
+        return f"Можеш да пазиш до {cards}. Изтрий една от таблото, за да добавиш нова."
+    love = next((f["name"] for f in FEATURE_CATALOGUE if f["key"] == "love"), "Любов")
+    return (f"Можеш да пазиш до {cards}. Изтрий една от таблото или отключи „{love}“ — "
+            "с него получаваш място за още една.")
+
+
 @app.get("/api/persons")
 def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
@@ -8739,12 +8790,18 @@ def api_list_persons(user: Tuple[int, str] = Depends(get_current_user)):
     row = get_user_by_id(user_id)
     is_admin = bool(row and row.get("role") == "admin")
     limit = person_limit(row) if row else None
+    can_add = is_admin or not limit or len(persons) < limit
     return {
         "persons": persons,
         "quota": {
             "used": len(persons),
             "limit": limit,  # null means unlimited
-            "can_add": is_admin or not limit or len(persons) < limit,
+            "can_add": can_add,
+            # Таблото го показва до неактивния бутон — преди човекът да е
+            # попълнил формата напразно.
+            "message": None if can_add else person_limit_message(user_id, limit),
+            "unlock": (None if can_add or "love" in purchased_features(user_id)
+                       else "love"),
         },
     }
 
@@ -8790,19 +8847,7 @@ def api_create_person(
                 "SELECT COUNT(*) FROM persons WHERE user_id = ?", (user_id,)
             ).fetchone()[0]
         if limit and used >= limit:
-            # Point at the way out that actually applies: somebody who has not
-            # bought the love reading gains a chart with it, so say so instead
-            # of sending them to a bigger plan that no longer exists.
-            owns_love = "love" in purchased_features(user_id)
-            way_out = ("Изтрий някоя, за да добавиш нова."
-                       if owns_love else
-                       "Изтрий някоя или отключи „Любовен хороскоп“ — "
-                       "той носи още една карта.")
-            raise HTTPException(
-                402,
-                f"Профилът ти позволява до {limit} "
-                f"{'карта' if limit == 1 else 'карти'}. {way_out}"
-            )
+            raise HTTPException(402, person_limit_message(user_id, limit))
 
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
@@ -10812,9 +10857,65 @@ def require_reading_access(user_id: int, cache_key: str) -> None:
 
 
 def reading_title(cache_key: str) -> str:
-    """Human title for a cache key, which may carry a ':suffix' (date, period, sign)."""
+    """Human title for a cache key, which may carry a ':suffix' (date, period, sign).
+
+    Името на модула е пълното от каталога — същото като в офертата и в
+    таблото, иначе един и същ продукт се казва различно в PDF-а.
+    """
     base = (cache_key or "").split(":", 1)[0]
+    feature = _READING_FEATURE.get(base, base)
+    meta = next((f for f in FEATURE_CATALOGUE if f["key"] == feature), None)
+    if meta:
+        return meta["name"]
     return READING_TITLES.get(base, "Разчитане")
+
+# Български, но само ASCII: част от пощенските клиенти чупят останалото в
+# името на прикачен файл. Официалната транслитерация (Закон за транслитерацията).
+_BG_TO_LATIN = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh", "з": "z",
+    "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p",
+    "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "ts", "ч": "ch",
+    "ш": "sh", "щ": "sht", "ъ": "a", "ь": "y", "ю": "yu", "я": "ya",
+}
+
+def ascii_slug(text: str) -> str:
+    """„Мария Петрова“ -> „Maria-Petrova“: за имена на файлове."""
+    # В края на думата „ия“ е „ia“ (Мария -> Maria), не „iya“.
+    text = re.sub(r"(?<=[А-Яа-я])(ия|ИЯ|Ия)(?![А-Яа-я])",
+                  lambda m: "IA" if m.group(1) == "ИЯ" else "ia", text or "")
+    out = []
+    for ch in text:
+        low = _BG_TO_LATIN.get(ch.lower())
+        if low is None:
+            out.append(ch)
+        else:
+            out.append(low.capitalize() if ch.isupper() else low)
+    return re.sub(r"[^0-9A-Za-z]+", "-", "".join(out)).strip("-")
+
+# Как се казва разчитането в името на PDF файла.
+_PDF_FILE_NAMES = {
+    "chart": "Natalna-karta", "profile": "Astrologichen-profil",
+    "horoscope": "Dneven-horoskop", "period": "Horoskop-za-period",
+    "love": "Lyubov", "akashic": "Akashovi-zapisi", "numerology": "Numerologia",
+    "moon": "Lunen-kalendar",
+}
+
+def pdf_filename(person_name: str, cache_key: str, today: Optional[datetime.date] = None) -> str:
+    """AstroKarta-Dneven-horoskop-Maria-2026-10-15.pdf — само ASCII."""
+    base, _, rest = (cache_key or "").partition(":")
+    feature = _READING_FEATURE.get(base, base)
+    what = _PDF_FILE_NAMES.get(feature) or ascii_slug(reading_title(cache_key)) or "Razchitane"
+    # Датата в името е тази, за която е разчитането (хороскоп, период); иначе
+    # денят на изтегляне — така две изтегляния не се бъркат помежду си.
+    when = (today or datetime.datetime.now(ZoneInfo("Europe/Sofia")).date()).isoformat()
+    if base == "horoscope" and re.fullmatch(r"\d{4}-\d{2}-\d{2}", rest or ""):
+        when = rest
+    elif base == "period":
+        start, _, end = rest.partition(":")
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", end):
+            when = f"{start}_{end}"
+    who = ascii_slug(person_name) or "Razchitane"
+    return f"{brand_slug()}-{what}-{who}-{when}.pdf"
 
 def reading_subtitle(cache_key: str) -> str:
     """Turn the cache key's suffix into a readable line under the title."""
@@ -10861,9 +10962,12 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
             by_name = {o["name"]: o for o in compute_natal(person)["objects"].values()}
             for label, name in (("Слънце", "Sun"), ("Луна", "Moon"), ("Асцендент", "Asc")):
                 if name in by_name and not (name == "Asc" and time_unknown_of(person)):
-                    facts.append((label, by_name[name]["sign"]))
+                    # immanuel дава английско име на знака („Taurus“).
+                    facts.append((label, tr_sign(by_name[name]["sign"])))
         except Exception:
             pass
+    # Резюмето от AI също може да е със знак на английски.
+    facts = [(k, tr_sign(v) if v in SIGNS else v) for k, v in facts]
 
     birth = f"{person['day']}.{person['month']}.{person['year']} г., " + \
         ("час неизвестен" if time_unknown_of(person) else f"{person['hour']:02d}:{person['minute']:02d} ч.")
@@ -10881,16 +10985,7 @@ def build_person_pdf(person: dict, cache_key: str) -> Tuple[bytes, str]:
         brand=brand_name(),
     )
 
-    safe = re.sub(r"[^0-9A-Za-zА-Яа-я]+", "-", person["name"]).strip("-") or "razchitane"
-    # Only the first key segment goes in the filename; suffixes like a partner's
-    # full birth data would make it unreadable.
-    base, _, rest = cache_key.partition(":")
-    slug = base if base in ("love-full", "profile", "akashic") else \
-        re.sub(r"[^0-9A-Za-z-]+", "-", cache_key).strip("-")
-    # The filename follows the brand, so a rename does not keep shipping PDFs
-    # named after the old one. ASCII only — some mail clients mangle the rest.
-    prefix = brand_slug()
-    return pdf, f"{prefix}-{safe}-{slug}.pdf"
+    return pdf, pdf_filename(person["name"], cache_key)
 
 @app.get("/api/persons/{person_id}/reading.pdf")
 def api_reading_pdf(person_id: int, key: str, user: Tuple[int, str] = Depends(get_current_user)):
@@ -11485,7 +11580,20 @@ async def settings_page(request: Request):
 
 @app.get("/synastry", response_class=HTMLResponse)
 async def synastry_page(request: Request):
-    """Synastry page — client-side JS handles auth check via localStorage token."""
+    """Старият адрес на съвместимостта: функцията живее в таба „Любов“ на картата.
+
+    Вписан човек с карта отива направо там. Без бисквитка (токенът е само в
+    localStorage) страницата прави същото в браузъра."""
+    token = _token_from_request(request)
+    if token:
+        try:
+            persons = get_all_persons(user_for_token(token)["id"])
+        except HTTPException:
+            persons = []
+        if persons:
+            # Най-старата карта (обикновено на самия човек); списъкът е по азбука.
+            first = min(persons, key=lambda x: x["id"])
+            return RedirectResponse(f"/chart/{first['id']}#love", status_code=302)
     return HTMLResponse(templates.get_template("synastry.html").render({"request": request}))
 
 @app.get("/admin", response_class=HTMLResponse)
