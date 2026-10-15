@@ -6,6 +6,7 @@ using pure Python math.
 """
 
 import math
+import re
 from html import escape
 
 # Zodiac signs in order (0 = Aries)
@@ -69,6 +70,12 @@ def sign_degree_to_absolute(sign_name: str, sign_degree: str) -> float:
 def _polar(cx, cy, r, angle_deg):
     a = math.radians(angle_deg)
     return cx + r * math.cos(a), cy + r * math.sin(a)
+
+
+def _bg_date(text: str) -> str:
+    """„1985-11-03 14:30“ → „03.11.1985 14:30“ — както датата навсякъде другаде."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})(.*)", text)
+    return f"{m.group(3)}.{m.group(2)}.{m.group(1)}{m.group(4)}" if m else text
 
 
 def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
@@ -217,7 +224,8 @@ def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
         name = name[:21] + "…"
     when = str(native.get("datetime", ""))
     if unknown:
-        when = when.split(" ")[0]          # „1985-11-03“, без измисленото 12:00
+        when = when.split(" ")[0]          # само датата, без измисленото 12:00
+    when = _bg_date(when)
     svg.append(f'<text x="{cx}" y="{cy - 8}" fill="#c9b1ff" font-size="12" text-anchor="middle" '
                 f'font-weight="bold">{escape(name)}</text>')
     svg.append(f'<text x="{cx}" y="{cy + 10}" fill="#888" font-size="9" text-anchor="middle">'

@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
 let LOG = null;
 const BASE = 'http://localhost:8000', OUT = process.argv[2];
 (async () => {
-  const b = await chromium.launch({ args: ['--no-sandbox', '--no-proxy-server'] });
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox', '--no-proxy-server'] });
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'bg-BG' });
   const p = await ctx.newPage(); const log = []; LOG = log; let n = 0;
   const ok = (cond, msg) => log.push((cond ? '✅ ' : '❌ ') + msg);
@@ -36,9 +36,14 @@ const BASE = 'http://localhost:8000', OUT = process.argv[2];
   await p.click('#submitBtn'); await p.waitForSelector('#offerGrid .offer-check', { timeout: 30000, state: 'attached' });
   ok(true, 'гост-картата е изчислена'); await shot('guest-chart');
 
+  // Презареждането не смята картата наново само — пита „Продължи с картата на …?“
+  // (иначе сгрешени данни нямаше как да се поправят).
   await p.reload({ waitUntil: 'networkidle' });
+  const asked = await p.locator('#resumeBanner').waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+  ok(asked && /на Мария\?/.test(await p.locator('#resumeBanner').innerText()), 'след презареждане пита „Продължи с картата на Мария?“');
+  await p.click('#resumeGo');
   const restored = await p.waitForSelector('#offerGrid .offer-check', { timeout: 30000, state: 'attached' }).then(() => true).catch(() => false);
-  ok(restored && (await p.inputValue('#fName')) === 'Мария Тестова', 'след презареждане картата се връща сама (данните не се губят)');
+  ok(restored && (await p.inputValue('#fName')) === 'Мария Тестова', '„Продължи“ връща същата карта (данните не се губят)');
 
   await p.locator('#offerGrid label:has(input.offer-check[value="moon"])').click();   // както клиентът — по картата
   // Имейлът е винаги видим; паролата е по избор и стои сгъната под „искам да си сложа парола сега“.
@@ -57,8 +62,9 @@ const BASE = 'http://localhost:8000', OUT = process.argv[2];
   ok(!stash, 'запазените данни на госта се изчистват, щом картата е в профила');
   const back = await p.$eval('.back-link', a => a.getAttribute('href')).catch(() => null);
   ok(back === '/dashboard', '„← Моите карти“ води към таблото');
-  const profileLocked = await p.$eval('#tabbtn-profile', t => t.dataset.feature).catch(() => null);
-  ok(profileLocked === 'profile', 'табът „Астро портрет“ носи катинар/цена за платения профил');
+  // „Накратко за теб“ в таба е безплатно — катинарът е само на платената част вътре.
+  const profileTab = await p.$eval('#tabbtn-profile', t => ({ f: t.dataset.feature || '', locked: t.classList.contains('tab-locked') })).catch(() => null);
+  ok(profileTab && !profileTab.f && !profileTab.locked, 'табът „Профил“ е без катинар (безплатното е вътре)');
 
   // Заключен модул → Отключи → съгласие → (тестово) отключване
   const picker = p.locator('#mod-root .mod-close, #mod-root [aria-label="Затвори"]').first();
@@ -86,6 +92,7 @@ const BASE = 'http://localhost:8000', OUT = process.argv[2];
   await anon.goto(BASE + '/start', { waitUntil: 'networkidle' });
   await anon.locator('.consent-ok').click({ timeout: 4000 }).catch(() => {});
   await anon.fill('#fName', 'Иван Гост'); await anon.fill('#fDay', '3'); await anon.fill('#fMonth', '11'); await anon.fill('#fYear', '1985');
+  await anon.fill('#fHour', '8'); await anon.fill('#fMinute', '15');
   await anon.fill('#fPlace', 'Варна'); await anon.waitForSelector('.suggestion', { timeout: 15000 }); await anon.locator('.suggestion').first().click();
   await anon.click('#submitBtn'); await anon.waitForSelector('#offerGrid .offer-check', { timeout: 30000, state: 'attached' });
   const login = await anon.evaluate(async () => (await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },

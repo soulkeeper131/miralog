@@ -60,7 +60,7 @@ def test_wheel_without_birth_time_has_no_angles_or_houses(client, app):
     unknown = client.post("/api/guest/chart", json={**GUEST, "time_unknown": True}).json()["svg"]
     for label in (">AS<", ">MC<", ">IC<", ">DS<"):
         assert label not in unknown
-    assert "1990-05-17<" in unknown and "12:00" not in unknown
+    assert "17.05.1990<" in unknown and "12:00" not in unknown
     # няма и номера на домове (малките цифри 1–12 по колелото)
     assert not re.search(r'fill="#555577"', unknown)
 
