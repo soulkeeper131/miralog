@@ -991,30 +991,47 @@
                     '<div class="hint">Отворили са страницата на Stripe и не са платили (след 1 час). Добри кандидати за лично писмо.</div>' +
                     repTable(['Кога', 'Клиент', 'Какво', 'Сума', 'Откъде'], ab, function(x) {
                         return [sofia(x.created_at), x.email || ('#' + x.user_id), x.names || x.keys, eur(x.amount_cents), REP_CHECKOUT[x.source] || x.source || ''];
-                    }), 3;
+                    }, 3);
 
                 html += '<h3 style="margin:18px 0 8px;">Приходи по модул</h3>' +
-                    repTable(['Модул', 'Продажби', 'Приход'], r.by_module || [], function(x) { return [x.name, num(x.orders), eur(x.amount_cents)]; }), 1;
+                    repTable(['Модул', 'Продажби', 'Приход'], r.by_module || [], function(x) { return [x.name, num(x.orders), eur(x.amount_cents)]; }, 1);
                 html += '<h3 style="margin:18px 0 8px;">Приходи по месец</h3>' +
-                    repTable(['Месец', 'Поръчки', 'Продажби', 'Върнати', 'Нето'], r.by_month || [], function(x) { return [x.month, num(x.orders), eur(x.amount_cents), eur(x.refunds_cents), eur(x.net_cents)]; }), 1;
+                    repTable(['Месец', 'Поръчки', 'Продажби', 'Върнати', 'Нето'], r.by_month || [], function(x) { return [x.month, num(x.orders), eur(x.amount_cents), eur(x.refunds_cents), eur(x.net_cents)]; }, 1);
 
                 html += '<h3 style="margin:18px 0 8px;">Заключени модули, които се гледат</h3>' +
                     '<div class="hint">Кой модул хората отварят, без да е отключен — и колко от тях после са го купили.</div>' +
-                    repTable(['Модул', 'Прегледи', 'Хора', 'Купили'], d.locked || [], function(x) { return [x.name || x.key, num(x.views), num(x.people), num(x.bought)]; }), 1;
+                    repTable(['Модул', 'Прегледи', 'Хора', 'Купили'], d.locked || [], function(x) { return [x.name || x.key, num(x.views), num(x.people), num(x.bought)]; }, 1);
                 html += '<h3 style="margin:18px 0 8px;">Кои бутони носят хора</h3>' +
                     '<div class="hint">Натискания по място на бутона (страница:бутон) и колко от натисналите после са си направили карта.</div>' +
-                    repTable(['Място', 'Натискания', 'Хора', 'Направили карта'], d.ctas || [], function(x) { return [x.place || '', num(x.clicks), num(x.people), num(x.charts)]; }), 1;
+                    repTable(['Място', 'Натискания', 'Хора', 'Направили карта'], d.ctas || [], function(x) { return [x.place || '', num(x.clicks), num(x.people), num(x.charts)]; }, 1);
                 html += '<h3 style="margin:18px 0 8px;">Използване след покупка</h3>' +
-                    repTable(['Действие', 'Модул', 'Пъти', 'Хора'], d.usage || [], function(x) { return [REP_EVENTS[x.event] || x.event, x.name || x.key || '', num(x.times), num(x.people)]; }), 2;
+                    repTable(['Действие', 'Модул', 'Пъти', 'Хора'], d.usage || [], function(x) { return [REP_EVENTS[x.event] || x.event, x.name || x.key || '', num(x.times), num(x.people)]; }, 2);
+
+                const tr = d.traffic || {};
+                html += '<h3 style="margin:18px 0 8px;">Прегледи: хора и скриптове</h3>' +
+                    '<div class="hint">Броячът на сайта записва всяко отваряне на страница. Ботовете с честно име се пропускат, но скриптове, които се представят за браузър, влизат в броя. ' +
+                    'Посетител с ' + num(tr.heavy_threshold) + '+ прегледа за ден почти сигурно е скрипт. Google Analytics брои само хората, приели бисквитките, затова там числата са по-малки.</div>' +
+                    '<div class="stats">' +
+                    statCard('Прегледи за периода', num(tr.views), num(tr.visitors) + ' посетители') +
+                    statCard('Вероятно хора', num(tr.human_views), tr.views ? Math.round(100 * (tr.human_views || 0) / tr.views) + '% от прегледите' : '—') +
+                    statCard('Вероятно скриптове', num(tr.heavy_views), num(tr.heavy_visitors) + ' „посетители“ с ' + num(tr.heavy_threshold) + '+ прегледа за ден') +
+                    (tr.unhashed_views ? statCard('Стари записи', num(tr.unhashed_views), 'Отпреди отчетите — без източник и посетител') : '') +
+                    '</div>';
+                html += repTable(['Ден', 'Прегледи', 'Посетители', 'От скриптове'], tr.by_day || [], function(x) { return [x.day, num(x.views), num(x.visitors), num(x.heavy_views)]; }, 1);
+                html += '<h3 style="margin:18px 0 8px;">Най-натоварващи „посетители“</h3>' +
+                    '<div class="hint">Всеки ред е един браузър/адрес за един ден (анонимен код). Много прегледи и много различни страници = обхождане от скрипт.</div>' +
+                    repTable(['Ден', 'Код', 'Прегледи', 'Различни страници', 'Устройство', 'Препраща от', 'Вписан'], tr.heavy || [], function(x) {
+                        return [x.day, x.visitor, num(x.views), num(x.pages), { mobile: 'Телефон', desktop: 'Компютър', tablet: 'Таблет' }[x.device] || x.device || '', x.referrer || '—', x.user_id ? '#' + x.user_id : ''];
+                    }, 2);
 
                 html += '<h3 style="margin:18px 0 8px;">Откъде идват посетителите</h3>' +
-                    repTable(['Източник', 'Канал', 'Посетители', 'Прегледи'], d.sources || [], function(x) { return [x.source, x.medium || '', num(x.visitors), num(x.views)]; }), 2;
+                    repTable(['Източник', 'Канал', 'Посетители', 'Прегледи'], d.sources || [], function(x) { return [x.source, x.medium || '', num(x.visitors), num(x.views)]; }, 2);
                 html += '<h3 style="margin:18px 0 8px;">Устройства</h3>' +
-                    repTable(['Устройство', 'Посетители', 'Прегледи'], d.devices || [], function(x) { return [{ mobile: 'Телефон', desktop: 'Компютър', tablet: 'Таблет' }[x.device] || x.device, num(x.visitors), num(x.views)]; }), 1;
+                    repTable(['Устройство', 'Посетители', 'Прегледи'], d.devices || [], function(x) { return [{ mobile: 'Телефон', desktop: 'Компютър', tablet: 'Таблет' }[x.device] || x.device, num(x.visitors), num(x.views)]; }, 1);
                 html += '<h3 style="margin:18px 0 8px;">Регистрации по начин</h3>' +
-                    repTable(['Начин', 'Регистрации'], d.signup_methods || [], function(x) { return [REP_SOURCES[x.method] || x.method, num(x.users)]; }), 1;
+                    repTable(['Начин', 'Регистрации'], d.signup_methods || [], function(x) { return [REP_SOURCES[x.method] || x.method, num(x.users)]; }, 1);
                 html += '<h3 style="margin:18px 0 8px;">Най-гледани страници</h3>' +
-                    repTable(['Страница', 'Прегледи', 'Посетители'], d.top_pages || [], function(x) { return [x.path, num(x.views), num(x.visitors)]; }), 1;
+                    repTable(['Страница', 'Прегледи', 'Посетители'], d.top_pages || [], function(x) { return [x.path, num(x.views), num(x.visitors)]; }, 1);
 
                 const cu = d.customers || {}, ai = d.ai || {};
                 html += '<h3 style="margin:18px 0 8px;">Купувачи и AI разход</h3><div class="stats">';
@@ -1249,7 +1266,7 @@
                 html += '<div class="section"><h2>Активност</h2><div class="stats">';
                 html += statCard('Прегледи · 24 ч', Number(act.views_24h) || 0, 'За последните 24 часа');
                 html += statCard('Прегледи · 7 дни', Number(act.views_7d) || 0, 'За последните 7 дни');
-                html += statCard('Прегледи · общо', Number(act.views_total) || 0, 'От пускането на брояча');
+                html += statCard('Прегледи · общо', Number(act.views_total) || 0, (act.views_since ? 'От ' + new Date(String(act.views_since).replace(' ', 'T') + 'Z').toLocaleDateString('bg-BG') : 'От пускането на брояча') + ' · вкл. скриптове, виж Отчети');
                 html += statCard('Активни · 7 дни', Number(act.active_users_7d) || 0, 'Потребители, видени наскоро');
                 html += '</div></div>';
 

@@ -58,10 +58,10 @@
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=9" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=10" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=5" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=9">
+        <link rel="stylesheet" href="/static/landing.min.css?v=10">
         <link rel="stylesheet" href="/static/consent.css?v=5">
     </noscript>
 {% include "_analytics.html" %}
@@ -299,6 +299,7 @@
                     <h3>Всички {{ pricing.bundle.count }} разчитания</h3>
                     <p class="bundle-lede">Всичко, което се отключва по-долу — с едно плащане,
                        без да избираш. Остава ти завинаги.</p>
+                    <div class="bundle-glyphs" aria-hidden="true">{% for row in pricing.rows %}<span title="{{ row.name }}">{{ row.glyph }}</span>{% endfor %}</div>
                 </div>
                 <div class="bundle-side">
                     <div class="bundle-price">
@@ -334,8 +335,8 @@
                             <span class="pt-extra">{{ row.extra }}</span>
                             {%- endif %}</p>
                         <div class="pc-foot">
-                            <span class="pc-price">{{ row.price }}</span>
-                            {% set _c = primary_cta(row.key, 'Отключи за ' ~ row.price) %}{% set _l = buy_label(_c, row.price) %}<a class="btn btn-ghost btn-sm" href="{{ _c.href }}" data-cta="landing_price:{{ row.key }}" aria-label="{{ _l }}: {{ row.name }}">{{ _l }}</a>
+                            <span class="pc-cost"><span class="pc-price">{{ row.price }}</span><span class="pc-once">еднократно</span></span>
+                            {% set _c = primary_cta(row.key, 'Отключи за ' ~ row.price) %}{% set _l = buy_label(_c, row.price) %}<a class="btn btn-primary btn-sm" href="{{ _c.href }}" data-cta="landing_price:{{ row.key }}" aria-label="{{ _l }}: {{ row.name }}">{{ _l }}</a>
                         </div>
                     </li>
                     {% endfor %}

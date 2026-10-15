@@ -24,4 +24,26 @@
             }
         } catch (e) { /* private mode */ }
     })();
+    // Менюто залепва горе: при скрол надолу се прибира (не пречи на четенето),
+    // при най-малкия скрол нагоре се връща — човек винаги има път към „Цени“ и „Вход“.
+    (function () {
+        var nav = document.querySelector('.site-nav');
+        if (!nav) return;
+        var last = window.scrollY, ticking = false;
+        function update() {
+            var y = window.scrollY, h = nav.offsetHeight;
+            nav.classList.toggle('nav-stuck', y > 4);
+            if (y < h * 2) nav.classList.remove('nav-away');
+            if (Math.abs(y - last) > 6) {
+                if (y < last) nav.classList.remove('nav-away');
+                else if (y >= h * 2 && !nav.contains(document.activeElement)) nav.classList.add('nav-away');
+                last = y;
+            }
+            ticking = false;
+        }
+        window.addEventListener('scroll', function () {
+            if (!ticking) { ticking = true; requestAnimationFrame(update); }
+        }, { passive: true });
+        update();
+    })();
 </script>

@@ -1406,7 +1406,33 @@ _BOT_UA = (
     "mj12", "petal", "bytespider", "amazonbot", "gptbot", "ccbot", "claudebot",
     "perplexity", "meta-external", "headless", "python-requests", "curl", "wget",
     "google-extended", "chatgpt", "openai", "facebookexternalhit",
+    "lighthouse", "pagespeed", "gtmetrix", "pingdom", "uptime", "monitor",
+    "statuscake", "phantomjs", "puppeteer", "playwright", "selenium",
+    "scrapy", "httpclient", "okhttp", "go-http", "axios", "node-fetch", "java/",
+    "preview", "scanner", "check", "validator",
 )
+
+
+# Таван на прегледите от един посетител (дневния му хеш) за ден: човек не
+# отваря стотици страници, скриптът — да. Над тавана не се записва.
+PAGE_VIEWS_PER_VISITOR_DAY = int(os.environ.get("PAGE_VIEWS_PER_VISITOR_DAY", "150"))
+_PV_VISITOR_COUNTS: dict = {}
+
+
+def _not_a_reader(request: Request, ua: str) -> bool:
+    """Заявки, които не са човек с браузър: ботове по User-Agent, но и всичко,
+    което не се представя като браузър (всички истински започват с „Mozilla/“),
+    няма Accept-Language (браузърите го пращат винаги, скриптовете — рядко)
+    или е само предварително зареждане (prefetch), без човек да е отворил
+    страницата."""
+    if not ua or not ua.startswith("mozilla/"):
+        return True
+    if any(b in ua for b in _BOT_UA):
+        return True
+    if not request.headers.get("accept-language"):
+        return True
+    purpose = (request.headers.get("sec-purpose") or request.headers.get("purpose") or "").lower()
+    return "prefetch" in purpose or "prerender" in purpose
 
 
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
@@ -1433,7 +1459,7 @@ async def track_page_views(request: Request, call_next):
         if "text/html" not in (response.headers.get("content-type") or ""):
             return response
         ua = (request.headers.get("user-agent") or "").lower()
-        if any(b in ua for b in _BOT_UA):
+        if _not_a_reader(request, ua):
             return response
         user_id = None
         token = _token_from_request(request)
@@ -1465,6 +1491,16 @@ async def track_page_views(request: Request, call_next):
 def _record_page_view(path: str, user_id: Optional[int], now: str,
                       extra: Optional[dict] = None) -> None:
     extra = extra or {}
+    # Една нишка пише, затова броячът е без заключване. Хешът се сменя всеки
+    # ден, така че стари ключове просто остават ненужни — чистят се изцяло.
+    visitor = extra.get("visitor")
+    if visitor:
+        if len(_PV_VISITOR_COUNTS) > 50000:
+            _PV_VISITOR_COUNTS.clear()
+        seen = _PV_VISITOR_COUNTS.get(visitor, 0) + 1
+        _PV_VISITOR_COUNTS[visitor] = seen
+        if seen > PAGE_VIEWS_PER_VISITOR_DAY:
+            return
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -4648,6 +4684,7 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
             "SELECT COUNT(*) c FROM page_views WHERE viewed_at >= ?", (week_ago,)
         ).fetchone()["c"]
         views_total = conn.execute("SELECT COUNT(*) c FROM page_views").fetchone()["c"]
+        views_since = conn.execute("SELECT MIN(viewed_at) FROM page_views").fetchone()[0]
         top_pages = [dict(r) for r in conn.execute(
             "SELECT path, COUNT(*) c FROM page_views WHERE viewed_at >= ? "
             "GROUP BY path ORDER BY c DESC LIMIT 10", (week_ago,)
@@ -4673,6 +4710,7 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
         "top_modules": top_modules, "recent_payments": recent,
         "activity": {
             "views_24h": views_24h, "views_7d": views_7d, "views_total": views_total,
+            "views_since": views_since,
             "top_pages": top_pages,
             "recent_registrations": recent_registrations,
             "active_users": active_users, "active_users_7d": active_users_7d,
@@ -5289,6 +5327,7 @@ def api_admin_ai_usage(days: int = 30, admin: dict = Depends(require_admin)):
 
 
 # --- Отчети за собственика: какво се случва и къде се губят клиентите -------
+HEAVY_VISITOR_VIEWS = 40   # прегледи за ден от един посетител, над които е почти сигурно скрипт
 EUR_PER_USD = 0.92   # само за прибл. марж (AI цените са в USD); не е счетоводен курс
 _REAL_SALE = "voided_at IS NULL AND COALESCE(method, '') NOT IN ('тест', 'еднократно')"
 
@@ -5428,6 +5467,37 @@ def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> di
             agg["visitors"] += r["visitors"] or 0
         top_pages = sorted(pages.values(), key=lambda r: -r["views"])[:20]
 
+        # Откъде са прегледите: по дни и кои „посетители“ (дневни хешове) правят
+        # десетки прегледи — това са скриптове и ботове с браузърен User-Agent,
+        # които раздуват общия брой. Старите записи са без хеш.
+        by_day = rows(
+            "SELECT date(datetime(viewed_at, '+3 hours')) AS day, COUNT(*) AS views,"
+            " COUNT(DISTINCT visitor) AS visitors FROM page_views WHERE "
+            + rng.format(col="viewed_at") + " GROUP BY day ORDER BY day DESC", start, until)
+        heavy_rows = rows(
+            "SELECT visitor, MIN(date(datetime(viewed_at, '+3 hours'))) AS day, COUNT(*) AS views,"
+            " COUNT(DISTINCT path) AS pages, MAX(device) AS device, MAX(referrer) AS referrer,"
+            " MAX(user_id) AS user_id FROM page_views WHERE visitor IS NOT NULL AND "
+            + rng.format(col="viewed_at") + " GROUP BY visitor HAVING COUNT(*) >= ?"
+            " ORDER BY views DESC", start, until, HEAVY_VISITOR_VIEWS)
+        heavy_by_day: dict = {}
+        for r in heavy_rows:
+            heavy_by_day[r["day"]] = heavy_by_day.get(r["day"], 0) + r["views"]
+            r["visitor"] = (r["visitor"] or "")[:8]
+        for r in by_day:
+            r["heavy_views"] = heavy_by_day.get(r["day"], 0)
+        unhashed = conn.execute(
+            "SELECT COUNT(*) FROM page_views WHERE visitor IS NULL AND "
+            + rng.format(col="viewed_at"), (start, until)).fetchone()[0]
+        heavy_views = sum(r["views"] for r in heavy_rows)
+        traffic = {
+            "views": cur["page_views"], "visitors": cur["visitors"],
+            "heavy_threshold": HEAVY_VISITOR_VIEWS, "heavy_visitors": len(heavy_rows),
+            "heavy_views": heavy_views, "unhashed_views": unhashed,
+            "human_views": max(0, cur["page_views"] - heavy_views - unhashed),
+            "by_day": by_day, "heavy": heavy_rows[:20],
+        }
+
         buyers_all = rows(
             "SELECT p.user_id, COUNT(*) AS orders, MIN(datetime(p.paid_at)) AS first_paid,"
             " u.created_at FROM payments p LEFT JOIN users u ON u.id = p.user_id"
@@ -5478,6 +5548,7 @@ def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> di
                       "recent": abandoned},
         "locked": locked, "usage": usage, "ctas": ctas,
         "sources": sources, "devices": devices, "signup_methods": signup_methods, "top_pages": top_pages,
+        "traffic": traffic,
         "customers": {"buyers_ever": len(buyers_all), "repeat_buyers": repeat_buyers,
                       "new_buyers": len(new_buyers), "median_days_to_first_purchase": median_days},
         "ai": {"cost_usd": round(ai["total"], 4), "clients_usd": round(ai["clients"], 4),
