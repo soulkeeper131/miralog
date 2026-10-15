@@ -45,7 +45,10 @@ def test_checkout_page_is_in_bulgarian(monkeypatch):
                                     currency="EUR", success_url="https://x/s", cancel_url="https://x/c",
                                     extra_metadata={"ga_cid": "1.2", "checkout_ref": "r"})
     assert sent["locale"] == "bg"
-    assert sent["payment_method_types"] == ["card"]
+    assert sent["allowed_payment_method_types"] == ["card"]
+    # API 2026-09-30.endive връща 400 за payment_method_types — всички
+    # плащания спряха, когато билдът взе stripe 16.
+    assert "payment_method_types" not in sent
     assert sent["metadata"]["ga_cid"] == "1.2" and sent["metadata"]["checkout_ref"] == "r"
 
 

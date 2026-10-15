@@ -177,4 +177,4 @@ def test_checkout_accepts_cards_only(monkeypatch):
                                              "currency": "EUR"}],
                                      success_url="https://x/s", cancel_url="https://x/c")
     assert len(seen) == 2
-    assert all(p["payment_method_types"] == ["card"] for p in seen)
+    assert all(p["allowed_payment_method_types"] == ["card"] for p in seen)

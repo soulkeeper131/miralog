@@ -10,9 +10,10 @@ python-jose
 tzdata
 timezonefinder
 reportlab
-# Плащанията (webhook, сверка) са проверени със stripe 15 и 16. Нова голяма
-# версия се приема след проверка, а не сама при поредния деплой.
-stripe<17
+# stripe 16 праща API 2026-09-30.endive: Checkout иска allowed_payment_method_types
+# (с payment_method_types всяко плащане връща 400). 15 е с по-старо API, в което
+# новото име го няма — затова точно 16.x. Нова голяма версия — след проверка.
+stripe>=16,<17
 pyotp
 edge-tts
 sentry-sdk[fastapi]
