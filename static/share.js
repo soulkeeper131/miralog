@@ -1,10 +1,11 @@
 /* Споделяне към всички мрежи — един бутон, една функция.
 
-   Телефон: системното „Сподели“ (Viber, WhatsApp, Messenger, Instagram…),
-   с картинката за Stories, когато браузърът позволява файлове — това е
-   единственият път до Instagram Stories, който няма преглед на линкове.
-   Компютър (или отказан системен диалог): меню с мрежите, „Копирай линка“
-   и „Свали картинка“. Всеки линк носи utm_source=<мрежа>&utm_medium=share,
+   Винаги първо нашето меню. На телефон най-горе е „Сподели линк…“ —
+   системното „Сподели“ само с линка: Viber, WhatsApp и Messenger сами
+   показват картинката като преглед. Досега там се прикачваше и самата
+   картинка, а тогава приложенията пращаха САМО нея — без линк към сайта.
+   Картинката за Stories е отделен бутон (на телефон — също през системното
+   меню, като файл). Компютър: мрежите, „Копирай линка“ и „Свали картинка“. Всеки линк носи utm_source=<мрежа>&utm_medium=share,
    за да се вижда в отчетите и GA4 откъде идват хората.
 
    openShareSheet({ url, title, text, image, feature })
@@ -40,8 +41,6 @@
         { id: 'viber', label: 'Viber', href: function (u, t) { return 'viber://forward?text=' + encodeURIComponent(t + ' ' + u); } },
         { id: 'telegram', label: 'Telegram', href: function (u, t) { return 'https://t.me/share/url?url=' + encodeURIComponent(u) + '&text=' + encodeURIComponent(t); } },
         { id: 'x', label: 'X', href: function (u, t) { return 'https://x.com/intent/post?url=' + encodeURIComponent(u) + '&text=' + encodeURIComponent(t); } },
-        { id: 'linkedin', label: 'LinkedIn', href: function (u) { return 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(u); } },
-        { id: 'pinterest', label: 'Pinterest', href: function (u, t, img) { return 'https://pinterest.com/pin/create/button/?url=' + encodeURIComponent(u) + '&media=' + encodeURIComponent(img || '') + '&description=' + encodeURIComponent(t); } },
     ];
 
     function injectStyle() {
@@ -57,7 +56,8 @@
             '.share-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}' +
             '.share-grid a,.share-grid button,.share-row button{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:10px;border:1px solid var(--border,#2b2752);background:transparent;color:inherit;font:inherit;font-size:.82rem;text-decoration:none;cursor:pointer;padding:6px}' +
             '.share-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}' +
-            '.share-row .share-copy{grid-column:1/-1;background:var(--accent,#7c3aed);border-color:transparent;color:#fff;font-weight:600}' +
+            '.share-row .share-copy{grid-column:1/-1}' +
+            '.share-native{display:flex;align-items:center;justify-content:center;width:100%;min-height:50px;margin-bottom:12px;border-radius:12px;border:0;background:var(--accent,#7c3aed);color:#fff;font:inherit;font-weight:600;cursor:pointer}' +
             '.share-close{width:100%;min-height:42px;border:0;background:transparent;color:inherit;opacity:.7;cursor:pointer;font:inherit}';
         document.head.appendChild(st);
     }
@@ -76,7 +76,9 @@
             return '<a href="' + n.href(url, o.title || '', sized(o.image, 'og')).replace(/"/g, '&quot;') +
                 '" target="_blank" rel="noopener" data-net="' + n.id + '">' + n.label + '</a>';
         }).join('');
+        var native = phone && navigator.share;
         box.innerHTML = '<h3>Сподели</h3><p>' + (o.title || '').replace(/</g, '&lt;') + '</p>' +
+            (native ? '<button type="button" class="share-native">Сподели линк…</button>' : '') +
             '<div class="share-grid">' + grid + '</div>' +
             '<div class="share-row"><button type="button" class="share-copy">Копирай линка</button>' +
             (o.image ? '<button type="button" data-dl="story">Картинка за Stories</button>' +
@@ -89,6 +91,16 @@
         document.addEventListener('keydown', onKey);
         ovl.addEventListener('click', function (e) { if (e.target === ovl) close(); });
         box.querySelector('.share-close').addEventListener('click', close);
+        var nb = box.querySelector('.share-native');
+        if (nb) nb.addEventListener('click', async function () {
+            try {
+                // Само линкът: с прикачен файл приложенията пращат картинката без него.
+                await navigator.share({ title: o.title || '', text: o.text || o.title || '',
+                                        url: withUtm(o.url, 'native') });
+                note('native', o.feature);
+                close();
+            } catch (e) { /* затворил е системното меню — нашето остава */ }
+        });
         box.querySelectorAll('[data-net]').forEach(function (a) {
             a.addEventListener('click', function () { note(a.dataset.net, o.feature); });
         });
@@ -104,7 +116,20 @@
             note('copy', o.feature);
         });
         box.querySelectorAll('[data-dl]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
+            btn.addEventListener('click', async function () {
+                // Телефон: картинката като файл през системното меню (Instagram Stories);
+                // ако браузърът не може — сваляне.
+                if (native && navigator.canShare) {
+                    try {
+                        var blob = await fetch(sized(o.image, btn.dataset.dl)).then(function (r) { return r.ok ? r.blob() : null; });
+                        var file = blob && new File([blob], 'astrokarta.jpg', { type: 'image/jpeg' });
+                        if (file && navigator.canShare({ files: [file] })) {
+                            await navigator.share({ files: [file] });
+                            note('image_' + btn.dataset.dl, o.feature);
+                            return;
+                        }
+                    } catch (e) { if (e && e.name === 'AbortError') return; }
+                }
                 var a = document.createElement('a');
                 a.href = sized(o.image, btn.dataset.dl);
                 a.download = 'astrokarta-' + btn.dataset.dl + '.jpg';
@@ -114,24 +139,8 @@
         });
     }
 
-    window.openShareSheet = async function (o) {
-        o = o || {};
-        if (isPhone() && navigator.share) {
-            var payload = { title: o.title || '', text: o.text || o.title || '', url: withUtm(o.url, 'native') };
-            try {
-                if (o.image && navigator.canShare) {
-                    var blob = await fetch(sized(o.image, 'story')).then(function (r) { return r.ok ? r.blob() : null; });
-                    var file = blob && new File([blob], 'astrokarta.jpg', { type: 'image/jpeg' });
-                    if (file && navigator.canShare({ files: [file] })) payload.files = [file];
-                }
-                await navigator.share(payload);
-                note('native', o.feature);
-                return;
-            } catch (e) {
-                if (e && e.name === 'AbortError') return;   // затворил е менюто сам
-            }
-        }
-        sheet(o);
+    window.openShareSheet = function (o) {
+        sheet(o || {});
     };
 
     // Бутони в страниците: <button class="share-btn" data-url data-title data-image data-feature>
