@@ -18,6 +18,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/ui.css">
     <link rel="stylesheet" href="/static/modules.css?v=2">
+    <link rel="stylesheet" href="/static/onboarding.css?v=2">
     <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1690,10 +1691,12 @@
 
     </div>
 
+    <div id="onboarding-root"></div>
     <script src="/static/locked.js?v=7"></script>
     <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=6"></script>
+    <script src="/static/modules.js?v=7"></script>
+    <script src="/static/onboarding.js?v=2"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -3040,11 +3043,14 @@
                 history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
                 const tab = unlockKey === 'bundle' ? null : document.getElementById('tab-' + unlockKey);
                 if (tab) showTab(unlockKey);
+                if (typeof markOnboardingDone === 'function') markOnboardingDone();   // дошъл е с цел — без въвеждане
                 if (typeof unlockModule === 'function') setTimeout(() => unlockModule(unlockKey), 300);
             } else if (tabKey && /^[a-z]+$/.test(tabKey) && document.getElementById('tab-' + tabKey)) {
                 showTab(tabKey);
-            } else if (typeof maybeShowModulePicker === 'function') {
-                setTimeout(maybeShowModulePicker, 900);
+            } else if (typeof maybeStartOnboarding === 'function') {
+                // Три стъпки при първото отваряне след запис — вместо прозореца
+                // с всички модули веднага. Показва се веднъж на акаунт.
+                setTimeout(maybeStartOnboarding, 900);
             }
             // Линк към таб от същата страница (#akashic) не я презарежда.
             window.addEventListener('hashchange', () => {

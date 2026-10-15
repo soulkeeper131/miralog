@@ -1,0 +1,145 @@
+/* Въвеждане в три стъпки при първото отваряне на картата след запис.
+   Същите токени като останалото (--bg-card, --accent…), с резервни стойности.
+   z-index е под диалозите на ui.js (9000), за да се вижда съгласието за
+   плащане върху него. Без брояч, без „остават“ — само тих преглед. */
+
+.onb-overlay {
+    position: fixed; inset: 0; z-index: 8900;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    background: rgba(6, 5, 18, .84);
+    backdrop-filter: blur(6px);
+    opacity: 0; transition: opacity .18s ease;
+    overflow-y: auto;
+}
+.onb-overlay.onb-open { opacity: 1; }
+:root[data-theme="light"] .onb-overlay { background: rgba(45, 36, 56, .58); }
+
+.onb-sheet {
+    position: relative; width: min(520px, 100%);
+    max-height: calc(100dvh - 32px); overflow-y: auto;
+    background: var(--bg-card, #14122e);
+    border: 1px solid var(--border, #2b2752);
+    border-radius: 22px;
+    padding: clamp(22px, 5vw, 32px);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, .5);
+}
+.onb-dots { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; }
+.onb-dot {
+    width: 22px; height: 4px; border-radius: 4px;
+    background: var(--border, #2b2752);
+}
+.onb-dot.on { background: var(--accent, #7c3aed); }
+.onb-count {
+    margin-left: auto; font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: .72rem; color: var(--text-dim, #9090a4);
+}
+.onb-title {
+    font-family: var(--font-display, Georgia, serif); font-weight: 700;
+    font-size: clamp(1.35rem, 5vw, 1.7rem); line-height: 1.2;
+    color: var(--text-heading, #d6c6ff); margin: 0 0 8px; text-wrap: balance;
+}
+.onb-lede {
+    color: var(--text-muted, #9a93b8); font-size: .93rem; line-height: 1.65; margin: 0 0 16px;
+}
+
+/* Стъпка 1: Слънце, Луна, Асцендент */
+.onb-point {
+    padding: 12px 14px; margin-bottom: 10px; border-radius: 14px;
+    background: var(--bg-input, #100f26); border: 1px solid var(--border-soft, #1d1a3c);
+}
+.onb-point-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.onb-point-label {
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: .66rem;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim, #9090a4);
+}
+.onb-point-pos { font-weight: 600; color: var(--text-heading, #d6c6ff); font-size: .98rem; }
+.onb-point p { margin: 4px 0 0; font-size: .86rem; line-height: 1.55; color: var(--text-soft, #b4adcc); }
+
+/* Стъпка 2: дневният хороскоп */
+.onb-link {
+    display: inline-flex; align-items: center; min-height: 44px;
+    color: var(--accent-light, #a78bfa); font-weight: 600; font-size: .95rem;
+    text-decoration: underline; text-underline-offset: 3px;
+}
+.onb-switch {
+    display: flex; align-items: center; gap: 12px; cursor: pointer;
+    margin-top: 10px; padding: 14px; border-radius: 14px;
+    background: var(--bg-input, #100f26); border: 1px solid var(--border-soft, #1d1a3c);
+    font-size: .92rem; color: var(--text, #e6e2f4); line-height: 1.45;
+}
+.onb-switch input {
+    position: absolute; opacity: 0; width: 1px; height: 1px;
+}
+.onb-track {
+    flex: 0 0 auto; position: relative; width: 46px; height: 26px; border-radius: 26px;
+    background: var(--border, #2b2752); transition: background-color .15s ease;
+}
+.onb-track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+    border-radius: 50%; background: #fff; transition: transform .15s ease;
+}
+.onb-switch input:checked + .onb-track { background: var(--accent, #7c3aed); }
+.onb-switch input:checked + .onb-track::after { transform: translateX(20px); }
+.onb-switch input:focus-visible + .onb-track { box-shadow: var(--focus-ring, 0 0 0 3px rgba(124,58,237,.28)); }
+.onb-hint { margin: 8px 2px 0; font-size: .8rem; color: var(--text-dim, #9090a4); line-height: 1.5; }
+
+/* Стъпка 3: пакетът първи, после модулите */
+.onb-pending {
+    margin-bottom: 12px; padding: 10px 12px; border-radius: 12px; font-size: .86rem;
+    background: var(--surface-thistle, rgba(205,180,219,.12)); color: var(--text, #e6e2f4);
+    line-height: 1.5;
+}
+.onb-mod {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+    padding: 12px 14px; border-radius: 14px;
+    background: var(--bg-input, #100f26); border: 1px solid var(--border-soft, #1d1a3c);
+}
+.onb-mod.onb-bundle { border-color: var(--gilt, #e8c56b); }
+.onb-mod.onb-wanted { border-color: var(--accent, #7c3aed); }
+.onb-mod-text { flex: 1 1 auto; min-width: 0; }
+.onb-mod-name { font-weight: 600; font-size: .95rem; color: var(--text-heading, #d6c6ff); line-height: 1.25; }
+.onb-mod-note { font-size: .78rem; color: var(--text-muted, #9a93b8); line-height: 1.4; margin-top: 2px; }
+.onb-mod-price {
+    font-family: var(--font-display, Georgia, serif); font-weight: 700; font-size: 1.05rem;
+    color: var(--gilt, #e8c56b); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.onb-mod-btn {
+    flex: 0 0 auto; min-height: 44px; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--accent, #7c3aed); background: transparent;
+    color: var(--accent-light, #a78bfa); font-family: inherit; font-size: .88rem; font-weight: 600;
+}
+.onb-mod-btn:hover { background: var(--accent, #7c3aed); color: #fff; }
+.onb-mod-btn:disabled { opacity: .6; cursor: not-allowed; }
+.onb-mod-btn:focus-visible { outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124,58,237,.28)); }
+@media (max-width: 460px) {
+    .onb-mod { flex-wrap: wrap; }
+    .onb-mod-text { flex-basis: 100%; }
+    .onb-mod-price { margin-right: auto; }
+}
+
+/* Бутоните остават на екрана и при дългата трета стъпка (телефон). */
+.onb-actions {
+    display: flex; align-items: center; gap: 10px; margin-top: 14px;
+    position: sticky; bottom: calc(-1 * clamp(22px, 5vw, 32px));
+    padding: 12px 0 clamp(22px, 5vw, 32px); margin-bottom: calc(-1 * clamp(22px, 5vw, 32px));
+    background: linear-gradient(180deg, transparent 0, var(--bg-card, #14122e) 14px);
+}
+.onb-next {
+    flex: 1 1 auto; min-height: 50px; padding: 12px 20px; border-radius: 12px; border: none;
+    background: var(--accent, #7c3aed); color: #fff; cursor: pointer;
+    font-family: inherit; font-size: 1rem; font-weight: 600;
+}
+.onb-next:hover { background: var(--accent-hover, #6d28d9); }
+.onb-skip {
+    flex: 0 0 auto; min-height: 44px; padding: 8px 12px; border: none; background: none; cursor: pointer;
+    color: var(--text-muted, #9a93b8); font-family: inherit; font-size: .9rem;
+    text-decoration: underline; text-underline-offset: 3px;
+}
+.onb-skip:hover { color: var(--text, #e6e2f4); }
+.onb-next:focus-visible, .onb-skip:focus-visible, .onb-link:focus-visible {
+    outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124,58,237,.28)); border-radius: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .onb-overlay, .onb-track, .onb-track::after { transition: none; }
+}

@@ -592,9 +592,18 @@ def init_db():
             ("token_version", "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"),
             # Откъде е дошъл акаунтът: start (с карта), register, google, facebook…
             ("signup_method", "ALTER TABLE users ADD COLUMN signup_method TEXT"),
+            # Кога е видяно (или пропуснато) въвеждането в 3 стъпки на картата.
+            # Празно = още не е показвано. Пази се на сървъра, за да не се
+            # връща на друго устройство.
+            ("onboarded_at", "ALTER TABLE users ADD COLUMN onboarded_at TIMESTAMP"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
+                if col == "onboarded_at":
+                    # Вече регистрираните познават сайта: въвеждането е за
+                    # новите. Без това всеки стар клиент би го видял при
+                    # първото си отваряне след деплоя.
+                    conn.execute("UPDATE users SET onboarded_at = CURRENT_TIMESTAMP")
         # Входът търси имейла без значение от главните букви.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(lower(email))")
 
@@ -3115,11 +3124,15 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
         raise HTTPException(400, "Картата не можа да се изчисли. Провери датата и мястото.")
 
     from chart_svg import generate_chart_svg
+    profile = build_profile(chart_data)
     return {
         "ok": True,
         "chart": chart_data,
-        "profile": build_profile(chart_data),
+        "profile": profile,
         "svg": generate_chart_svg(chart_data),
+        # Размазаният откъс от „Личен портрет“ под картата: истински данни от
+        # тази карта, събрани без AI (нищо не се плаща, нищо не се чака).
+        "teaser": build_teaser(profile, first_name(data.name.strip()) or data.name.strip()),
     }
 
 
@@ -8178,6 +8191,29 @@ def api_account_digest(data: DigestUpdate, user: Tuple[int, str] = Depends(get_c
         conn.commit()
     return {"ok": True, "digest_opt_in": bool(data.digest_opt_in)}
 
+@app.get("/api/account/onboarding")
+def api_onboarding_state(user: Tuple[int, str] = Depends(get_current_user)):
+    """Дали въвеждането в картата вече е показвано на този акаунт.
+
+    Връща и текущото съгласие за имейл с хороскопа, защото втората стъпка
+    го показва като превключвател (по подразбиране изключен)."""
+    row = get_user_by_id(user[0])
+    if not row:
+        raise HTTPException(401, "Невалиден акаунт.")
+    return {"done": bool(row.get("onboarded_at")),
+            "digest_opt_in": bool(row.get("digest_opt_in"))}
+
+
+@app.post("/api/account/onboarding")
+def api_onboarding_done(user: Tuple[int, str] = Depends(get_current_user)):
+    """Отбелязва въвеждането като видяно. Повторното извикване не променя датата."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET onboarded_at = CURRENT_TIMESTAMP"
+                     " WHERE id = ? AND onboarded_at IS NULL", (user[0],))
+        conn.commit()
+    return {"ok": True, "done": True}
+
+
 class ClientEvent(BaseModel):
     event: str
     feature: Optional[str] = None
@@ -8990,23 +9026,17 @@ def build_profile(chart_data: dict) -> dict:
         "diurnal": None if unknown else chart_data.get("diurnal"),
     }
 
-@app.get("/api/persons/{person_id}/teaser")
-def api_teaser(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart"))):
-    """Истински откъс от картата за размазания панел.
+def build_teaser(prof: dict, name: str = "") -> dict:
+    """Откъс от „Личен портрет“, сглобен от вече изчислената карта — без AI.
 
-    Досега под размазването стоеше измислен текст — еднакъв за всички. А
-    ядрото на картата (Слънце, Луна, Асцендент) вече е изчислено и е
-    безплатно. Показваме него: конкретно за този човек, вярно, и без нито
-    една обещана дума, която платеното разчитане да не покрие.
+    Взема готовия профил (build_profile), та да го ползват и записаният
+    човек (`/api/persons/{id}/teaser`), и гостът на /start, чиято карта не е
+    записана никъде. Ядрото (Слънце, Луна, Асцендент) е безплатно и вече е
+    изчислено, затова не обещава нито дума, която платеното разчитане да не
+    покрие. Без час на раждане build_profile връща Асцендента празен и
+    редът просто отпада.
     """
-    user_id, _ = user
-    person = get_person(person_id, user_id)
-    if not person:
-        raise HTTPException(404, "Този човек не е намерен в профила ти.")
-
-    prof = build_profile(compute_natal(person))
     core = prof.get("core") or {}
-    name = first_name(person["name"]) or person["name"]
 
     def line(key, label):
         point = core.get(key)
@@ -9032,6 +9062,24 @@ def api_teaser(person_id: int, user: Tuple[int, str] = Depends(require_feature("
         "element": {"name": dominant, "meaning": element_note} if dominant else None,
         "aspect_count": len(prof.get("key_aspects") or []),
     }
+
+
+@app.get("/api/persons/{person_id}/teaser")
+def api_teaser(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart"))):
+    """Истински откъс от картата за размазания панел.
+
+    Досега под размазването стоеше измислен текст — еднакъв за всички. А
+    ядрото на картата (Слънце, Луна, Асцендент) вече е изчислено и е
+    безплатно. Показваме него: конкретно за този човек, вярно, и без нито
+    една обещана дума, която платеното разчитане да не покрие.
+    """
+    user_id, _ = user
+    person = get_person(person_id, user_id)
+    if not person:
+        raise HTTPException(404, "Този човек не е намерен в профила ти.")
+
+    prof = build_profile(compute_natal(person))
+    return build_teaser(prof, first_name(person["name"]) or person["name"])
 
 
 @app.get("/api/persons/{person_id}/profile")

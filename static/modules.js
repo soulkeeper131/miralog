@@ -41,7 +41,7 @@
     function money(cents, currency) {
         const value = (Number(cents) || 0) / 100;
         const symbol = (currency || 'EUR') === 'EUR' ? '€' : currency;
-        return value.toFixed(2).replace('.00', '') + ' ' + symbol;
+        return value.toFixed(2).replace('.00', '').replace('.', ',') + ' ' + symbol;
     }
 
     function cardHtml(item) {
