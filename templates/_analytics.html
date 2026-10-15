@@ -60,8 +60,18 @@ window.addEventListener('load', function () {
     'analytics_storage': consentState,
     'wait_for_update': 500
   });
+  // Без съгласие gclid/wbraid минават от страница на страница в адреса
+  // (не в бисквитка), за да се отчете конверсията от рекламата; рекламните
+  // данни в пинговете без съгласие се заличават.
+  gtag('set', 'url_passthrough', true);
+  gtag('set', 'ads_data_redaction', true);
   gtag('js', new Date());
   gtag('config', '{{ gid }}'{% if actx.user_id %}, { 'user_id': '{{ actx.user_id }}' }{% endif %});
+  {% set gads = google_ads() %}{% if gads %}
+  // Google Ads: тагът на акаунта; конверсиите тръгват от track() в consent.js.
+  window.GOOGLE_ADS = {{ gads | tojson }};
+  gtag('config', {{ gads.id | tojson }});
+  {% endif %}
 
   // gtag loads after `load` so it never blocks the main thread. The consent
   // layer above keeps it dormant until the visitor opts in.

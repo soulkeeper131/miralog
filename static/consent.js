@@ -100,7 +100,19 @@
         // бисквитки или анонимен пинг. Досега посетител, който не е отговорил
         // на банера (повечето), не пращаше нито едно събитие.
         if (typeof window.gtag === 'function') {
-            window.gtag('event', name, params);
+            // event_id е за Meta (да не се брои два пъти със сървъра) — GA4 не му трябва.
+            var gaParams = {};
+            Object.keys(params).forEach(function (k) { if (k !== 'event_id') gaParams[k] = params[k]; });
+            window.gtag('event', name, gaParams);
+            // Google Ads конверсия за същото събитие, ако е зададен етикет.
+            var ads = window.GOOGLE_ADS;
+            if (ads && ads.labels && ads.labels[name]) {
+                var conv = { send_to: ads.id + '/' + ads.labels[name] };
+                if (params.value != null) conv.value = params.value;
+                if (params.currency) conv.currency = params.currency;
+                if (params.transaction_id) conv.transaction_id = params.transaction_id;
+                window.gtag('event', 'conversion', conv);
+            }
         }
 
         // Meta няма анонимен режим — само след съгласие.

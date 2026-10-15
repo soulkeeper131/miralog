@@ -41,7 +41,8 @@ def _add_metadata(params: dict, extra: Optional[dict]) -> None:
     Stripe приема само низове до 500 знака; празните се пропускат, за да не
     се появяват като "" в Dashboard."""
     for key, value in (extra or {}).items():
-        if value:
+        # „_…“ са само за приложението (вход, контекст за Meta) — не за Stripe.
+        if value and not key.startswith("_"):
             params.setdefault("metadata", {})[key] = str(value)[:500]
 
 

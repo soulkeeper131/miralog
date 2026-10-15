@@ -986,6 +986,12 @@
                 '<div class="hint">Посещение → гост-карта ' + pct(c.visit_to_chart) + ' · посещение → регистрация ' + pct(c.visit_to_signup) +
                 ' · регистрация → купувач ' + pct(c.signup_to_buyer) + ' · започнато → платено ' + pct(c.checkout_to_paid) + '</div>';
 
+                html += '<h3 style="margin:18px 0 8px;">Кампании и източници</h3>' +
+                    '<div class="hint">От клика до парите. Посещения = входове с UTM или gclid/fbclid. Регистрациите са по последния не-директен вход преди тях (до 30 дни назад); поръчките — по входа при плащането, а ако няма — по този от регистрацията. „Директно / неизвестно“ включва и акаунтите отпреди проследяването.</div>' +
+                    repTable(['Източник', 'Канал', 'Кампания', 'Посещения', 'Безплатни карти', 'Регистрации', 'Купувачи', 'Поръчки', 'Приход'], d.campaigns || [], function(x) {
+                        return [x.source, x.medium || '—', x.campaign || '—', num(x.visits), num(x.guest_charts), num(x.signups), num(x.buyers), num(x.orders), eur(x.revenue_cents)];
+                    }, 3);
+
                 const ab = (d.abandoned || {}).recent || [];
                 html += '<h3 style="margin:18px 0 8px;">Изоставени плащания</h3>' +
                     '<div class="hint">Отворили са страницата на Stripe и не са платили (след 1 час). Добри кандидати за лично писмо.</div>' +
@@ -1440,7 +1446,13 @@
                     ((u.plan_key || 'demo') === p.key ? ' selected' : '') + '>' +
                     escapeHtml(p.name) + ' (' + escapeHtml(p.key) + ')</option>';
             }).join('');
+            const acq = u.acq_source
+                ? [u.acq_source, u.acq_medium, u.acq_campaign, u.acq_content, u.acq_term].filter(Boolean).join(' · ') +
+                  (u.acq_landing ? ' → ' + u.acq_landing : '')
+                : 'директно / неизвестно';
             const body =
+                '<div class="hint" style="margin-bottom:12px;">Откъде е дошъл: <strong>' + escapeHtml(acq) + '</strong>' +
+                    (u.signup_method ? ' · регистрация: ' + escapeHtml(u.signup_method) : '') + '</div>' +
                 '<div class="form-grid">' +
                     '<div class="form-group"><label for="euPlan">Пакет</label>' +
                         '<select id="euPlan">' + planOptions + '</select></div>' +
@@ -2281,6 +2293,28 @@
                             '<input type="text" id="seoFbPixel" placeholder="напр. 1234567890" value="' +
                             escapeHtml(seo.fb_pixel_id || '') + '">' +
                             '<div class="hint">Празно = пикселът не се зарежда изобщо.</div></div>' +
+                        '<div class="form-group"><label for="seoFbCapi">Meta Conversions API токен</label>' +
+                            '<input type="password" id="seoFbCapi" autocomplete="off" placeholder="' +
+                            (d.fb_capi_token_set ? 'запазен — въведи нов, за да го смениш' : 'не е зададен') + '">' +
+                            '<div class="hint">Events Manager → пикселът → Настройки → Conversions API → „Генерирай токен за достъп“. С него покупката, регистрацията и гост-картата стигат до Meta и от сървъра (при съгласие), а не само от браузъра.</div></div>' +
+                        '<div class="form-group"><label for="seoFbTest">Meta тестов код (по желание)</label>' +
+                            '<input type="text" id="seoFbTest" autocomplete="off" placeholder="TEST12345" value="' +
+                            escapeHtml(seo.fb_test_event_code || '') + '">' +
+                            '<div class="hint">Само докато проверяваш в Events Manager → Test events. После го изтрий — иначе събитията от сървъра не влизат в отчетите.</div></div>' +
+                        '<div class="form-group"><label for="seoGadsId">Google Ads ID</label>' +
+                            '<input type="text" id="seoGadsId" placeholder="AW-123456789" value="' +
+                            escapeHtml(seo.google_ads_id || '') + '">' +
+                            '<div class="hint">Google Ads → Цели → Конверсии → таг (AW-…). Празно = без Google Ads таг; конверсиите може да се внесат и от GA4.</div></div>' +
+                        '<div class="form-group"><label for="seoGadsPurchase">Google Ads етикет: покупка</label>' +
+                            '<input type="text" id="seoGadsPurchase" placeholder="AbCdEfGh123" value="' +
+                            escapeHtml(seo.google_ads_purchase_label || '') + '">' +
+                            '<div class="hint">Частта след „/“ в send_to на конверсията.</div></div>' +
+                        '<div class="form-group"><label for="seoGadsSignup">Google Ads етикет: регистрация</label>' +
+                            '<input type="text" id="seoGadsSignup" value="' +
+                            escapeHtml(seo.google_ads_signup_label || '') + '"></div>' +
+                        '<div class="form-group"><label for="seoGadsLead">Google Ads етикет: безплатна карта</label>' +
+                            '<input type="text" id="seoGadsLead" value="' +
+                            escapeHtml(seo.google_ads_lead_label || '') + '"></div>' +
                     '</div>' +
                     '<div class="btn-row"><button class="btn" id="saveSeoBtn">Запази SEO</button>' +
                         '<a class="btn btn-ghost" href="/" target="_blank" rel="noopener">Виж страницата</a></div></div>';
@@ -2533,8 +2567,14 @@
                         seo_verification: document.getElementById('seoVerification').value.trim(),
                         analytics_id: document.getElementById('seoAnalyticsId').value.trim(),
                         fb_pixel_id: document.getElementById('seoFbPixel').value.trim(),
+                        fb_test_event_code: document.getElementById('seoFbTest').value.trim(),
+                        google_ads_id: document.getElementById('seoGadsId').value.trim(),
+                        google_ads_purchase_label: document.getElementById('seoGadsPurchase').value.trim(),
+                        google_ads_signup_label: document.getElementById('seoGadsSignup').value.trim(),
+                        google_ads_lead_label: document.getElementById('seoGadsLead').value.trim(),
                     },
                     ga_api_secret: document.getElementById('seoGaSecret').value.trim(),
+                    fb_capi_token: document.getElementById('seoFbCapi').value.trim(),
                 }, 'SEO настройките са запазени.');
             });
 

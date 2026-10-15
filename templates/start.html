@@ -1245,7 +1245,7 @@
                 }
                 renderGuestChart(data);
                 saveGuestBirth(lastBirth, picked && picked.label);
-                window.track('generate_lead', { lead_source: 'guest_chart' });
+                window.track('generate_lead', { lead_source: 'guest_chart', event_id: data.event_id });
             } catch (err) {
                 showBanner(escapeHtml(friendlyError(err)));
             } finally {
@@ -1806,7 +1806,7 @@
 
                 // Picked modules go straight to Stripe; otherwise to the chart.
                 // Регистрацията с имейл е основният път, а не пращаше sign_up.
-                window.track('sign_up', { method: password ? 'email' : 'email_no_password' });
+                window.track('sign_up', { method: password ? 'email' : 'email_no_password', event_id: data.event_id });
 
                 if (data.checkout_url) {
                     window.trackPurchase('begin_checkout', {
@@ -1844,6 +1844,6 @@
         });
 
     </script>
-    <script src="/static/consent.js?v=7"></script>
+    <script src="/static/consent.js?v=8"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import jinja2
 import og_cards
-import os, re, sys, json, sqlite3, datetime, urllib.parse, urllib.request, urllib.error, secrets, hashlib, asyncio, threading, time
+import os, re, sys, json, base64, sqlite3, datetime, urllib.parse, urllib.request, urllib.error, secrets, hashlib, asyncio, threading, time
 from pathlib import Path
 from contextlib import asynccontextmanager, contextmanager
 from typing import Optional, Tuple
@@ -600,6 +600,17 @@ def init_db():
             # аспекти, градуси). Пази се на сървъра, за да следва човека и на
             # друго устройство; по подразбиране всички са на лесния.
             ("ui_mode", "ALTER TABLE users ADD COLUMN ui_mode TEXT NOT NULL DEFAULT 'easy'"),
+            # Откъде е дошъл човекът преди регистрацията (последният не-директен
+            # вход: реклама, търсачка, сайт) — за отчета по кампании. acq_first
+            # е първият такъв вход (JSON), acq_click — дали е имало gclid/fbclid.
+            ("acq_source", "ALTER TABLE users ADD COLUMN acq_source TEXT"),
+            ("acq_medium", "ALTER TABLE users ADD COLUMN acq_medium TEXT"),
+            ("acq_campaign", "ALTER TABLE users ADD COLUMN acq_campaign TEXT"),
+            ("acq_content", "ALTER TABLE users ADD COLUMN acq_content TEXT"),
+            ("acq_term", "ALTER TABLE users ADD COLUMN acq_term TEXT"),
+            ("acq_landing", "ALTER TABLE users ADD COLUMN acq_landing TEXT"),
+            ("acq_click", "ALTER TABLE users ADD COLUMN acq_click TEXT"),
+            ("acq_first", "ALTER TABLE users ADD COLUMN acq_first TEXT"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
@@ -657,7 +668,8 @@ def init_db():
         # е дневен хеш (сол + IP + браузър), сменя се всеки ден и не позволява
         # човек да бъде разпознат в друг ден; самите IP и браузър не се пазят.
         pv_cols = [r[1] for r in conn.execute("PRAGMA table_info(page_views)").fetchall()]
-        for col in ("referrer", "utm_source", "utm_medium", "utm_campaign", "device", "visitor"):
+        for col in ("referrer", "utm_source", "utm_medium", "utm_campaign", "device", "visitor",
+                    "utm_content", "utm_term", "click"):
             if col not in pv_cols:
                 conn.execute(f"ALTER TABLE page_views ADD COLUMN {col} TEXT")
 
@@ -691,6 +703,11 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_checkout_sessions_time ON checkout_sessions(created_at)")
+        # Откъде е дошъл купувачът при самото плащане (последният вход преди него).
+        cs_cols = [r[1] for r in conn.execute("PRAGMA table_info(checkout_sessions)").fetchall()]
+        for col in ("acq_source", "acq_medium", "acq_campaign", "acq_content", "acq_term", "fb_ctx"):
+            if col not in cs_cols:
+                conn.execute(f"ALTER TABLE checkout_sessions ADD COLUMN {col} TEXT")
         # Един ред на AI извикване: токени, цена по тарифата в този час, и за
         # какво е било — клиентско разчитане, SEO страница, фоново, админ.
         conn.execute("""
@@ -1141,6 +1158,25 @@ templates.env.globals["legal_contact_email"] = legal_contact_email
 # dormant until the visitor opts in anyway.
 templates.env.globals["ga_id"] = lambda: (seo_settings().get("analytics_id") or "").strip()
 templates.env.globals["fb_pixel_id"] = lambda: (seo_settings().get("fb_pixel_id") or "").strip()
+
+
+def google_ads_config() -> dict:
+    """За _analytics.html: Google Ads ID и етикетите по събитие ({} = изключено)."""
+    seo = seo_settings()
+    ads_id = (seo.get("google_ads_id") or "").strip()
+    if not re.fullmatch(r"AW-\d{6,15}", ads_id):
+        return {}
+    labels = {}
+    for event, key in (("purchase", "google_ads_purchase_label"),
+                       ("sign_up", "google_ads_signup_label"),
+                       ("generate_lead", "google_ads_lead_label")):
+        label = (seo.get(key) or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9_-]{4,64}", label):
+            labels[event] = label
+    return {"id": ads_id, "labels": labels}
+
+
+templates.env.globals["google_ads"] = google_ads_config
 # Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
 templates.env.globals["admin_host"] = ADMIN_HOST
 
@@ -1470,12 +1506,23 @@ async def track_page_views(request: Request, call_next):
             except Exception:
                 user_id = None
         now = datetime.datetime.utcnow().isoformat(timespec="seconds")
-        q = request.query_params
+        touch = touch_from_request(request)
+        if touch:
+            response.set_cookie(ATTR_COOKIE, attribution_cookie_value(request, touch),
+                                max_age=ATTR_DAYS * 86400, httponly=True, samesite="lax",
+                                secure=IS_PRODUCTION, path="/")
+        # UTM, а без тях — мрежата от идентификатора на клика (gclid → google/cpc).
+        # Входът от обикновен сайт или търсачка остава в referrer, както досега.
+        paid = touch if touch and ("k" in touch or "c" in touch
+                                  or request.query_params.get("utm_source")) else {}
         extra = {
             "referrer": _referrer_host(request),
-            "utm_source": (q.get("utm_source") or "")[:60] or None,
-            "utm_medium": (q.get("utm_medium") or "")[:60] or None,
-            "utm_campaign": (q.get("utm_campaign") or "")[:80] or None,
+            "utm_source": paid.get("s"),
+            "utm_medium": paid.get("m"),
+            "utm_campaign": paid.get("c"),
+            "utm_content": paid.get("ct"),
+            "utm_term": paid.get("t"),
+            "click": paid.get("k"),
             "device": _device_class(ua),
             "visitor": visitor_hash(request),
         }
@@ -1505,9 +1552,11 @@ def _record_page_view(path: str, user_id: Optional[int], now: str,
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO page_views (path, user_id, viewed_at, referrer, utm_source,"
-                " utm_medium, utm_campaign, device, visitor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " utm_medium, utm_campaign, utm_content, utm_term, click, device, visitor)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (path, user_id, now, extra.get("referrer"), extra.get("utm_source"),
-                 extra.get("utm_medium"), extra.get("utm_campaign"), extra.get("device"),
+                 extra.get("utm_medium"), extra.get("utm_campaign"), extra.get("utm_content"),
+                 extra.get("utm_term"), extra.get("click"), extra.get("device"),
                  extra.get("visitor")),
             )
     except Exception:
@@ -1559,6 +1608,129 @@ def _referrer_host(request: Request) -> Optional[str]:
     if not host or host == own or host.endswith("." + own) or any(x in ref for x in _IGNORED_REFERRERS):
         return None
     return host[:80]
+
+
+# --- Откъде идва човекът: реклама, търсачка, социална мрежа, друг сайт -------
+# Входът (UTM, gclid/fbclid или външен referrer) се пази в собствена бисквитка
+# на сайта за ATTR_DAYS дни: първият („f“) и последният („l“) не-директен вход.
+# Така регистрацията и плащането, дори на другия ден, се отнасят към рекламата,
+# която е довела човека. В бисквитката са само имената на кампанията и
+# страницата на входа — без IP, без идентификатор на клика, без нищо, което
+# разпознава човека; пази се само при нас (HttpOnly) и не отива при трети страни.
+ATTR_COOKIE = "miralog_src"
+ATTR_DAYS = 30
+_UTM_FIELDS = (("utm_source", "s", 60), ("utm_medium", "m", 60), ("utm_campaign", "c", 100),
+               ("utm_content", "ct", 100), ("utm_term", "t", 100))
+# Идентификатор на клик → рекламна мрежа и канал, когато в адреса няма UTM.
+# fbclid Facebook слага и на обикновените (неплатени) публикации — затова е
+# „social“, а не „paid“; платените реклами носят своите UTM.
+_CLICK_IDS = {"gclid": ("google", "cpc"), "gbraid": ("google", "cpc"), "wbraid": ("google", "cpc"),
+              "dclid": ("google", "display"), "msclkid": ("bing", "cpc"),
+              "fbclid": ("facebook", "social"), "ttclid": ("tiktok", "cpc")}
+_SEARCH_ENGINES = {"google": "google", "bing": "bing", "yahoo": "yahoo", "duckduckgo": "duckduckgo",
+                   "yandex": "yandex", "ecosia": "ecosia", "baidu": "baidu", "seznam": "seznam"}
+_SOCIAL_SITES = {"facebook.com": "facebook", "fb.com": "facebook", "instagram.com": "instagram",
+                 "t.co": "twitter", "x.com": "twitter", "twitter.com": "twitter",
+                 "tiktok.com": "tiktok", "pinterest.com": "pinterest", "linkedin.com": "linkedin",
+                 "lnkd.in": "linkedin", "youtube.com": "youtube", "threads.net": "threads",
+                 "reddit.com": "reddit", "viber.com": "viber", "messenger.com": "facebook"}
+
+
+def _clean_param(value, limit: int) -> str:
+    value = re.sub(r"[\x00-\x1f<>\"]", "", str(value or "")).strip()
+    return value[:limit]
+
+
+def _classify_referrer(host: str) -> tuple:
+    """Домейн на препращащата страница → (източник, канал)."""
+    parts = host.split(".")
+    for site, name in _SOCIAL_SITES.items():
+        if host == site or host.endswith("." + site):
+            return name, "social"
+    for key, name in _SEARCH_ENGINES.items():
+        if key in parts:
+            return name, "organic"
+    return host, "referral"
+
+
+def touch_from_request(request: Request) -> Optional[dict]:
+    """Входът, който носи тази заявка, или None за директно/вътрешно отваряне."""
+    # API адресите не са вход: връщането от Google/Facebook вход идва с
+    # referrer facebook.com и иначе би „довело“ регистрацията от Facebook.
+    if (request.url.path or "/").startswith("/api/"):
+        return None
+    q = request.query_params
+    touch = {}
+    for param, key, limit in _UTM_FIELDS:
+        value = _clean_param(q.get(param), limit)
+        if value:
+            touch[key] = value.lower() if key in ("s", "m") else value
+    click = next((k for k in _CLICK_IDS if q.get(k)), None)
+    if click:
+        touch["k"] = click
+        touch.setdefault("s", _CLICK_IDS[click][0])
+        touch.setdefault("m", _CLICK_IDS[click][1])
+    ref = _referrer_host(request)
+    if ref:
+        touch["ref"] = ref
+    if "s" not in touch:
+        if not ref:
+            return None
+        touch["s"], touch["m"] = _classify_referrer(ref)
+    touch["lp"] = (request.url.path or "/")[:120]
+    touch["at"] = datetime.datetime.utcnow().date().isoformat()
+    return touch
+
+
+def read_attribution(request: Optional[Request]) -> dict:
+    """{"f": първи вход, "l": последен вход} от бисквитката; {} ако няма."""
+    try:
+        raw = (request.cookies.get(ATTR_COOKIE) or "") if request is not None else ""
+        if not raw or len(raw) > 3000:
+            return {}
+        data = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode())
+        if not isinstance(data, dict):
+            return {}
+        return {k: v for k, v in data.items() if k in ("f", "l") and isinstance(v, dict)}
+    except Exception:
+        return {}
+
+
+def attribution_cookie_value(request: Request, touch: dict) -> str:
+    """Нова стойност на бисквитката: първият вход остава, последният се сменя."""
+    current = read_attribution(request)
+    data = {"f": current.get("f") or touch, "l": touch}
+    raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def current_touch(request: Optional[Request]) -> dict:
+    """Последният вход: от самата заявка (ако носи UTM) или от бисквитката."""
+    try:
+        touch = touch_from_request(request) if request is not None else None
+    except Exception:
+        touch = None   # отчетът никога не бива да спре регистрация или плащане
+    return touch or read_attribution(request).get("l") or {}
+
+
+def save_user_attribution(user_id: int, request: Optional[Request]) -> None:
+    """Записва към нов акаунт откъде е дошъл човекът. Само веднъж."""
+    try:
+        attr = read_attribution(request)
+        last = current_touch(request)
+        if not last:
+            return
+        first = attr.get("f") or last
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "UPDATE users SET acq_source = ?, acq_medium = ?, acq_campaign = ?, acq_content = ?,"
+                " acq_term = ?, acq_landing = ?, acq_click = ?, acq_first = ?"
+                " WHERE id = ? AND acq_source IS NULL",
+                (last.get("s"), last.get("m"), last.get("c"), last.get("ct"), last.get("t"),
+                 last.get("lp"), last.get("k"),
+                 json.dumps(first, ensure_ascii=False)[:600], user_id))
+    except Exception:
+        log.warning("Източникът на регистрацията не се записа", exc_info=True)
 
 
 # Позволените събития от страницата (POST /api/events) — нищо друго не се пише.
@@ -3339,7 +3511,10 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
     # Изчислението е тежко и не иска вход — без таван един скрипт би заел
     # процесора за всички останали.
     rate_limit("guest_chart", client_ip(request))
-    record_event("guest_chart", request=request)
+    touch = current_touch(request)
+    record_event("guest_chart", request=request,
+                 meta={"src": {k: touch[k] for k in ("s", "m", "c", "ct") if touch.get(k)}} if touch else None)
+    lead_id = "lead-" + secrets.token_urlsafe(9)
     name = check_person_name(data.name)
     validate_birth(data.year, data.month, data.day, data.hour, data.minute,
                    data.lat, data.lon, data.timezone)
@@ -3360,6 +3535,7 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
 
     from chart_svg import generate_chart_svg
     profile = build_profile(chart_data)
+    send_fb_event("Lead", lead_id, fb_context(request), custom={"content_name": "guest_chart"})
     return {
         "ok": True,
         "chart": chart_data,
@@ -3368,6 +3544,8 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
         # Размазаният откъс от „Личен портрет“ под картата: истински данни от
         # тази карта, събрани без AI (нищо не се плаща, нищо не се чака).
         "teaser": build_teaser(profile, first_name(name) or name),
+        # Гост-картата е „lead“ за рекламите; браузърът праща същия event_id.
+        "event_id": lead_id,
     }
 
 
@@ -3451,7 +3629,7 @@ def api_onboard(data: OnboardRequest, request: Request):
     # Това е най-честият път за регистрация — от началната страница, а не от
     # /register. Известието стоеше само на другите два и затова не тръгваше.
     audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
-    note_signup(user["id"], "start")
+    note_signup(user["id"], "start", request)
     notify_new_user(user["id"], email, "натална карта")
 
     if not chose_password:
@@ -3468,6 +3646,7 @@ def api_onboard(data: OnboardRequest, request: Request):
         "chose_password": chose_password,
         "email": email,
         "chart_url": f"/chart/{person_id}?token={token}{saved_flag}",
+        "event_id": signup_conversion(user["id"], email, request),
     }
 
     # Modules picked before signing up go straight to checkout, so the visitor
@@ -3570,7 +3749,7 @@ def api_register(data: AuthRequest, request: Request):
     grant_signup_features(user["id"])
     token = create_token(user["id"], user["email"])
     audit("register", f"Нова регистрация: {email}", user_id=user["id"], actor=email)
-    note_signup(user["id"], "register")
+    note_signup(user["id"], "register", request)
     notify_new_user(user["id"], email, "имейл и парола")
     try_send_template(
         email, "welcome",
@@ -3578,7 +3757,8 @@ def api_register(data: AuthRequest, request: Request):
         link=f"{site_base_url(request)}/dashboard",
         expires="",
     )
-    return {"token": token, "user": {"id": user["id"], "email": user["email"]}}
+    return {"token": token, "user": {"id": user["id"], "email": user["email"]},
+            "event_id": signup_conversion(user["id"], email, request)}
 
 @app.get("/api/auth/me")
 def api_me(user: Tuple[int, str] = Depends(get_current_user)):
@@ -3784,6 +3964,15 @@ SEO_DEFAULTS = {
     "analytics_id": "G-CY4NT2QLFX",
     # Meta/Facebook pixel. Empty means no pixel is loaded at all.
     "fb_pixel_id": "",
+    # Тестов код от Meta Events Manager → Test events: докато е попълнен,
+    # събитията от сървъра излизат там. Празно = истински събития.
+    "fb_test_event_code": "",
+    # Google Ads: ID на акаунта (AW-…) и етикетите на конверсиите. Празно =
+    # няма Google Ads таг (конверсиите пак могат да се внесат от GA4).
+    "google_ads_id": "",
+    "google_ads_purchase_label": "",
+    "google_ads_signup_label": "",
+    "google_ads_lead_label": "",
 }
 
 def seo_settings() -> dict:
@@ -4769,7 +4958,8 @@ def api_admin_overview(admin: dict = Depends(require_admin)):
 def api_admin_users(q: Optional[str] = None, admin: dict = Depends(require_admin)):
     """All accounts, with their plan and usage."""
     sql = ("SELECT u.id, u.email, u.role, u.plan_key, u.plan_expires, u.is_blocked, u.note, "
-           "u.created_at, u.last_login, "
+           "u.created_at, u.last_login, u.signup_method, u.acq_source, u.acq_medium, "
+           "u.acq_campaign, u.acq_content, u.acq_term, u.acq_landing, "
            "(SELECT COUNT(*) FROM persons p WHERE p.user_id = u.id) AS persons, "
            "(SELECT COALESCE(SUM(amount_cents),0) FROM payments pm"
            " WHERE pm.user_id = u.id AND pm.voided_at IS NULL) AS paid_cents "
@@ -5501,6 +5691,52 @@ def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> di
             agg["visitors"] += r["visitors"] or 0
         top_pages = sorted(pages.values(), key=lambda r: -r["views"])[:20]
 
+        # Кампании: от посещението до парите, по източник / канал / кампания.
+        # Посещенията са входовете с UTM или gclid/fbclid; гост-картите носят
+        # входа си в meta; регистрациите — users.acq_*; поръчките — входът при
+        # плащането, а ако там няма — този от регистрацията.
+        campaigns: dict = {}
+
+        def _bucket(src, med, camp):
+            key = (src or "(директно / неизвестно)", med or "", camp or "")
+            return campaigns.setdefault(key, {
+                "source": key[0], "medium": key[1], "campaign": key[2], "visits": 0,
+                "guest_charts": 0, "signups": 0, "buyers": 0, "orders": 0, "revenue_cents": 0})
+
+        for r in rows(
+                "SELECT utm_source AS s, utm_medium AS m, utm_campaign AS c,"
+                " COUNT(DISTINCT COALESCE(visitor, id)) AS n FROM page_views"
+                " WHERE (utm_source IS NOT NULL OR click IS NOT NULL) AND "
+                + rng.format(col="viewed_at") + " GROUP BY s, m, c", start, until):
+            _bucket(r["s"], r["m"], r["c"])["visits"] += r["n"]
+        for r in rows(
+                "SELECT json_extract(meta, '$.src.s') AS s, json_extract(meta, '$.src.m') AS m,"
+                " json_extract(meta, '$.src.c') AS c, COUNT(*) AS n FROM events"
+                " WHERE event = 'guest_chart' AND " + rng.format(col="at") + " GROUP BY s, m, c",
+                start, until):
+            _bucket(r["s"], r["m"], r["c"])["guest_charts"] += r["n"]
+        for r in rows(
+                "SELECT acq_source AS s, acq_medium AS m, acq_campaign AS c, COUNT(*) AS n FROM users"
+                " WHERE role != 'admin' AND " + rng.format(col="created_at") + " GROUP BY s, m, c",
+                start, until):
+            _bucket(r["s"], r["m"], r["c"])["signups"] += r["n"]
+        for r in rows(
+                "SELECT CASE WHEN cs.acq_source IS NOT NULL THEN cs.acq_source ELSE u.acq_source END AS s,"
+                " CASE WHEN cs.acq_source IS NOT NULL THEN cs.acq_medium ELSE u.acq_medium END AS m,"
+                " CASE WHEN cs.acq_source IS NOT NULL THEN cs.acq_campaign ELSE u.acq_campaign END AS c,"
+                " COUNT(*) AS orders, COUNT(DISTINCT p.user_id) AS buyers,"
+                " COALESCE(SUM(p.amount_cents), 0) AS cents"
+                " FROM payments p LEFT JOIN checkout_sessions cs ON cs.payment_id = p.id"
+                " LEFT JOIN users u ON u.id = p.user_id"
+                f" WHERE p.{_REAL_SALE} AND " + rng.format(col="p.paid_at") + " GROUP BY s, m, c",
+                start, until):
+            b = _bucket(r["s"], r["m"], r["c"])
+            b["orders"] += r["orders"]
+            b["buyers"] += r["buyers"]
+            b["revenue_cents"] += r["cents"]
+        campaign_rows = sorted(campaigns.values(), key=lambda b: (
+            -b["revenue_cents"], -b["signups"], -b["guest_charts"], -b["visits"]))[:40]
+
         # Откъде са прегледите: по дни и кои „посетители“ (дневни хешове) правят
         # десетки прегледи — това са скриптове и ботове с браузърен User-Agent,
         # които раздуват общия брой. Старите записи са без хеш.
@@ -5582,7 +5818,7 @@ def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> di
                       "recent": abandoned},
         "locked": locked, "usage": usage, "ctas": ctas,
         "sources": sources, "devices": devices, "signup_methods": signup_methods, "top_pages": top_pages,
-        "traffic": traffic,
+        "traffic": traffic, "campaigns": campaign_rows,
         "customers": {"buyers_ever": len(buyers_all), "repeat_buyers": repeat_buyers,
                       "new_buyers": len(new_buyers), "median_days_to_first_purchase": median_days},
         "ai": {"cost_usd": round(ai["total"], 4), "clients_usd": round(ai["clients"], 4),
@@ -6276,6 +6512,7 @@ def api_admin_settings(admin: dict = Depends(require_admin)):
         "seo": seo_settings(),
         # Тайният ключ за GA4 от сървъра не се връща — само дали е зададен.
         "ga_api_secret_set": bool(ga_api_secret()),
+        "fb_capi_token_set": bool(fb_capi_token()),
         "brand": {key: (get_setting(key) or default)
                   for key, default in BRAND_DEFAULTS.items()},
         # Secrets are never echoed back — only whether one is stored, so the
@@ -6347,6 +6584,8 @@ def api_admin_save_settings(payload: dict, admin: dict = Depends(require_admin))
     # Празно поле = „не пипай“ (стойността не се показва, за да се редактира).
     if str(payload.get("ga_api_secret") or "").strip():
         set_setting("ga_api_secret", str(payload["ga_api_secret"]).strip())
+    if str(payload.get("fb_capi_token") or "").strip():
+        set_setting("fb_capi_token", str(payload["fb_capi_token"]).strip())
 
     # A blank brand field means "go back to the default", so it is stored empty
     # and brand() falls through — that is why this does not skip empty values.
@@ -7025,8 +7264,20 @@ def note_login(user_id: int) -> None:
         pass
 
 
-def note_signup(user_id: int, method: str) -> None:
-    """Откъде е дошъл акаунтът: start (с карта), register, google, facebook."""
+def signup_conversion(user_id: int, email: str, request: Optional[Request]) -> str:
+    """Регистрацията като конверсия и от сървъра (Meta CompleteRegistration).
+    Връща event_id — браузърът праща своето събитие със същия, за да се брои веднъж."""
+    event_id = f"reg-{user_id}"
+    send_fb_event("CompleteRegistration", event_id, fb_context(request), email=email,
+                  user_id=user_id, custom={"status": "registered"})
+    return event_id
+
+
+def note_signup(user_id: int, method: str, request: Optional[Request] = None) -> None:
+    """Откъде е дошъл акаунтът: start (с карта), register, google, facebook —
+    и от коя реклама/сайт (бисквитката с входа, ако има)."""
+    if request is not None:
+        save_user_attribution(user_id, request)
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("UPDATE users SET signup_method = COALESCE(signup_method, ?),"
@@ -7394,25 +7645,144 @@ def ga_client_id_from_request(request: Optional[Request]) -> str:
 
 
 def checkout_tracking(request: Optional[Request]) -> dict:
-    """Какво пътува в Stripe metadata: client_id за GA4 и номер на опита за
-    плащане (checkout_ref) — с него платеното се отличава от изоставеното."""
+    """Какво пътува в Stripe metadata: client_id за GA4, номер на опита за
+    плащане (checkout_ref) — с него платеното се отличава от изоставеното — и
+    кампанията, от която е дошъл купувачът (вижда се и в Stripe).
+
+    Ключовете с „_“ остават само при нас (billing ги пропуска): входът и
+    контекстът за Meta (fbp/fbc, IP, браузър) — той само при съгласие."""
+    touch = current_touch(request)
     return {"ga_cid": ga_client_id_from_request(request),
-            "checkout_ref": secrets.token_urlsafe(12)}
+            "checkout_ref": secrets.token_urlsafe(12),
+            "utm_source": touch.get("s"), "utm_medium": touch.get("m"),
+            "utm_campaign": touch.get("c"),
+            "_touch": touch, "_fb": fb_context(request)}
 
 
 def record_checkout(tracking: dict, *, user_id: int, keys: list, amount_cents: int,
                     currency: str, source: str) -> None:
-    """Създаден Stripe Checkout — за отчета „изоставени плащания“."""
+    """Създаден Stripe Checkout — за отчета „изоставени плащания“ и „Кампании“."""
+    touch = tracking.get("_touch") or {}
+    fb = tracking.get("_fb") or {}
+    now = datetime.datetime.utcnow()
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO checkout_sessions (ref, user_id, keys, amount_cents,"
-                " currency, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " currency, source, created_at, acq_source, acq_medium, acq_campaign,"
+                " acq_content, acq_term, fb_ctx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (tracking.get("checkout_ref"), user_id, ",".join(keys), int(amount_cents or 0),
-                 (currency or "EUR").upper(), source,
-                 datetime.datetime.utcnow().isoformat(timespec="seconds")))
+                 (currency or "EUR").upper(), source, now.isoformat(timespec="seconds"),
+                 touch.get("s"), touch.get("m"), touch.get("c"), touch.get("ct"), touch.get("t"),
+                 json.dumps(fb) if fb else None))
+            # IP и браузърът за Meta не се пазят по-дълго, отколкото трябват.
+            conn.execute("UPDATE checkout_sessions SET fb_ctx = NULL WHERE fb_ctx IS NOT NULL"
+                         " AND created_at < ?",
+                         ((now - datetime.timedelta(days=7)).isoformat(timespec="seconds"),))
     except Exception:
         log.warning("Опитът за плащане не се записа", exc_info=True)
+
+
+def checkout_fb_context(ref: Optional[str]) -> dict:
+    """Контекстът за Meta, записан при започване на плащането (и го изтрива)."""
+    if not ref:
+        return {}
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute("SELECT fb_ctx FROM checkout_sessions WHERE ref = ?", (ref,)).fetchone()
+            if row and row[0]:
+                conn.execute("UPDATE checkout_sessions SET fb_ctx = NULL WHERE ref = ?", (ref,))
+                return json.loads(row[0])
+    except Exception:
+        log.warning("Контекстът за Meta не се прочете", exc_info=True)
+    return {}
+
+
+# --- Meta Conversions API: събитията и от сървъра ------------------------------
+# Пикселът в браузъра губи част от събитията (блокери, iOS, затворен раздел).
+# Сървърът праща същите — покупка, регистрация, гост-карта — със същия
+# event_id, затова Meta ги брои по веднъж. Само когато има бисквитката _fbp:
+# тя се появява едва след съгласие (пикселът се инициализира чак тогава), така
+# че без съгласие нищо не тръгва към Meta.
+FB_GRAPH_VERSION = os.environ.get("FB_GRAPH_VERSION", "v23.0")
+
+
+def fb_capi_token() -> str:
+    return (os.environ.get("FB_CAPI_TOKEN") or get_setting("fb_capi_token") or "").strip()
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.strip().lower().encode()).hexdigest()
+
+
+def fb_context(request: Optional[Request]) -> dict:
+    """fbp/fbc, IP и браузър на заявката — само ако човекът е дал съгласие."""
+    if request is None:
+        return {}
+    try:
+        fbp = (request.cookies.get("_fbp") or "").strip()
+        if not fbp:
+            return {}
+        fbc = (request.cookies.get("_fbc") or "").strip()
+        fbclid = request.query_params.get("fbclid")
+        if not fbc and fbclid:
+            fbc = f"fb.1.{int(time.time() * 1000)}.{fbclid[:200]}"
+        return {"fbp": fbp[:120], "fbc": fbc[:300] or None, "ip": client_ip(request) or None,
+                "ua": (request.headers.get("user-agent") or "")[:400] or None,
+                "url": (request.headers.get("referer") or str(request.url))[:500]}
+    except Exception:
+        return {}
+
+
+def send_fb_event(name: str, event_id: str, ctx: dict, *, email: str = "",
+                  user_id: Optional[int] = None, custom: Optional[dict] = None) -> bool:
+    """Събитие към Meta Conversions API, във фона. True = пуснато."""
+    pixel = (seo_settings().get("fb_pixel_id") or "").strip()
+    token = fb_capi_token()
+    if not (pixel and token and ctx and ctx.get("fbp")):
+        return False
+    user_data = {"fbp": ctx["fbp"]}
+    for key, field in (("fbc", "fbc"), ("ip", "client_ip_address"), ("ua", "client_user_agent")):
+        if ctx.get(key):
+            user_data[field] = ctx[key]
+    if email:
+        user_data["em"] = [_sha256(email)]
+    if user_id:
+        user_data["external_id"] = [_sha256(str(user_id))]
+    event = {"event_name": name, "event_time": int(time.time()), "event_id": str(event_id),
+             "action_source": "website", "user_data": user_data}
+    if ctx.get("url"):
+        event["event_source_url"] = ctx["url"]
+    if custom:
+        event["custom_data"] = custom
+    body = {"data": [event]}
+    test_code = (get_setting("fb_test_event_code") or "").strip()
+    if test_code:
+        body["test_event_code"] = test_code
+    url = (f"https://graph.facebook.com/{FB_GRAPH_VERSION}/{urllib.parse.quote(pixel)}/events"
+           f"?access_token={urllib.parse.quote(token)}")
+
+    def _post():
+        try:
+            req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode()[:300]
+            except Exception:
+                pass
+            log.warning("Meta %s не тръгна: %s %s", name, e.code, detail)
+        except Exception as e:
+            log.warning("Meta %s не тръгна: %s", name, e)
+
+    if NOTIFY_ASYNC:
+        threading.Thread(target=_post, daemon=True).start()
+    else:
+        _post()
+    return True
 
 
 def mark_checkout_paid(meta: dict, payment_id: Optional[int]) -> None:
@@ -7587,6 +7957,12 @@ def fulfill_checkout_session(session: dict) -> None:
             "transaction_id": session_id, "value": round(amount / 100, 2),
             "currency": currency, "items": ga4_items(meta, keys),
         }, user_id=user_id)
+        # Същият event_id като на пиксела в браузъра (transaction_id = session_id).
+        send_fb_event("Purchase", session_id, checkout_fb_context(meta.get("checkout_ref")),
+                      email=_session_email(session) or "", user_id=user_id, custom={
+                          "value": round(amount / 100, 2), "currency": (currency or "EUR").upper(),
+                          "content_ids": keys, "content_type": "product", "order_id": session_id,
+                          "contents": [{"id": k, "quantity": 1} for k in keys]})
 
     # Електронен документ (Н-18, чл. 52о) и фактура — точно веднъж, във фона,
     # за да не чака клиентът (и Stripe) пощенския сървър. Номерът вече е
@@ -8483,6 +8859,10 @@ def api_oauth_callback(provider: str, request: Request,
 
     if user.get("is_blocked"):
         return _oauth_fail("blocked")
+    signup_event_id = None
+    if user.get("_new_account"):
+        save_user_attribution(user["id"], request)
+        signup_event_id = signup_conversion(user["id"], user.get("email") or "", request)
 
     if user.get("totp_secret"):
         # Входът през доставчик не бива да заобикаля 2FA: първо кодът, после
@@ -8512,6 +8892,7 @@ def api_oauth_callback(provider: str, request: Request,
         # GA4: вход/регистрация през Google/Facebook минаваха неотчетени.
         "ga_event": "sign_up" if user.get("_new_account") else "login",
         "ga_method": provider,
+        "ga_event_id": signup_event_id,
     }))
 
 

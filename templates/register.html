@@ -492,7 +492,7 @@
                 localStorage.setItem('miralog_token', data.token);
                 localStorage.setItem('miralog_email', data.user.email);
                 document.cookie = 'miralog_token=' + encodeURIComponent(data.token) + '; path=/; SameSite=Lax; max-age=2592000';
-                window.track('sign_up', { method: 'email' });
+                window.track('sign_up', { method: 'email', event_id: data.event_id });
 
                 successEl.textContent = 'Регистрацията е успешна! Пренасочване...';
                 successEl.classList.add('visible');
@@ -514,6 +514,6 @@
             }
         });
     </script>
-    <script src="/static/consent.js?v=7"></script>
+    <script src="/static/consent.js?v=8"></script>
 </body>
 </html>

@@ -117,7 +117,7 @@
         // gtag още не е заредил (зарежда се след load) — събитието чака в
         // dataLayer и тръгва, ако страницата живее достатъчно. Кратка пауза,
         // за да не се губи при мигновеното пренасочване.
-        window.track({{ ga_event | tojson }}, { method: {{ ga_method | tojson }} });
+        window.track({{ ga_event | tojson }}, { method: {{ ga_method | tojson }}, event_id: {{ (ga_event_id or '') | tojson }} || undefined });
         setTimeout(function () {
             finishLogin({{ token | tojson }}, {{ email | tojson }}, {{ next_url | tojson }});
         }, 800);
