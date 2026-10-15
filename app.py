@@ -1737,8 +1737,13 @@ def validate_birth(year, month, day, hour, minute, lat, lon, timezone) -> None:
         datetime.date(int(year), int(month), int(day))
     except (TypeError, ValueError):
         raise HTTPException(400, "Невалидна дата на раждане — провери деня и месеца.")
-    if not 1800 <= int(year) <= 2200:
-        raise HTTPException(400, "Годината на раждане трябва да е между 1800 и 2200.")
+    # Горната граница е днешната година, не 2200: сгрешената година (2099
+    # вместо 1990) досега даваше карта без никакъв сигнал.
+    today_year = datetime.date.today().year
+    if not 1800 <= int(year) <= today_year:
+        if int(year) > today_year:
+            raise HTTPException(400, FUTURE_BIRTH_MSG)
+        raise HTTPException(400, f"Годината на раждане трябва да е между 1800 и {today_year}.")
     try:
         hour_i, minute_i = int(hour or 0), int(minute or 0)
     except (TypeError, ValueError):
@@ -1753,9 +1758,28 @@ def validate_birth(year, month, day, hour, minute, lat, lon, timezone) -> None:
             and -90 <= lat_f <= 90 and -180 <= lon_f <= 180):
         raise HTTPException(400, "Невалидни координати на мястото.")
     try:
-        ZoneInfo(timezone or "Europe/Sofia")
+        tz = ZoneInfo(timezone or "Europe/Sofia")
     except Exception:
         raise HTTPException(400, "Невалидна часова зона.")
+    # „Днес“ е по часовата зона на мястото: роден тази сутрин в Австралия е
+    # още „вчера“ по UTC.
+    if datetime.date(int(year), int(month), int(day)) > datetime.datetime.now(tz).date():
+        raise HTTPException(400, FUTURE_BIRTH_MSG)
+
+
+FUTURE_BIRTH_MSG = "Датата е в бъдещето — провери годината."
+MAX_NAME_LEN = 60
+
+
+def check_person_name(name: Optional[str]) -> str:
+    """Името на човека: непразно и до 60 знака (по-дългото чупеше страниците
+    и изпълваше списъците). Връща го изчистено от интервалите."""
+    clean = (name or "").strip()
+    if not clean:
+        raise HTTPException(400, "Моля, въведи име.")
+    if len(clean) > MAX_NAME_LEN:
+        raise HTTPException(400, f"Името е твърде дълго — до {MAX_NAME_LEN} знака.")
+    return clean
 
 
 class SynastryRequest(BaseModel):
@@ -3156,13 +3180,12 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
     # процесора за всички останали.
     rate_limit("guest_chart", client_ip(request))
     record_event("guest_chart", request=request)
-    if not (data.name or "").strip():
-        raise HTTPException(400, "Моля, въведи име.")
+    name = check_person_name(data.name)
     validate_birth(data.year, data.month, data.day, data.hour, data.minute,
                    data.lat, data.lon, data.timezone)
     try:
         person = {
-            "name": data.name.strip(),
+            "name": name,
             "year": data.year, "month": data.month, "day": data.day,
             "hour": birth_time(data.hour, data.minute, data.time_unknown)[0],
             "minute": birth_time(data.hour, data.minute, data.time_unknown)[1],
@@ -3184,7 +3207,7 @@ def api_guest_chart(data: GuestChartRequest, request: Request):
         "svg": generate_chart_svg(chart_data),
         # Размазаният откъс от „Личен портрет“ под картата: истински данни от
         # тази карта, събрани без AI (нищо не се плаща, нищо не се чака).
-        "teaser": build_teaser(profile, first_name(data.name.strip()) or data.name.strip()),
+        "teaser": build_teaser(profile, first_name(name) or name),
     }
 
 
@@ -3224,8 +3247,7 @@ def api_onboard(data: OnboardRequest, request: Request):
     email = (data.email or "").strip().lower()
     if not valid_email(email):
         raise HTTPException(400, "Моля, въведи валиден имейл адрес.")
-    if not (data.name or "").strip():
-        raise HTTPException(400, "Моля, въведи име.")
+    name = check_person_name(data.name)
     # Преди акаунтът да се създаде — иначе грешната дата оставя акаунт без карта.
     validate_birth(data.year, data.month, data.day, data.hour, data.minute,
                    data.lat, data.lon, data.timezone)
@@ -3256,7 +3278,7 @@ def api_onboard(data: OnboardRequest, request: Request):
         cur = conn.execute(
             "INSERT INTO persons (user_id, name, year, month, day, hour, minute,"
             " lat, lon, timezone, time_unknown, place) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (user["id"], data.name.strip(), data.year, data.month, data.day,
+            (user["id"], name, data.year, data.month, data.day,
              hour, minute, data.lat, data.lon, data.timezone, int(data.time_unknown),
              clean_place(data.place)))
         person_id = cur.lastrowid
@@ -3276,12 +3298,16 @@ def api_onboard(data: OnboardRequest, request: Request):
         send_welcome_set_password(user["id"])
 
     token = create_token(user["id"], user["email"])
+    # `saved=1` — картата да покаже лентата „Пратихме ти писмо — задай парола“:
+    # без парола това е единственият начин да влезе от друго устройство.
+    saved_flag = "" if chose_password else "&saved=1"
     result = {
         "ok": True,
         "person_id": person_id,
         "token": token,
         "chose_password": chose_password,
-        "chart_url": f"/chart/{person_id}?token={token}",
+        "email": email,
+        "chart_url": f"/chart/{person_id}?token={token}{saved_flag}",
     }
 
     # Modules picked before signing up go straight to checkout, so the visitor
@@ -3338,8 +3364,8 @@ def api_onboard(data: OnboardRequest, request: Request):
                 customer_id=None,
                 user_id=user["id"],
                 items=items,
-                success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}&amount_cents={total}&currency={cur}",
-                cancel_url=f"{base}/chart/{person_id}?paid=0",
+                success_url=f"{base}/chart/{person_id}?paid=1&session_id={{CHECKOUT_SESSION_ID}}&amount_cents={total}&currency={cur}{saved_flag}",
+                cancel_url=f"{base}/chart/{person_id}?paid=0{saved_flag}",
                 brand=brand_name(),
                 extra_metadata=tracking,
                 bundle=is_bundle,
@@ -7537,6 +7563,23 @@ def consume_password_reset(token: str) -> Optional[int]:
             return None
         return int(user_id)
 
+def password_reset_valid(token: str) -> bool:
+    """Само проверява линка (без да го изразходва): страницата „Нова парола“
+    не показва формата за линк, който така или иначе няма да мине."""
+    token = (token or "").strip()
+    if not token:
+        return False
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT expires_at FROM password_resets WHERE token_hash = ?",
+                           (hash_reset_token(token),)).fetchone()
+    if not row:
+        return False
+    try:
+        return datetime.datetime.fromisoformat(str(row[0])) >= datetime.datetime.utcnow()
+    except ValueError:
+        return False
+
+
 def run_digest_emails(now: Optional[datetime.datetime] = None) -> None:
     """Opt-in daily nudge. Uses cached horoscope text when available; never calls AI.
 
@@ -8066,7 +8109,7 @@ def api_reset_password(data: ResetPasswordRequest):
     check_new_password(data.new_password or "")
     user_id = consume_password_reset((data.token or "").strip())
     if not user_id:
-        raise HTTPException(400, "Линкът е невалиден или е изтекъл. Заяви нов.")
+        raise HTTPException(400, "Линкът е невалиден или е изтекъл. Поискай нов линк.")
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                      (hash_password(data.new_password), user_id))
@@ -8655,6 +8698,8 @@ def api_delete_account(data: Optional[AccountDelete] = None,
 # --- Geocoding (place name -> coordinates, via OpenStreetMap Nominatim) ---
 from collections import OrderedDict as _OrderedDict
 
+# Едно съобщение за „услугата не отговаря“: формата го различава от „няма такова място“.
+GEOCODE_DOWN_MSG = "Търсенето на място не отговаря. Опитай пак след малко."
 _GEOCODE_CACHE_MAX = 2000
 _GEOCODE_MAX_QUERY = 120
 _geocode_cache: "_OrderedDict[str, list]" = _OrderedDict()
@@ -8702,7 +8747,7 @@ def geocode_place(query: str, limit: int = 6) -> list:
     # Чакаме реда си най-много няколко секунди: ако Nominatim е бавен, по-добре
     # кратък отказ, отколкото всички нишки на сайта да висят в опашката.
     if not _GEOCODE_LOCK.acquire(timeout=6):
-        raise HTTPException(503, "Търсенето на място е заето. Опитай пак след малко.")
+        raise HTTPException(503, GEOCODE_DOWN_MSG)
     try:
         with _GEOCODE_CACHE_LOCK:
             if key in _geocode_cache:          # някой друг току-що го е потърсил
@@ -8731,7 +8776,8 @@ def _geocode_fetch(query: str, limit: int) -> list:
     params = urllib.parse.urlencode({
         "q": query,
         "format": "json",
-        "limit": limit,
+        # Повече от нужните: част от тях отпадат като дубли.
+        "limit": min(limit * 2, 10),
         "addressdetails": 1,
         "accept-language": "bg",
     })
@@ -8744,34 +8790,97 @@ def _geocode_fetch(query: str, limit: int) -> list:
             raw = json.loads(resp.read())
     except Exception as e:
         log.warning("Търсенето на място „%s“ се провали: %s", query, e)
-        raise HTTPException(502, "Търсенето на място не се получи. Опитай пак след малко.")
+        raise HTTPException(502, GEOCODE_DOWN_MSG)
     finally:
         _geocode_last_call[0] = time.monotonic()
 
-    tf = _timezone_finder()
+    return _shape_geocode_results(raw, limit)
 
-    results = []
-    for item in raw:
-        addr = item.get("address", {})
-        place = (addr.get("city") or addr.get("town") or addr.get("village")
-                 or addr.get("municipality") or addr.get("county") or item.get("name", ""))
-        country = addr.get("country", "")
-        lat, lon = float(item["lat"]), float(item["lon"])
-        tz = None
-        if tf:
+
+_CYRILLIC_RE = re.compile(r"[\u0400-\u04FF]")
+_REGION_PREFIX_RE = re.compile(r"^(област|община|oblast|municipality)\s+", re.I)
+
+
+def _norm_place(text: str) -> str:
+    return _REGION_PREFIX_RE.sub("", (text or "").strip()).casefold()
+
+
+def _shape_geocode_results(raw: list, limit: int, tz_lookup=None) -> list:
+    """Подсказките за място, както ги иска формата: кратко, без дубли.
+
+    Nominatim връща `display_name` като „Пловдив, Пловдив област, 4000,
+    България“ — с пощенски код, стари имена и същото място по няколко пъти
+    (град и административна единица). Тук етикетът се сглобява наново
+    (място, област, държава), повторенията (име + координати) отпадат,
+    латинското име на място, което вече има кирилско, също, а България е първа.
+    """
+    if tz_lookup is None:
+        tf = _timezone_finder()
+
+        def tz_lookup(lat, lon):
+            if not tf:
+                return None
             try:
-                tz = tf.timezone_at(lat=lat, lng=lon)
+                return tf.timezone_at(lat=lat, lng=lon)
             except Exception:
-                tz = None
-        results.append({
-            "label": item.get("display_name", ""),
+                return None
+
+    candidates = []
+    for item in raw or []:
+        try:
+            lat, lon = float(item["lat"]), float(item["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        addr = item.get("address") or {}
+        place = (addr.get("city") or addr.get("town") or addr.get("village")
+                 or addr.get("municipality") or addr.get("county")
+                 or item.get("name") or "").strip()
+        if not place:
+            continue
+        country = (addr.get("country") or "").strip()
+        region = (addr.get("state") or addr.get("province") or addr.get("county") or "").strip()
+        parts = [place]
+        # Областта само ако различава места със същото име („Враца“ в друга област).
+        rn, pn = _norm_place(region), _norm_place(place)
+        if rn and not (rn.startswith(pn) or pn.startswith(rn)):
+            parts.append(region)
+        if country and _norm_place(country) != _norm_place(place):
+            parts.append(country)
+        # Пощенски код и друго чисто числово не е място.
+        parts = [x for x in parts if not re.fullmatch(r"[\d\s-]+", x)]
+        candidates.append({
+            "label": ", ".join(parts),
             "place": place,
             "country": country,
             "lat": lat,
             "lon": lon,
-            "timezone": tz or "Europe/Sofia",
+            "_bg": (addr.get("country_code") or "").lower() == "bg",
         })
 
+    # Латинско име там, където вече има кирилско (на същото място).
+    cyrillic_spots = [(c["lat"], c["lon"]) for c in candidates if _CYRILLIC_RE.search(c["place"])]
+
+    def near(a, b):
+        return abs(a[0] - b[0]) < 0.15 and abs(a[1] - b[1]) < 0.15
+
+    seen, kept = [], []
+    for c in candidates:
+        if (not _CYRILLIC_RE.search(c["place"])
+                and any(near((c["lat"], c["lon"]), spot) for spot in cyrillic_spots)):
+            continue
+        key = c["label"].casefold()
+        if any(key == k and near((c["lat"], c["lon"]), spot) for k, spot in seen):
+            continue
+        seen.append((key, (c["lat"], c["lon"])))
+        kept.append(c)
+
+    kept.sort(key=lambda c: not c["_bg"])      # устойчиво: редът на важност се пази
+    results = []
+    for c in kept[:limit]:
+        tz = tz_lookup(c["lat"], c["lon"])
+        c.pop("_bg")
+        c["timezone"] = tz or "Europe/Sofia"
+        results.append(c)
     return results
 
 @app.get("/api/geocode")
@@ -9170,11 +9279,39 @@ def build_teaser(prof: dict, name: str = "") -> dict:
     dominant = elements.get("dominant")
     element_note = (elements.get("dominant_meaning") or "").strip()
 
+    # Откъсът на /start стои под картите „Накратко за теб“ (Слънце, Луна,
+    # Асцендент, МС) — там тези неща вече са видени. `highlights` е друго:
+    # стихия, начин на действие, най-тясният аспект, най-населеният дом.
+    # `rows` остава за въвеждането в картата, което иска точно ядрото.
+    highlights = []
+    if dominant:
+        highlights.append({"label": "Стихия", "position": dominant, "meaning": element_note})
+    modal = prof.get("modalities") or {}
+    if modal.get("dominant"):
+        highlights.append({"label": "Как действаш", "position": modal["dominant"],
+                           "meaning": (modal.get("dominant_meaning") or "").strip()})
+    aspects = prof.get("key_aspects") or []
+    if aspects:
+        a = aspects[0]
+        highlights.append({
+            "label": "Ключов аспект",
+            "position": f"{a['active_bg']} {str(a['type_bg']).lower()} {a['passive_bg']}",
+            "meaning": (a.get("type_meaning") or "").strip(),
+        })
+    houses = prof.get("emphasised_houses") or []
+    if houses and 1 <= int(houses[0]["house"]) <= 12:
+        n = int(houses[0]["house"])
+        suffix = {1: "ви", 2: "ри", 7: "ми", 8: "ми"}.get(n, "ти")
+        highlights.append({"label": "Най-населен дом", "position": f"{n}-{suffix} дом",
+                           "meaning": (houses[0].get("meaning") or "").strip()})
+    highlights = [h for h in highlights if h["meaning"]]
+
     return {
         "name": name,
         "rows": rows,
+        "highlights": highlights,
         "element": {"name": dominant, "meaning": element_note} if dominant else None,
-        "aspect_count": len(prof.get("key_aspects") or []),
+        "aspect_count": len(aspects),
     }
 
 
@@ -11492,14 +11629,20 @@ async def start_page(request: Request):
         viewer = viewer_info(request)
         if viewer["logged_in"]:
             want = request.query_params.get("want")
+            # От страницата на зодия: вписаният отива право в хороскопа си.
+            if not want and request.query_params.get("from") == "horoscope":
+                want = "horoscope"
             target = cta_for(viewer, want)["href"] if want else viewer["home"]
             return RedirectResponse(target, status_code=302)
-    return HTMLResponse(templates.get_template("start.html").render({"request": request}))
+    return HTMLResponse(templates.get_template("start.html").render(
+        {"request": request, "current_year": datetime.date.today().year}))
 
-@app.get("/welcome", response_class=HTMLResponse)
+@app.get("/welcome")
 async def welcome_page(request: Request):
-    """Landing spot after a successful first purchase."""
-    return HTMLResponse(templates.get_template("welcome.html").render({"request": request}))
+    """Стара страница „Плащането мина“, до която никой код не води. Остава
+    само за стари връзки: вписаният отива в таблото, гостът — да направи карта."""
+    viewer = viewer_info(request)
+    return RedirectResponse("/dashboard" if viewer["logged_in"] else "/start", status_code=302)
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
@@ -11515,7 +11658,12 @@ async def forgot_password_page(request: Request):
 
 @app.get("/reset-password", response_class=HTMLResponse)
 async def reset_password_page(request: Request):
-    return HTMLResponse(templates.get_template("reset_password.html").render({"request": request}))
+    """Без линк или с невалиден/изтекъл — само съобщение и бутон за нов линк,
+    не форма, която чак накрая се оплаква."""
+    token = request.query_params.get("token") or ""
+    state = "ok" if password_reset_valid(token) else ("invalid" if token else "missing")
+    return HTMLResponse(templates.get_template("reset_password.html").render(
+        {"request": request, "token_state": state}))
 
 def _share_available(token: str) -> bool:
     """Същите условия като /api/share/{token}: линкът, правото и текстът."""

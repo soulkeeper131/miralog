@@ -130,8 +130,8 @@ def test_chart_page_carries_the_onboarding_container(app, user):
 
 def test_start_page_has_the_single_save_ask(app):
     html = asyncio.run(app.start_page(_req("/start"))).body.decode()
-    assert "Запази картата си и получавай личния си хороскоп всяка сутрин — безплатно" in html
+    assert "Запази картата си — безплатно. Личният ти хороскоп те чака всяка сутрин." in html
     assert 'id="termsAgree"' in html                    # съгласието с условията остава
     assert "чл. 57, т. 13" in html                       # и съгласието за 14-дневния отказ
     assert "signup_prompt_view" in html
-    assert "Целият личен портрет е в платените разчитания" in html
+    assert "Пълното тълкуване е в платените разчитания" in html

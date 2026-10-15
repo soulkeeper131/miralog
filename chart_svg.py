@@ -6,6 +6,7 @@ using pure Python math.
 """
 
 import math
+from html import escape
 
 # Zodiac signs in order (0 = Aries)
 ZODIAC = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
@@ -46,6 +47,10 @@ ASPECT_COLORS = {
 
 MAJOR_ASPECTS = {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
 
+# Точките, които зависят от часа на раждане: без час те са на обедната карта,
+# не на човека — на колелото не им е мястото.
+TIME_DEPENDENT = {"Asc", "Desc", "MC", "IC", "Vertex", "Part of Fortune"}
+
 # Planets/points to connect with aspect lines (skip minor points to avoid clutter)
 ASPECT_BODIES = {
     "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
@@ -76,7 +81,11 @@ def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
     aspect_r = size * 0.30
     center_r = size * 0.14
 
+    # Неизвестен час: без асцендент, MC и домове, а в центъра — само датата.
+    unknown = bool(chart_data.get("time_unknown"))
     objects = chart_data.get("objects", {})
+    if unknown:
+        objects = {k: o for k, o in objects.items() if o.get("name") not in TIME_DEPENDENT}
 
     # Ascendant absolute degree defines the wheel's rotation (Asc always at 9 o'clock / left)
     asc_abs = 0.0
@@ -125,13 +134,13 @@ def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
 
     # House cusps: use the real (e.g. Placidus) cusp longitudes when available,
     # otherwise fall back to equal 30° divisions from the ascendant.
-    houses = chart_data.get("houses") or []
+    houses = [] if unknown else (chart_data.get("houses") or [])
     if houses:
         cusp_longitudes = [h["longitude"] for h in houses]
     else:
         cusp_longitudes = [asc_abs + i * 30 for i in range(12)]
 
-    for i in range(12):
+    for i in range(0 if unknown else 12):
         cusp_abs = cusp_longitudes[i]
         next_abs = cusp_longitudes[(i + 1) % 12]
         angle = to_svg_angle(cusp_abs)
@@ -201,10 +210,18 @@ def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
 
     # Center info
     native = chart_data.get("native", {})
+    # Името е въведено от човека: escape (колелото се вмъква като HTML) и
+    # скъсяване, та дълго име да не излиза от центъра.
+    name = str(native.get("name", ""))
+    if len(name) > 22:
+        name = name[:21] + "…"
+    when = str(native.get("datetime", ""))
+    if unknown:
+        when = when.split(" ")[0]          # „1985-11-03“, без измисленото 12:00
     svg.append(f'<text x="{cx}" y="{cy - 8}" fill="#c9b1ff" font-size="12" text-anchor="middle" '
-                f'font-weight="bold">{native.get("name", "")}</text>')
+                f'font-weight="bold">{escape(name)}</text>')
     svg.append(f'<text x="{cx}" y="{cy + 10}" fill="#888" font-size="9" text-anchor="middle">'
-                f'{native.get("datetime", "")}</text>')
+                f'{escape(when)}</text>')
 
     svg.append('</svg>')
     return '\n'.join(svg)
