@@ -175,6 +175,9 @@ def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
         if name and sign and sign_lon:
             positions[name] = sign_degree_to_absolute(sign, sign_lon)
 
+    # Линиите са в група с клас „asp“: в режим „Лесно“ страницата ги скрива с
+    # CSS — за човек без астрологически опит са плетеница, не информация.
+    svg.append('<g class="asp">')
     seen_pairs = set()
     for a in aspects:
         active, passive, a_type = a.get("active"), a.get("passive"), a.get("type")
@@ -192,6 +195,7 @@ def generate_chart_svg(chart_data: dict, size: int = 640) -> str:
         x2, y2 = _polar(cx, cy, aspect_r, angle2)
         color = ASPECT_COLORS.get(a_type, "#333355")
         svg.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" stroke-width="0.75" opacity="0.7"/>')
+    svg.append('</g>')
 
     # Planet positions
     for oid, obj in objects.items():
