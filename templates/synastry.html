@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Съвместимост — {{ brand().name }}</title>
+    <meta name="robots" content="noindex">
+    <title>Любов и съвместимост — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-    <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
         (function() {
             var saved = localStorage.getItem('miralog_theme');
@@ -13,604 +13,59 @@
             if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/ui.css">
-    <link rel="stylesheet" href="/static/locked.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        /* The mark takes you home — the convention every visitor knows. */
-        .logo-home {
-            display: inline-flex; flex-shrink: 0; line-height: 0;
-            border-radius: 50%; text-decoration: none;
-            transition: transform .15s ease, opacity .15s ease;
-        }
-        .logo-home:hover { transform: scale(1.05); opacity: .9; }
-        .logo-home:focus-visible {
-            outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124,58,237,.28));
-        }
-
-        /* Any display value beats the hidden attribute, so state it explicitly —
-           otherwise a hidden button with display:inline-flex stays on screen. */
-        [hidden] { display: none !important; }
-        :root {
-            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
-            --font-display: 'Cormorant Garamond', Georgia, serif;
-            --shadow-card: 0 0 0 1px rgba(124,58,237,0.06), 0 8px 28px rgba(0,0,0,0.45);
-            --focus-ring: 0 0 0 3px rgba(124,58,237,0.28);
-            --bg: #0a0a1a;
-            --bg-card: #1a1a2e;
-            --bg-input: #16162a;
-            --border: #2a2a4a;
-            --border-soft: #1e1e36;
-            --text: #e0e0e0;
-            --text-heading: #c9b1ff;
-            --text-muted: #888;
-            --text-dim: #9090a4;
-            --text-soft: #aaa;
-            --accent: #7c3aed;
-            --accent-hover: #6d28d9;
-            --accent-light: #a78bfa;
-            --partner: #60a5fa;
-            --danger: #ef4444;
-            --danger-bg: #2d1b1b;
-            --danger-text: #fca5a5;
-            /* --- pastel palette (raw tones, identical in both themes) --- */
-            --thistle: #cdb4db;
-            --pastel-petal: #ffc8dd;
-            --baby-pink: #ffafcc;
-            --icy-blue: #bde0fe;
-            --sky-blue: #a2d2ff;
-            /* --- pastel accent surfaces (muted for dark backgrounds) --- */
-            --surface-thistle: rgba(205,180,219,0.10);
-            --surface-petal: rgba(255,200,221,0.10);
-            --surface-pink: rgba(255,175,204,0.10);
-            --surface-icy: rgba(189,224,254,0.10);
-            --surface-sky: rgba(162,210,255,0.10);
-            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
-            --on-thistle: #c9b1ff;
-            --on-icy: #9ecbff;
-            --on-pink: #ffafcc;
-            --on-sky: #9fb3c8;
-        }
-        :root[data-theme="light"] {
-            --shadow-card: 0 1px 2px rgba(45,36,56,0.04), 0 8px 24px rgba(134,89,163,0.10);
-            --focus-ring: 0 0 0 3px rgba(134,89,163,0.18);
-            --bg: #faf7fb;
-            --bg-card: #ffffff;
-            --bg-input: #f7f1f9;
-            --border: #e5d4ec;
-            --border-soft: #efe3f4;
-            --text: #2d2438;
-            --text-heading: #6d4a89;
-            --text-muted: #655a78;
-            --text-dim: #6b5876;
-            --text-soft: #655a78;
-            --accent: #8659a3;
-            --accent-hover: #744a90;
-            --accent-light: #764a93;
-            --partner: #2a6db3;
-            --danger: #c2255c;
-            --danger-bg: #fff0f5;
-            --danger-text: #c2255c;
-            /* --- pastel accent surfaces (stronger on light backgrounds) --- */
-            --surface-thistle: rgba(205,180,219,0.28);
-            --surface-petal: rgba(255,200,221,0.30);
-            --surface-pink: rgba(255,175,204,0.28);
-            --surface-icy: rgba(189,224,254,0.32);
-            --surface-sky: rgba(162,210,255,0.28);
-            /* --- readable text on pastel surfaces (WCAG AA verified) --- */
-            --on-thistle: #5b3a73;
-            --on-icy: #17496f;
-            --on-pink: #a81b4d;
-            --on-sky: #5c5468;
-        }
+        :root { --bg: #0a0a1a; --text: #e0e0e0; --muted: #9090a4; --accent: #7c3aed; --accent-light: #a78bfa; }
+        :root[data-theme="light"] { --bg: #faf7fb; --text: #2d2438; --muted: #655a78; --accent: #8659a3; --accent-light: #764a93; }
         body {
-            font-family: var(--font-body);
-            font-size: 0.95rem; line-height: 1.6;
-            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+            font-family: 'Inter', -apple-system, system-ui, sans-serif; line-height: 1.6;
             background: var(--bg); color: var(--text); min-height: 100dvh;
-            padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
-            padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
-            transition: background-color 0.2s, color 0.2s;
+            display: flex; align-items: center; justify-content: center; padding: 24px 16px;
         }
-        .theme-toggle {
-            position: fixed;
-            top: max(16px, env(safe-area-inset-top));
-            right: max(16px, env(safe-area-inset-right));
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            border: 1px solid var(--border);
-            background: var(--bg-card);
-            color: var(--text);
-            font-size: 1.1rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.2s, border-color 0.2s;
-            z-index: 200;
+        .box { max-width: 420px; text-align: center; }
+        h1 { font-size: 1.4rem; margin-bottom: 8px; }
+        p { color: var(--muted); margin-bottom: 18px; }
+        a.btn {
+            display: inline-flex; align-items: center; justify-content: center; min-height: 44px;
+            padding: 10px 20px; border-radius: 10px; background: var(--accent); color: #fff;
+            text-decoration: none; font-weight: 500;
         }
-        .container {
-            max-width: 720px; margin: 0 auto; padding: 20px;
-            padding-top: max(20px, env(safe-area-inset-top));
-            padding-bottom: max(20px, env(safe-area-inset-bottom));
-        }
-        .back-link {
-            color: var(--text-muted); text-decoration: none; font-size: 0.85rem;
-            display: inline-flex; align-items: center;
-            min-height: 44px;
-            transition: color 0.15s ease;
-        }
-        .back-link:hover { color: var(--accent-light); }
-        /* shared page mark: small logo sitting beside the back-link */
-        .page-nav {
-            display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
-        }
-        .page-logo {
-            width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-            flex-shrink: 0;
-            border: 1px solid var(--border);
-            box-shadow: 0 0 0 3px var(--surface-thistle);
-        }
-        h1 {
-            font-family: var(--font-display); font-weight: 700;
-            letter-spacing: -0.02em; line-height: 1.2;
-            color: var(--text-heading); font-size: 1.9rem; margin-bottom: 4px;
-        }
-        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
-
-        .section {
-            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
-            padding: 24px; margin-bottom: 20px;
-        }
-        .section h2 {
-            color: var(--accent-light); font-size: 1.15rem; font-weight: 600;
-            letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 14px;
-        }
-
-        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .form-group { margin-bottom: 14px; }
-        .form-group label { display: block; margin-bottom: 4px; color: var(--accent-light); font-size: 0.85rem; }
-        .form-group select {
-            width: 100%; padding: 10px 12px; border-radius: 8px;
-            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
-            font-size: 16px; min-height: 44px; min-width: 44px;
-        }
-        .form-group select:focus { outline: none; border-color: var(--accent); }
-
-        .btn {
-            display: inline-flex; align-items: center; justify-content: center;
-            padding: 10px 18px; border-radius: 10px; border: none;
-            font-size: 0.95rem; font-weight: 500; cursor: pointer;
-            min-height: 44px; min-width: 44px;
-        }
-        .btn-primary { background: var(--accent); color: white; }
-        .btn-primary:hover { background: var(--accent-hover); }
-        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
-        .btn-accent { 
-            background: linear-gradient(135deg, var(--accent-light), var(--accent)); 
-            color: white; border: none;
-            min-height: 44px; min-width: 44px;
-            padding: 10px 20px; border-radius: 10px;
-            font-size: 0.95rem; font-weight: 600;
-            cursor: pointer; transition: opacity 0.2s;
-        }
-        .btn-accent:hover { opacity: 0.9; }
-        .btn-accent:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        .error-banner {
-            background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 8px;
-            padding: 12px 16px; color: var(--danger-text); font-size: 0.9rem; margin-bottom: 16px;
-        }
-
-        .stats {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 12px; margin-bottom: 16px;
-        }
-        .stat { background: var(--bg-input); border-radius: 8px; padding: 12px; text-align: center; }
-        /* rotating pastel surfaces, matching chart.html */
-        .stat:nth-child(4n+1) { background: var(--surface-thistle); }
-        .stat:nth-child(4n+2) { background: var(--surface-icy); }
-        .stat:nth-child(4n+3) { background: var(--surface-petal); }
-        .stat:nth-child(4n+4) { background: var(--surface-sky); }
-        .stat-label { color: var(--text-muted); font-size: 0.8rem; }
-        .stat-value { color: var(--text-heading); font-size: 1.05rem; font-weight: 600; margin-top: 4px; }
-
-        .aspect-row {
-            padding: 8px 0; border-bottom: 1px solid var(--border-soft); font-size: 0.88rem; color: var(--text-soft);
-        }
-        .aspect-row:last-child { border-bottom: none; }
-        .aspect-row .who { color: var(--text-heading); font-weight: 600; }
-        .aspect-row .partner { color: var(--partner); font-weight: 600; }
-
-        .loading { text-align: center; padding: 40px; color: var(--text-muted); }
-        .empty { text-align: center; color: var(--text-dim); padding: 30px 20px; }
-
-        .crystal-loader {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 14px; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem;
-        }
-        .crystal-loader .orb-wrap {
-            position: relative; width: 56px; height: 56px;
-        }
-        .crystal-loader .orb {
-            position: absolute; inset: 0; border-radius: 50%;
-            background: radial-gradient(circle at 35% 30%, #ffffff 0%, var(--accent-light) 35%, var(--accent) 75%, var(--text-heading) 100%);
-            box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 55%, transparent);
-            animation: orb-pulse 1.8s ease-in-out infinite;
-        }
-        .crystal-loader .spark {
-            position: absolute; inset: 0;
-            animation: orb-spin 2.4s linear infinite;
-        }
-        .crystal-loader .spark::before {
-            content: "✦"; position: absolute; top: -6px; left: 50%;
-            transform: translateX(-50%); font-size: 0.85rem; color: var(--accent-light);
-        }
-        @keyframes orb-pulse {
-            0%, 100% { transform: scale(1); opacity: 0.92; }
-            50% { transform: scale(1.08); opacity: 1; }
-        }
-        @keyframes orb-spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* AI-generated prose: comfortable measure (~68ch) and generous leading */
-        .interpretation {
-            line-height: 1.8; font-size: 0.97rem; color: var(--text-soft);
-            max-width: 68ch; text-align: left;
-        }
-        .interpretation p { margin: 0 0 1.05em; }
-        .interpretation p:last-child { margin-bottom: 0; }
-        .interpretation strong { color: var(--text-heading); font-weight: 600; }
-        .interpretation em { color: var(--text); font-style: italic; }
-
-        .interpretation .int-h {
-            display: flex; align-items: baseline; gap: 10px;
-            color: var(--text-heading); font-weight: 600;
-            letter-spacing: -0.01em; line-height: 1.35;
-            margin: 1.9em 0 0.7em; padding-bottom: 0.45em;
-            border-bottom: 1px solid var(--border-soft);
-        }
-        .interpretation .int-h:first-child { margin-top: 0; }
-        .interpretation .int-h1 { font-size: 1.15rem; }
-        .interpretation .int-h2 { font-size: 1.05rem; }
-        .interpretation .int-h3 { font-size: 0.98rem; }
-        .interpretation .int-num {
-            flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
-            background: var(--surface-thistle); color: var(--accent-light);
-            display: inline-flex; align-items: center; justify-content: center;
-            font-size: 0.78rem; font-weight: 700;
-        }
-        .interpretation .int-list { margin: 0 0 1.05em; padding-left: 0; list-style: none; }
-        .interpretation .int-list li { position: relative; padding-left: 22px; margin-bottom: 0.55em; }
-        .interpretation .int-list li::before {
-            content: "✦"; position: absolute; left: 2px; top: 0;
-            color: var(--accent-light); font-size: 0.8rem;
-        }
-        .interpretation .int-num-inline { color: var(--accent-light); font-weight: 600; }
-        .interpretation .int-rule { border: none; border-top: 1px solid var(--border-soft); margin: 1.6em 0; }
-        .cache-note { margin-top: 14px; color: var(--text-dim); font-size: 0.8rem; }
     </style>
-{% include "_analytics.html" %}
-<link rel="stylesheet" href="/static/consent.css">
 </head>
 <body>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
-    <div class="container">
-        <div class="page-nav">
-            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
-            <a href="#" id="backLink" class="back-link">← Моите карти</a>
-        </div>
-        <h1>Съвместимост</h1>
-        <div class="subtitle">Синастрия между двама души</div>
-
-        <div id="banner"></div>
-
-        <div class="section">
-            <h2>Избери двама души</h2>
-            <div class="row">
-                <div class="form-group">
-                    <label>Първи човек</label>
-                    <select id="person1"></select>
-                </div>
-                <div class="form-group">
-                    <label>Втори човек</label>
-                    <select id="person2"></select>
-                </div>
-            </div>
-            <button class="btn btn-primary" id="computeBtn" onclick="computeSynastry()">Изчисли съвместимост</button>
-        </div>
-
-        <div id="resultSection" style="display:none;" class="section">
-            <h2 id="resultTitle">Резултат</h2>
-            <div class="stats" id="resultStats"></div>
-            <div id="resultAspects"></div>
-            <button class="btn btn-accent" id="interpretBtn" onclick="getInterpretation()" style="margin-top:16px;display:none;">🔮 AI Четене на съвместимостта</button>
-            <div id="interpretationBox" style="display:none;margin-top:16px;background:var(--bg-card);border-radius:12px;padding:20px;"></div>
-        </div>
+    <!-- Съвместимостта вече е в таба „Любов“ на картата. Адресът остава, за да
+         не се чупят стари връзки: сървърът пренасочва вписаните с бисквитка,
+         а тук същото се прави с токена от браузъра. -->
+    <div class="box">
+        <h1>Любов и съвместимост</h1>
+        <p id="msg">Отваряме таба „Любов“ на картата ти…</p>
+        <a class="btn" id="go" href="/dashboard">Към моите карти</a>
     </div>
-
-    <script src="/static/locked.js?v=8"></script>
-    <script src="/static/ui.js?v=3"></script>
     <script>
-        function crystalLoader(text) {
-            return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
-        }
-
-        // Presentation-only: turns the model's markdown-ish output into a structured
-        // block. Escapes first, so model output is never injected as live HTML.
-        function inlineMd(text) {
-            let html = escapeHtml(text);
-            html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/(^|[^*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>');
-            return html;
-        }
-
-        function formatInterpretation(raw) {
-            const lines = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').split('\n');
-            const out = [];
-            let listItems = [];
-            let paraLines = [];
-
-            const flushList = () => {
-                if (!listItems.length) return;
-                out.push('<ul class="int-list">' + listItems.map(li => '<li>' + li + '</li>').join('') + '</ul>');
-                listItems = [];
-            };
-            const flushPara = () => {
-                if (!paraLines.length) return;
-                out.push('<p>' + paraLines.join('<br>') + '</p>');
-                paraLines = [];
-            };
-            const flushAll = () => { flushList(); flushPara(); };
-
-            for (const rawLine of lines) {
-                const line = rawLine.trim();
-                if (!line) { flushAll(); continue; }
-
-                if (/^(-{3,}|_{3,}|\*{3,})$/.test(line)) {
-                    flushAll();
-                    out.push('<hr class="int-rule">');
-                    continue;
-                }
-
-                const md = line.match(/^(#{1,6})\s+(.*)$/);
-                if (md) {
-                    flushAll();
-                    const level = Math.min(md[1].length, 3);
-                    out.push(`<h4 class="int-h int-h${level}">${inlineMd(md[2].replace(/[:：]\s*$/, ''))}</h4>`);
-                    continue;
-                }
-
-                const numbered = line.match(/^(\d+)[.)]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$/);
-                if (numbered) {
-                    flushAll();
-                    out.push(`<h4 class="int-h int-h2"><span class="int-num">${numbered[1]}</span>${inlineMd(numbered[2])}</h4>`);
-                    if (numbered[3]) paraLines.push(inlineMd(numbered[3]));
-                    continue;
-                }
-                if (/^\*\*[^*]+\*\*[:：]?$/.test(line)) {
-                    flushAll();
-                    out.push(`<h4 class="int-h int-h2">${inlineMd(line.replace(/^\*\*|\*\*[:：]?$/g, ''))}</h4>`);
-                    continue;
-                }
-
-                const bullet = line.match(/^[-•]\s+(.*)$/) || line.match(/^\*(?!\*)\s+(.*)$/);
-                if (bullet) {
-                    flushPara();
-                    listItems.push(inlineMd(bullet[1]));
-                    continue;
-                }
-
-                const numItem = line.match(/^(\d+)[.)]\s+(.+)$/);
-                if (numItem) {
-                    flushPara();
-                    listItems.push('<span class="int-num-inline">' + numItem[1] + '.</span> ' + inlineMd(numItem[2]));
-                    continue;
-                }
-
-                flushList();
-                paraLines.push(inlineMd(line));
-            }
-
-            flushAll();
-            return out.join('');
-        }
-
-        function updateThemeToggleIcon() {
-            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
-        }
-        function toggleTheme() {
-            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-            if (isLight) {
-                document.documentElement.removeAttribute('data-theme');
-                localStorage.setItem('miralog_theme', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-                localStorage.setItem('miralog_theme', 'light');
-            }
-            updateThemeToggleIcon();
-        }
-        updateThemeToggleIcon();
-
-        function getToken() {
-            const params = new URLSearchParams(window.location.search);
-            const fromUrl = params.get('token');
-            if (fromUrl) {
-                localStorage.setItem('miralog_token', fromUrl);
-                document.cookie = 'miralog_token=' + encodeURIComponent(fromUrl) + '; path=/; SameSite=Lax; max-age=2592000';
-                params.delete('token');
-                const q = params.toString();
-                history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
-            }
-            return localStorage.getItem('miralog_token');
-        }
-        function authHeaders() {
-            const token = getToken();
-            return token ? { 'Authorization': 'Bearer ' + token } : {};
-        }
-        if (!getToken()) { window.location.replace('/login'); }
-        document.getElementById('backLink').href = '/dashboard';
-
-        function showBanner(msg) {
-            document.getElementById('banner').innerHTML = `<div class="error-banner">${msg}</div>`;
-        }
-        function clearBanner() {
-            document.getElementById('banner').innerHTML = '';
-        }
-
-        let persons = [];
-
-        async function loadPersons() {
-            document.getElementById('banner').innerHTML = crystalLoader('Зареждане на хората...');
+        (async function () {
+            var token = null;
+            try { token = localStorage.getItem('miralog_token'); } catch (e) {}
+            if (!token) { location.replace('/login'); return; }
             try {
-                const resp = await fetch('/api/persons', { headers: authHeaders() });
-                if (resp.status === 401) { window.location.replace('/login'); return; }
-                const data = await resp.json();
-                persons = data.persons || [];
-                clearBanner();
-                const opts = persons.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-                document.getElementById('person1').innerHTML = opts;
-                document.getElementById('person2').innerHTML = opts;
-                if (persons.length > 1) {
-                    document.getElementById('person2').selectedIndex = 1;
-                }
-                if (persons.length < 2) {
-                    showBanner('Трябват поне двама добавени хора, за да изчислите съвместимост.');
-                    document.getElementById('computeBtn').disabled = true;
-                }
-            } catch (e) {
-                showBanner(friendlyErrorHtml(e));
-            }
-        }
-
-        async function computeSynastry() {
-            clearBanner();
-            const id1 = document.getElementById('person1').value;
-            const id2 = document.getElementById('person2').value;
-            if (!id1 || !id2) return;
-            if (id1 === id2) {
-                showBanner('Изберете двама различни хора.');
-                return;
-            }
-            const btn = document.getElementById('computeBtn');
-            btn.disabled = true;
-            btn.textContent = 'Изчисляване...';
-            const resultSection = document.getElementById('resultSection');
-            resultSection.style.display = 'block';
-            document.getElementById('resultStats').innerHTML = '';
-            document.getElementById('resultAspects').innerHTML = crystalLoader('Изчисляване на съвместимостта...');
-            document.getElementById('interpretBtn').style.display = 'none';
-            document.getElementById('interpretationBox').style.display = 'none';
-            try {
-                const resp = await guardedFetch('/api/synastry', {
-                    method: 'POST',
-                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ person1_id: Number(id1), person2_id: Number(id2) })
-                });
-                if (!resp.ok) {
-                    const data = await resp.json().catch(() => ({}));
-                    throw new Error(detailText(data.detail) || 'HTTP ' + resp.status);
-                }
-                const data = await resp.json();
-                synastryPerson1Id = Number(id1);
-                synastryPerson2Id = Number(id2);
-                renderResult(data);
-            } catch (e) {
-                if (e instanceof LockedFeature) {
-                    document.getElementById('resultStats').innerHTML = '';
-                    renderLocked(document.getElementById('resultAspects'), e.detail, computeSynastry);
-                    btn.disabled = false;
-                    btn.textContent = 'Изчисли съвместимост';
+                var resp = await fetch('/api/persons', { headers: { 'Authorization': 'Bearer ' + token } });
+                if (resp.status === 401) { location.replace('/login'); return; }
+                var data = await resp.json();
+                var persons = data.persons || [];
+                if (!persons.length) {
+                    document.getElementById('msg').textContent =
+                        'Първо добави карта — любовното разчитане се отваря от нея.';
                     return;
                 }
-                document.getElementById('resultSection').style.display = 'none';
-                document.getElementById('resultAspects').innerHTML = '';
-                showBanner(friendlyErrorHtml(e));
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Изчисли съвместимост';
-            }
-        }
-
-        function renderResult(data) {
-            const name1 = data.native.name;
-            const name2 = data.partner.name;
-            document.getElementById('resultTitle').textContent = `${name1} & ${name2}`;
-
-            document.getElementById('resultStats').innerHTML = `
-                <div class="stat"><div class="stat-label">Форма</div><div class="stat-value">${data.shape_bg || 'Няма данни'}</div></div>
-                <div class="stat"><div class="stat-label">Лунна фаза</div><div class="stat-value">${data.moon_phase_bg || 'Няма данни'}</div></div>
-                <div class="stat"><div class="stat-label">Домова система</div><div class="stat-value">${data.house_system_bg || ''}</div></div>
-            `;
-
-            const majorTypes = ['Conjunction', 'Sextile', 'Square', 'Trine', 'Opposition'];
-            const aspects = (data.aspects || []).filter(a => majorTypes.includes(a.type));
-
-            let html = '';
-            if (aspects.length) {
-                aspects.forEach(a => {
-                    html += `<div class="aspect-row">
-                        <span class="who">${escapeHtml(a.active_bg)}</span>
-                        <strong style="color:var(--accent-light)">${escapeHtml(a.type_bg)}</strong>
-                        <span class="partner">${escapeHtml(a.passive_bg)}</span>
-                        ${a.orb ? ' (орб: ' + Number(a.orb).toFixed(1) + '°)' : ''}
-                    </div>`;
-                });
-            } else {
-                html = '<div class="empty">Няма открити значими аспекти между двамата.</div>';
-            }
-            document.getElementById('resultAspects').innerHTML = html;
-            document.getElementById('resultSection').style.display = 'block';
-            document.getElementById('interpretBtn').style.display = 'inline-block';
-            document.getElementById('interpretationBox').style.display = 'none';
-        }
-
-        let synastryPerson1Id = null;
-        let synastryPerson2Id = null;
-
-        async function getInterpretation() {
-            const btn = document.getElementById('interpretBtn');
-            const box = document.getElementById('interpretationBox');
-            btn.disabled = true;
-            btn.textContent = 'Разчитаме...';
-            box.style.display = 'block';
-            box.innerHTML = crystalLoader('Разчитаме картите...');
-
-            try {
-                const resp = await readingFetch('/api/synastry/interpretation', {
-                    method: 'POST',
-                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ person1_id: synastryPerson1Id, person2_id: synastryPerson2Id })
-                });
-                const data = await resp.json();
-                if (data.interpretation) {
-                    box.innerHTML = '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
-                    if (data.cached) {
-                        box.innerHTML += '<div class="cache-note">📋 Заредено от кеш</div>';
-                    }
-                } else {
-                    box.innerHTML = '<div class="error-banner">Разчитането не се получи. Опитай пак след малко.</div>';
-                }
+                // Последно отворената карта, иначе най-старата.
+                var last = 0;
+                try { last = Number(localStorage.getItem('miralog_last_person')) || 0; } catch (e) {}
+                var target = persons.find(function (p) { return p.id === last; }) ||
+                    persons.reduce(function (a, p) { return p.id < a.id ? p : a; }, persons[0]);
+                location.replace('/chart/' + target.id + '#love');
             } catch (e) {
-                if (e instanceof LockedFeature) {
-                    renderLocked(box, e.detail, getInterpretation);
-                } else {
-                    box.innerHTML = '<div class="error-banner">' + friendlyErrorHtml(e) + '</div>';
-                }
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '🔄 Ново четене';
+                document.getElementById('msg').textContent = 'Не успяхме да отворим картата. Опитай от таблото.';
             }
-        }
-
-        loadPersons();
+        })();
     </script>
-<script src="/static/consent.js?v=6"></script>
 </body>
 </html>

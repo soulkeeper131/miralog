@@ -511,7 +511,7 @@ def test_account_deletion_removes_provider_links(app, db):
     email = f"del-{secrets.token_hex(4)}@example.com"
     user = app._oauth_link_or_create("google", "sub-" + secrets.token_hex(6), email, "",
                                      email_verified=True)
-    app.api_delete_account(user=(user["id"], user["email"]))
+    app.api_delete_account(app.AccountDelete(confirm=email), user=(user["id"], user["email"]))
     with sqlite3.connect(app.DB_PATH) as c:
         left = c.execute("SELECT COUNT(*) FROM oauth_accounts WHERE user_id = ?",
                          (user["id"],)).fetchone()[0]

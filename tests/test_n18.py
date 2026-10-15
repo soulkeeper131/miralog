@@ -209,7 +209,7 @@ def test_account_deletion_keeps_the_fiscal_records(app, user):
     s = _session(user["id"], ["moon"], 299, kind="feature")
     app.fulfill_checkout_session(s)
     pay = _payment(app, s["id"])
-    app.api_delete_account(user=(user["id"], user["email"]))
+    app.api_delete_account(app.AccountDelete(confirm="parola123"), user=(user["id"], user["email"]))
     assert _payment(app, s["id"])["id"] == pay["id"]
     assert app.payment_items(pay["id"])
     assert app.sale_document(pay["id"])
