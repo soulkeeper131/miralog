@@ -1642,7 +1642,7 @@
     <link rel="stylesheet" href="/static/consent.css?v=5">
 {% include "_analytics.html" %}
 </head>
-<body data-tab="wheel">
+<body data-tab="wheel" class="rr-mask">
     {# Въртящият се кръг на чакането; „slow“ добавя колко отнема — платените разчитания се пишат до минута. #}
     {% macro loader(text, slow=false) %}<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>{{ text }}{% if slow %}<small>Обикновено отнема до минута.</small>{% endif %}</div>{% endmacro %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -2109,10 +2109,10 @@
 
     <div id="onboarding-root"></div>
     <script src="/static/locked.js?v=11"></script>
-    <script src="/static/share.js?v=3"></script>
+    <script src="/static/share.js?v=4"></script>
     <script src="/static/ui.js?v=3"></script>
     <script src="/static/modules.js?v=11"></script>
-    <script src="/static/onboarding.js?v=6"></script>
+    <script src="/static/onboarding.js?v=7"></script>
     <script>
         // slow: платените разчитания се пишат до минута — казваме го, за да не
         // изглежда, че е увиснало.
@@ -4488,7 +4488,7 @@
             }
         }
     </script>
-    <script src="/static/consent.js?v=8"></script>
+    <script src="/static/consent.js?v=9"></script>
 
     <div id="floating-player" class="floating-player" style="display:none" role="region" aria-label="Аудио плейър">
         <div class="fp-head">

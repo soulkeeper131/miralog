@@ -71,7 +71,7 @@ def test_horoscope_is_the_first_tab_and_tiles_follow_the_strip(app, user):
 
 def test_the_bundle_strip_is_only_on_the_card_tab(app, user):
     html = _page(app, user, _person(app, user["id"]))
-    assert '<body data-tab="wheel">' in html
+    assert '<body data-tab="wheel"' in html
     assert 'body:not([data-tab="wheel"]) .bundle-strip { display: none; }' in html
     assert 'class="nav-modules"' not in html          # „✦ Разчитания“ горе вече я няма
 

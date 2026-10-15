@@ -293,7 +293,8 @@
             </div>
 
             {% if pricing.bundle %}
-            <div class="bundle">
+            <div class="bundle" data-promo-id="bundle" data-promo-name="{{ pricing.bundle.name }}"
+                 data-promo-creative="landing_bundle" data-promo-slot="landing_prices" data-promo-items="bundle">
                 <div class="bundle-main">
                     <span class="bundle-flag">Най-изгодно</span>
                     <h3>Всички {{ pricing.bundle.count }} разчитания</h3>
@@ -321,7 +322,7 @@
                        Без абонамент и без автоматично подновяване.</p>
                 </div>
 
-                <ul class="price-cards">
+                <ul class="price-cards" data-item-list="landing_prices" data-items="{{ pricing.rows | map(attribute='key') | join(',') }}">
                     {% for row in pricing.rows %}
                     {# Цялата картичка се натиска (линкът е разпънат върху нея), за да
                        не се налага да се цели малкият бутон. #}
@@ -505,6 +506,6 @@
             io.observe(sec);
         })();
     </script>
-    <script src="/static/consent.js?v=8"></script>
+    <script src="/static/consent.js?v=9"></script>
 </body>
 </html>

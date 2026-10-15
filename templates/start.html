@@ -767,8 +767,8 @@
             <button type="button" class="edit-link" id="editBtn">← Промени данните</button>
             <div class="card result-card" style="margin-top:6px;">
                 <div class="result-head">
-                    <h2 id="resultName">Твоята натална карта</h2>
-                    <p id="resultMeta" class="result-meta"></p>
+                    <h2 id="resultName" class="rr-mask">Твоята натална карта</h2>
+                    <p id="resultMeta" class="result-meta rr-mask"></p>
                 </div>
                 <div id="resultWheel" class="result-wheel"></div>
             </div>
@@ -783,7 +783,7 @@
                  размазано: човекът вижда, че платеното стъпва на неговите данни. -->
             <div class="card teaser-card" id="teaserCard" hidden>
                 <span class="save-eyebrow">Още от твоята карта</span>
-                <div id="teaserBody" class="tz-body"></div>
+                <div id="teaserBody" class="tz-body rr-mask"></div>
                 <p class="tz-note"><span aria-hidden="true">🔒</span> Пълното тълкуване е в платените разчитания.</p>
             </div>
 
@@ -1579,6 +1579,9 @@
                     </span>
                 </label>`));
             grid.innerHTML = cards.join('');
+            // Офертата под безплатната карта е „списък с продукти“ за отчетите.
+            window.track('view_item_list', { item_list_id: 'start_offers', item_list_name: 'start_offers',
+                items: ['bundle'].concat(catalogue.map(item => item.key)).map(k => ({ item_id: k })) });
 
             grid.querySelectorAll('.offer-check').forEach(cb => {
                 cb.addEventListener('change', () => {
@@ -1618,6 +1621,9 @@
                         }
                     }
                     cb.closest('.offer-card-item').classList.toggle('picked', cb.checked);
+                    // Изборът преди регистрацията е кошницата (add_to_cart / remove_from_cart).
+                    window.track(cb.checked ? 'add_to_cart' : 'remove_from_cart',
+                                 { item_list_id: 'start_offers', items: [{ item_id: cb.value }] });
                     renderBasket();
                 });
             });
@@ -1844,6 +1850,6 @@
         });
 
     </script>
-    <script src="/static/consent.js?v=8"></script>
+    <script src="/static/consent.js?v=9"></script>
 </body>
 </html>

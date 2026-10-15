@@ -233,3 +233,69 @@ def test_google_ads_tag_and_passthrough(client, app):
     finally:
         for k in ("google_ads_id", "google_ads_purchase_label", "google_ads_signup_label"):
             app.set_setting(k, "")
+
+
+# --- без „неизвестен“ трафик -------------------------------------------------------
+
+@pytest.mark.parametrize("referer,ua,expected", [
+    ("android-app://com.google.android.gm/", "", ("gmail", "email")),
+    ("android-app://com.google.android.googlequicksearchbox/", "", ("google", "organic")),
+    ("https://mail.google.com/", "", ("gmail", "email")),
+    ("https://nm.abv.bg/", "", ("abv", "email")),
+    ("", "Mozilla/5.0 (iPhone) Instagram 300.0.0", ("instagram", "social")),
+    ("", "Mozilla/5.0 (iPhone) [FBAN/FBIOS;FBAV/450.0]", ("facebook", "social")),
+    ("", "Mozilla/5.0 (iPhone) [FBAN/MessengerForiOS]", ("messenger", "social")),
+    ("", "Mozilla/5.0 (Linux; Android 14) musical_ly_2023", ("tiktok", "social")),
+])
+def test_known_sources_without_utm(app, referer, ua, expected):
+    headers = {"user-agent": ua or BROWSER["user-agent"]}
+    if referer:
+        headers["referer"] = referer
+    t = app.touch_from_request(_req("/", "", headers))
+    assert (t["s"], t["m"]) == expected
+
+
+def test_inapp_browser_inside_the_site_is_not_a_new_entry(app):
+    # Вътрешно минаване във вградения браузър има referrer нашия сайт.
+    headers = {"user-agent": "Mozilla/5.0 Instagram 300", "referer": "https://astrokarta.bg/"}
+    assert app.touch_from_request(_req("/horoskop", "", headers)) is None
+
+
+def test_email_links_get_utm(app):
+    text = ("Виж: https://astrokarta.bg/chart/5?token=abc#horoscope и "
+            '<a href="https://www.astrokarta.bg/">тук</a> и https://example.com/x '
+            "и https://astrokarta.bg/?utm_source=x")
+    out = app.tag_email_links(text, "digest")
+    assert "https://astrokarta.bg/chart/5?token=abc&utm_source=email&utm_medium=email&utm_campaign=digest#horoscope" in out
+    assert 'https://www.astrokarta.bg/?utm_source=email&utm_medium=email&utm_campaign=digest"' in out
+    assert "https://example.com/x " in out and "utm_source=x" in out and out.count("utm_source=x") == 1
+
+
+# --- Umami и каталогът --------------------------------------------------------------
+
+def test_umami_and_catalogue_on_public_pages(client, app):
+    html = client.get("/").text
+    assert 'analytics.blv.bg/script.js' in html and 'data-performance="true"' in html
+    assert 'data-domains="astrokarta.bg,www.astrokarta.bg"' in html
+    assert "recorder.js" not in html                     # записът — само след съгласие (consent.js)
+    assert "window.AK_ITEMS" in html and '"bundle"' in html
+    assert 'data-promo-id="bundle"' in html and 'data-item-list="landing_prices"' in html
+
+
+def test_no_trackers_on_admin_host(app):
+    c = TestClient(app.app, base_url=f"https://{app.ADMIN_HOST}")
+    html = c.get("/login", headers=BROWSER).text
+    assert "analytics.blv.bg" not in html and "AK_ITEMS" not in html
+
+
+def test_refund_reaches_ga4(app, db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "send_ga4_event", lambda cid, name, params, user_id=None: sent.append((cid, name, params)))
+    with sqlite3.connect(app.DB_PATH) as c:
+        pid = c.execute("INSERT INTO payments (user_id, amount_cents, currency, method, paid_at, stripe_session_id)"
+                        " VALUES (1, 2500, 'EUR', 'stripe', datetime('now'), ?)",
+                        (f"cs_test_{secrets.token_hex(4)}",)).lastrowid
+        c.commit()
+    assert app.add_refund(pid, 1000, method="card", source="stripe", external_id=f"re_{pid}")
+    cid, name, params = sent[0]
+    assert name == "refund" and params["value"] == 10.0 and params["transaction_id"].startswith("cs_test_")

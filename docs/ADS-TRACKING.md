@@ -16,6 +16,48 @@
 
 Към Google и Meta нищо не тръгва без съгласие за бисквитките. Изключение е анонимният режим на Google Consent Mode, който няма идентификатор. Бисквитката `miralog_src` е само наша и в нея няма идентификатор.
 
+## Събитията (по канона на Google — GA4 recommended events)
+
+Всички тръгват от `track()` в `static/consent.js` и стигат до GA4, Umami и (стандартните) Meta. Страницата казва само ключа на модула, а името, цената, категорията и марката идват от каталога `AK_ITEMS`.
+
+| Събитие | Кога | Meta |
+|---|---|---|
+| `view_item_list` | видян ценоразпис на началната (`landing_prices`), офертата под безплатната карта (`start_offers`), изборът на модули (`modules`) | — |
+| `view_promotion` / `select_promotion` | видяна (≥50%) / натисната промоция: пакетът (`bundle`), офертите в хороскопите (`horo_offer_*`), лентата долу (`sticky_personal_horoscope`) | — |
+| `select_item` | бутон за конкретен модул (`data-cta="място:ключ"`) | — |
+| `select_content` | всеки друг бутон/призив | — |
+| `view_item` | заключен модул на картата | ViewContent |
+| `add_to_cart` / `remove_from_cart` | избор на модул преди регистрацията | AddToCart |
+| `begin_checkout` | тръгва към Stripe | InitiateCheckout |
+| `purchase` | платено (браузър + сървър, един transaction_id) | Purchase (+ сървър) |
+| `refund` | върнати пари (от сървъра) | — |
+| `generate_lead` | безплатна карта | Lead (+ сървър) |
+| `sign_up` / `login` | регистрация / вход | CompleteRegistration (+ сървър) |
+| `tutorial_begin` / `tutorial_complete` | въвеждането в 3 стъпки | — |
+| `share` | споделяне (метод, какво) | — |
+
+Вписаните получават в GA4 `user_id` и потребителско свойство `customer_type` = `registered` / `paying`. С него се правят аудитории „регистрирани без покупка“ и „купували“.
+
+## Umami (analytics.blv.bg)
+
+Umami е втори, независим отчет без бисквитки, който брои всички посетители. В него има посещения, източници, UTM, събитията (покупката с `revenue`) и скоростта при истинските посетители (LCP, INP, CLS; `data-performance`). Записът на сесии и топлинните карти (`recorder.js`) тръгват **само след съгласие**. Полетата не се записват, а личните текстове (картата, таблото, настройките, споделените разчитания, резултатът на безплатната карта) са с клас `rr-mask` и в записа са скрити. Настройките са в `SEO_DEFAULTS` (`umami_host`, `umami_website_id`, `umami_replay`).
+
+## Аудитории за ремаркетинг (идеи)
+
+- Безплатна карта (`generate_lead`) без `sign_up` за 7 дни: напомняне „картата те чака“.
+- `view_item` или `add_to_cart` без `purchase` за 14 дни: офертата за пакета.
+- `customer_type = paying`: изключи ги от рекламите за придобиване и им покажи другите модули.
+- Посетили `/horoskop/*` 3+ пъти: личен хороскоп безплатно.
+
+## Източници без UTM
+
+Освен UTM, кликовете (`gclid`, `fbclid`) и обикновените сайтове/търсачки, приложението разпознава:
+- уеб пощите (Gmail, ABV, Outlook…) → `email`;
+- Android приложенията (`android-app://…`: Gmail, Google, Facebook, Instagram, Viber…);
+- вградените браузъри на Facebook, Instagram, Messenger, TikTok, Viber, Telegram и Google app по User-Agent.
+
+Нашите имейли носят `utm_source=email&utm_campaign=<вид писмо>`, а споделените линкове — `utm_medium=share&utm_source=<мрежа>&utm_campaign=share_<какво>`. „Директно“ остават само написаният адрес, отметките и линковете, пратени ръчно в чат без UTM.
+
 ## UTM — винаги малки букви, без интервали
 
 | Параметър | Какво е | Пример |

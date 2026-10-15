@@ -124,7 +124,7 @@ def test_every_template_loads_the_new_consent_files():
             continue
         text = f.read_text(encoding="utf-8")
         for m in re.finditer(r"/static/consent\.(css|js)(\?v=\d+)?", text):
-            assert m.group(0) in ("/static/consent.css?v=5", "/static/consent.js?v=8"), (f.name, m.group(0))
+            assert m.group(0) in ("/static/consent.css?v=5", "/static/consent.js?v=9"), (f.name, m.group(0))
 
 
 def test_consent_bar_is_a_thin_strip_on_phones():

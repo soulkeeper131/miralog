@@ -22,7 +22,9 @@
         font-size: 1.1rem; cursor: pointer; }
     @media (min-width: 761px) { .horo-sticky { display: none !important; } }
 </style>
-<div class="horo-sticky" id="horoSticky" role="region" aria-label="Личен хороскоп">
+<div class="horo-sticky" id="horoSticky" role="region" aria-label="Личен хороскоп"
+     data-promo-id="sticky_personal_horoscope" data-promo-name="Личен хороскоп — безплатно"
+     data-promo-creative="sticky_bar" data-promo-slot="{{ sticky_cta }}">
     <a href="{{ sticky_href }}" data-cta="{{ sticky_cta }}">{{ sticky_label }}</a>
     <button type="button" aria-label="Затвори" id="horoStickyX">✕</button>
 </div>

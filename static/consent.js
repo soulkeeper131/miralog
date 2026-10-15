@@ -34,11 +34,26 @@
         // Meta stays revoked until here. init() is what sets _fbp, so it
         // must not run before the visitor agrees; PageView fires once, right
         // after, so an accepting visitor is still counted.
+        loadRecorder();
         if (typeof window.fbq === 'function' && window.FB_PIXEL_ID) {
             window.fbq('consent', 'grant');
             window.fbq('init', window.FB_PIXEL_ID);
             window.fbq('track', 'PageView');
         }
+    }
+
+    /* Записът на сесии и топлинните карти на Umami (rrweb) — само след
+       съгласие. Полетата се скриват от самия запис, а личните текстове
+       (карти, разчитания) са с клас rr-mask и в записа са заменени със звездички. */
+    function loadRecorder() {
+        var u = window.UMAMI;
+        if (!u || !u.replay || document.getElementById('umami-recorder')) return;
+        var t = document.createElement('script');
+        t.id = 'umami-recorder';
+        t.defer = true;
+        t.src = u.host + '/recorder.js';
+        t.setAttribute('data-website-id', u.id);
+        document.head.appendChild(t);
     }
 
     /* Refusing must also clear what is already there.
@@ -80,65 +95,141 @@
        here rather than at every call site — otherwise each new button has to
        remember two vocabularies and one of them eventually gets forgotten.
        Nothing is sent without consent. */
+    /* Събитията по канона на Google (GA4 recommended events) — един речник
+       за всички страници. Страницата казва само „кой модул“ (item_id), а
+       името, цената, категорията и марката идват от каталога AK_ITEMS, който
+       сървърът слага във всяка страница. */
+    var ECOMMERCE = ['view_item_list', 'select_item', 'view_item', 'add_to_cart',
+                     'remove_from_cart', 'view_cart', 'begin_checkout', 'add_payment_info',
+                     'purchase', 'refund', 'view_promotion', 'select_promotion'];
+    // При тези value е стойността на кошницата/поръчката; при разглеждане не.
+    var WITH_VALUE = ['view_item', 'add_to_cart', 'remove_from_cart', 'view_cart',
+                      'begin_checkout', 'add_payment_info', 'purchase', 'refund'];
+
+    function catalogue() { return window.AK_ITEMS || {}; }
+
+    function enrichItems(items) {
+        var cat = catalogue();
+        return (items || []).map(function (it, i) {
+            if (typeof it === 'string') it = { item_id: it };
+            var c = cat[it.item_id] || {}, out = {};
+            Object.keys(it).forEach(function (k) { if (it[k] != null && it[k] !== '') out[k] = it[k]; });
+            if (!out.item_name || out.item_name === out.item_id) out.item_name = c.item_name || out.item_id;
+            if (out.price == null && c.price != null) out.price = c.price;
+            if (!out.item_category && c.item_category) out.item_category = c.item_category;
+            if (!out.item_brand && window.AK_BRAND) out.item_brand = window.AK_BRAND;
+            if (out.quantity == null) out.quantity = 1;
+            if (out.index == null) out.index = i;
+            return out;
+        });
+    }
+
+    function normalize(name, params) {
+        var p = {};
+        Object.keys(params || {}).forEach(function (k) { p[k] = params[k]; });
+        if (ECOMMERCE.indexOf(name) === -1) return p;
+        if (name === 'view_item_list' && !p.items) {
+            p.items = Object.keys(catalogue()).map(function (k) { return { item_id: k }; });
+        }
+        if (p.items) p.items = enrichItems(p.items);
+        if (p.items && p.items.length) {
+            if (p.value == null && WITH_VALUE.indexOf(name) !== -1) {
+                var sum = 0;
+                p.items.forEach(function (it) { sum += (Number(it.price) || 0) * (Number(it.quantity) || 1); });
+                p.value = Math.round(sum * 100) / 100;
+            }
+            p.currency = p.currency || 'EUR';
+        }
+        return p;
+    }
+
+    /* Meta: само стандартните събития, по които рекламите се оптимизират и
+       от които се правят аудитории за ремаркетинг. Останалото е само в GA4/Umami. */
     var FB_EVENTS = {
+        view_item: 'ViewContent',
+        add_to_cart: 'AddToCart',
         begin_checkout: 'InitiateCheckout',
         purchase: 'Purchase',
         sign_up: 'CompleteRegistration',
-        login: 'Login',                    // custom — Meta няма стандартен еквивалент
-        view_item: 'ViewContent',
-        generate_lead: 'Lead',             // гост-карта на /start = мек lead
-        generate_natal_chart: null,        // запазената карта — само GA4, Lead вече е пратен
-        generate_synastry: 'ViewContent',  // преглед/генериране на синастрия
-        generate_numerology: 'ViewContent',// преглед/генериране на нумерология
-        click_cta: 'ClickCTA',             // custom
+        generate_lead: 'Lead',             // безплатната карта на /start
+        generate_synastry: 'ViewContent',
+        generate_numerology: 'ViewContent',
     };
 
+    function sendMeta(name, p) {
+        if (current() !== 'granted' || typeof window.fbq !== 'function') return;
+        var fbName = FB_EVENTS[name];
+        if (!fbName) return;
+        var payload = {};
+        if (p.value != null) payload.value = p.value;
+        if (p.currency) payload.currency = p.currency;
+        if (p.transaction_id) payload.order_id = p.transaction_id;
+        if (p.items && p.items.length) {
+            payload.content_ids = p.items.map(function (it) { return it.item_id; });
+            payload.contents = p.items.map(function (it) {
+                return { id: it.item_id, quantity: it.quantity || 1, item_price: it.price };
+            });
+            payload.content_type = 'product';
+            payload.num_items = p.items.length;
+            payload.content_name = p.items.map(function (it) { return it.item_name; }).join(', ');
+        }
+        if (p.item_name) payload.content_name = p.item_name;
+        if (p.content_name) payload.content_name = p.content_name;
+        // Meta dedup със сървъра: уникалният ключ е опция, не част от payload.
+        var opts = p.event_id ? { eventID: String(p.event_id) } : undefined;
+        window.fbq('track', fbName, payload, opts);
+    }
+
+    /* Umami: без бисквитки, за всички. Събитията с пари носят revenue и
+       currency — така Umami смята прихода по източник и кампания. */
+    var umamiQueue = [];
+    function sendUmami(name, p) {
+        var data = {};
+        Object.keys(p).forEach(function (k) {
+            var v = p[k];
+            if (k === 'event_id' || v == null) return;
+            if (k === 'items') {
+                data.item_ids = v.map(function (it) { return it.item_id; }).join(',');
+                data.item_names = v.map(function (it) { return it.item_name; }).join(', ').slice(0, 400);
+                return;
+            }
+            if (typeof v === 'object') return;
+            data[k] = typeof v === 'string' ? v.slice(0, 400) : v;
+        });
+        if (name === 'purchase' && p.value != null) { data.revenue = p.value; data.currency = p.currency || 'EUR'; }
+        if (window.umami && typeof window.umami.track === 'function') window.umami.track(name, data);
+        else if (window.UMAMI) umamiQueue.push([name, data]);
+    }
+    (function flushUmami(tries) {
+        if (window.umami && typeof window.umami.track === 'function') {
+            while (umamiQueue.length) { var e = umamiQueue.shift(); window.umami.track(e[0], e[1]); }
+            return;
+        }
+        if (tries < 40) setTimeout(function () { flushUmami(tries + 1); }, 250);
+    })(0);
+
     window.track = function (name, params) {
-        params = params || {};
+        var p = normalize(name, params || {});
 
         // GA4 получава събитието винаги: Consent Mode само решава дали е с
-        // бисквитки или анонимен пинг. Досега посетител, който не е отговорил
-        // на банера (повечето), не пращаше нито едно събитие.
+        // бисквитки или анонимен пинг.
         if (typeof window.gtag === 'function') {
             // event_id е за Meta (да не се брои два пъти със сървъра) — GA4 не му трябва.
             var gaParams = {};
-            Object.keys(params).forEach(function (k) { if (k !== 'event_id') gaParams[k] = params[k]; });
+            Object.keys(p).forEach(function (k) { if (k !== 'event_id') gaParams[k] = p[k]; });
             window.gtag('event', name, gaParams);
             // Google Ads конверсия за същото събитие, ако е зададен етикет.
             var ads = window.GOOGLE_ADS;
             if (ads && ads.labels && ads.labels[name]) {
                 var conv = { send_to: ads.id + '/' + ads.labels[name] };
-                if (params.value != null) conv.value = params.value;
-                if (params.currency) conv.currency = params.currency;
-                if (params.transaction_id) conv.transaction_id = params.transaction_id;
+                if (p.value != null) conv.value = p.value;
+                if (p.currency) conv.currency = p.currency;
+                if (p.transaction_id) conv.transaction_id = p.transaction_id;
                 window.gtag('event', 'conversion', conv);
             }
         }
-
-        // Meta няма анонимен режим — само след съгласие.
-        if (current() === 'granted' && typeof window.fbq === 'function') {
-            var fbName = Object.prototype.hasOwnProperty.call(FB_EVENTS, name)
-                ? FB_EVENTS[name] : name;
-            if (fbName) {
-                var payload = {};
-                // Meta expects value/currency spelled its own way.
-                if (params.value != null) payload.value = params.value;
-                if (params.currency) payload.currency = params.currency;
-                if (params.transaction_id) payload.order_id = params.transaction_id;
-                if (params.item_name) payload.content_name = params.item_name;
-                if (params.content_type) payload.content_type = params.content_type;
-                if (params.content_name) payload.content_name = params.content_name;
-                var standard = ['InitiateCheckout', 'Purchase',
-                                'CompleteRegistration', 'ViewContent', 'Lead'];
-                // Meta dedup: уникален ключ се предава като опция, не в payload.
-                var opts = params.event_id ? { eventID: String(params.event_id) } : undefined;
-                if (standard.indexOf(fbName) !== -1) {
-                    window.fbq('track', fbName, payload, opts);
-                } else {
-                    window.fbq('trackCustom', fbName, payload);
-                }
-            }
-        }
+        sendMeta(name, p);
+        sendUmami(name, p);
     };
 
     /* Purchases and checkouts carry money, so they get their own helper —
@@ -150,11 +241,8 @@
         if (info.price_cents != null) params.value = +(info.price_cents / 100).toFixed(2);
         params.currency = info.currency || 'EUR';
         if (info.transaction_id) params.transaction_id = info.transaction_id;
-        // GA4 иска items като обекти; низовете се отхвърляха и отчетът по
-        // модули оставаше празен.
-        var items = info.items || (info.keys || []).map(function (k) {
-            return { item_id: k, item_name: k, quantity: 1 };
-        });
+        if (info.coupon) params.coupon = info.coupon;
+        var items = info.items || (info.keys || []).map(function (k) { return { item_id: k }; });
         if (items.length) params.items = items;
         if (info.name) params.item_name = info.name;   // за Meta (content_name)
         // Meta dedup: транзакцията е най-стабилният уникален ключ.
@@ -162,14 +250,69 @@
         window.track(kind, params);
     };
 
-    // Делегирано проследяване на кликове по CTA бутони/линкове.
+    /* Бутоните. data-cta="място:ключ" — ако ключът е модул или пакетът, това
+       е select_item от списъка „място“ (кой бутон продава какво); иначе
+       select_content. Останалите бутони — select_content с текста им. */
     document.addEventListener('click', function (e) {
-        var el = e.target.closest('a.btn, button.btn, a[data-track], button[data-track], .entry-btn');
-        if (!el) return;
+        var cta = e.target.closest && e.target.closest('[data-cta]');
+        if (cta) {
+            var where = (cta.getAttribute('data-cta') || '').slice(0, 60);
+            var parts = where.split(':'), key = parts[parts.length - 1];
+            if (parts.length > 1 && catalogue()[key]) {
+                window.track('select_item', { item_list_id: parts[0], item_list_name: parts[0],
+                                              items: [{ item_id: key }] });
+            } else {
+                window.track('select_content', { content_type: 'cta', content_id: where });
+            }
+            return;
+        }
+        var el = e.target.closest && e.target.closest('a.btn, button.btn, a[data-track], button[data-track], .entry-btn');
+        if (!el || el.closest('[data-promo-id]')) return;
         var name = el.getAttribute('data-track')
             || (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 48);
-        if (name) window.track('click_cta', { cta_name: name });
+        if (name) window.track('select_content', { content_type: 'button', content_id: name });
     }, true);
+
+    /* Промоциите (пакетът, офертите в хороскопите, лентата долу): видяна
+       (≥50% на екрана, веднъж) → view_promotion; натисната → select_promotion.
+       Списъци с модули (data-item-list) — view_item_list, когато се видят. */
+    function promoParams(el) {
+        var keys = (el.getAttribute('data-promo-items') || '').split(',').filter(Boolean);
+        var p = { promotion_id: el.getAttribute('data-promo-id'),
+                  promotion_name: el.getAttribute('data-promo-name') || el.getAttribute('data-promo-id'),
+                  creative_name: el.getAttribute('data-promo-creative') || undefined,
+                  creative_slot: el.getAttribute('data-promo-slot') || location.pathname };
+        if (keys.length) p.items = keys.map(function (k) { return { item_id: k }; });
+        return p;
+    }
+    function watchSeen() {
+        var nodes = document.querySelectorAll('[data-promo-id]:not([data-seen]), [data-item-list]:not([data-seen])');
+        if (!nodes.length || !('IntersectionObserver' in window)) return;
+        var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (en) {
+                if (!en.isIntersecting || en.target.hasAttribute('data-seen')) return;
+                en.target.setAttribute('data-seen', '1');
+                io.unobserve(en.target);
+                var t = en.target;
+                if (t.hasAttribute('data-promo-id')) {
+                    window.track('view_promotion', promoParams(t));
+                } else {
+                    var keys = (t.getAttribute('data-items') || '').split(',').filter(Boolean);
+                    window.track('view_item_list', { item_list_id: t.getAttribute('data-item-list'),
+                        item_list_name: t.getAttribute('data-item-list'),
+                        items: keys.length ? keys.map(function (k) { return { item_id: k }; }) : undefined });
+                }
+            });
+        }, { threshold: 0.5 });
+        nodes.forEach(function (n) { io.observe(n); });
+    }
+    document.addEventListener('click', function (e) {
+        var promo = e.target.closest && e.target.closest('[data-promo-id]');
+        if (promo && e.target.closest('a, button')) window.track('select_promotion', promoParams(promo));
+    }, true);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchSeen);
+    else watchSeen();
+    window.watchTrackedBlocks = watchSeen;   // за блокове, добавени по-късно
 
     function build() {
         var wrap = document.createElement('div');
@@ -233,7 +376,7 @@
 
 /* Кой бутон води хора: всеки елемент с data-cta="място:бутон" праща
    cta_click към /api/events (нашите отчети, без бисквитки — не иска
-   съгласие) и select_promotion към GA4 (минава през съгласието в track). */
+   съгласие). GA4/Meta/Umami получават select_item/select_content от track(). */
 (function () {
     document.addEventListener('click', function (e) {
         var el = e.target.closest && e.target.closest('[data-cta]');
@@ -248,8 +391,5 @@
                     headers: { 'Content-Type': 'application/json' }, body: body }).catch(function () {});
             }
         } catch (err) { /* без значение */ }
-        if (typeof window.track === 'function') {
-            window.track('select_promotion', { creative_slot: where, promotion_name: el.textContent.trim().slice(0, 60) });
-        }
     }, true);
 })();

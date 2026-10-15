@@ -25,6 +25,11 @@
 
     // Измерване: feature е „1“, „2“, „3“, „skip“ или „done“. Не бива да чупи нищо.
     function ev(feature) {
+        // По канона на Google: начало и край на въвеждането.
+        if (typeof window.track === 'function') {
+            if (String(feature) === '1') window.track('tutorial_begin');
+            else if (String(feature) === 'done') window.track('tutorial_complete');
+        }
         try {
             fetch('/api/events', {
                 method: 'POST', keepalive: true,

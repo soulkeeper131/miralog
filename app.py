@@ -1177,6 +1177,22 @@ def google_ads_config() -> dict:
 
 
 templates.env.globals["google_ads"] = google_ads_config
+
+
+def umami_config() -> dict:
+    """За _analytics.html: адрес и ID на Umami ({} = изключено)."""
+    seo = seo_settings()
+    host = (seo.get("umami_host") or "").strip().rstrip("/")
+    site = (seo.get("umami_website_id") or "").strip()
+    if not (re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?", host)
+            and re.fullmatch(r"[0-9a-f-]{36}", site)):
+        return {}
+    return {"host": host, "id": site, "replay": (seo.get("umami_replay") or "") == "1",
+            # Само на истинския домейн: локалните копия и тестовете не пълнят отчета.
+            "domains": f"{BRAND_DOMAIN},www.{BRAND_DOMAIN}"}
+
+
+templates.env.globals["umami"] = umami_config
 # Админ поддомейн — login.html го ползва, за да пренасочи админа към панела.
 templates.env.globals["admin_host"] = ADMIN_HOST
 
@@ -1193,10 +1209,38 @@ def _analytics_ctx(ctx) -> dict:
         host = (request.headers.get("host") or "").split(":")[0].strip().lower()
     except Exception:
         host = ""
-    return {"enabled": host != ADMIN_HOST, "user_id": _user_id_for_log(request)}
+    user_id = _user_id_for_log(request)
+    customer = None
+    if user_id:
+        try:
+            customer = "paying" if is_paying_customer(user_id) else "registered"
+        except Exception:
+            customer = None
+    return {"enabled": host != ADMIN_HOST, "user_id": user_id, "customer": customer}
 
 
 templates.env.globals["analytics_ctx"] = _analytics_ctx
+
+
+def analytics_items() -> dict:
+    """Каталогът за отчетите (GA4 items): ключ → име, цена, категория.
+
+    Браузърът допълва с него всяко събитие, което носи само item_id, така че
+    view_item, add_to_cart, select_item и промоциите са с име и цена, както
+    ги иска Google, без всяка страница да ги знае поотделно."""
+    try:
+        pricing = landing_pricing()
+    except Exception:
+        return {}
+    items = {r["key"]: {"item_name": r["name"], "price": round(r["price_cents"] / 100, 2),
+                        "item_category": "module"} for r in pricing["rows"]}
+    if pricing.get("bundle"):
+        items["bundle"] = {"item_name": BUNDLE_NAME, "price": round(BUNDLE_PRICE_CENTS / 100, 2),
+                           "item_category": "bundle"}
+    return items
+
+
+templates.env.globals["analytics_items"] = analytics_items
 
 
 # --- Кой гледа страницата и накъде води основният бутон ---------------------
@@ -1513,7 +1557,7 @@ async def track_page_views(request: Request, call_next):
                                 secure=IS_PRODUCTION, path="/")
         # UTM, а без тях — мрежата от идентификатора на клика (gclid → google/cpc).
         # Входът от обикновен сайт или търсачка остава в referrer, както досега.
-        paid = touch if touch and ("k" in touch or "c" in touch
+        paid = touch if touch and ("k" in touch or "c" in touch or "via" in touch
                                   or request.query_params.get("utm_source")) else {}
         extra = {
             "referrer": _referrer_host(request),
@@ -1641,8 +1685,34 @@ def _clean_param(value, limit: int) -> str:
     return value[:limit]
 
 
+# Уеб пощите и Android приложенията (referrer „android-app://<пакет>“).
+_EMAIL_SITES = {"mail.google.com": "gmail", "outlook.live.com": "outlook", "outlook.office.com": "outlook",
+                "mail.yahoo.com": "yahoo_mail", "abv.bg": "abv", "mail.bg": "mail.bg", "dir.bg": "dir.bg",
+                "mail.dir.bg": "dir.bg", "gbg.bg": "gbg", "mail.ru": "mail.ru"}
+_APP_REFERRERS = {"com.google.android.gm": ("gmail", "email"),
+                  "com.google.android.googlequicksearchbox": ("google", "organic"),
+                  "com.google.android.apps.searchlite": ("google", "organic"),
+                  "com.facebook.katana": ("facebook", "social"), "com.facebook.lite": ("facebook", "social"),
+                  "com.facebook.orca": ("messenger", "social"), "com.instagram.android": ("instagram", "social"),
+                  "com.viber.voip": ("viber", "social"), "org.telegram.messenger": ("telegram", "social"),
+                  "com.whatsapp": ("whatsapp", "social"), "com.zhiliaoapp.musically": ("tiktok", "social"),
+                  "com.ss.android.ugc.trill": ("tiktok", "social"), "com.linkedin.android": ("linkedin", "social"),
+                  "com.twitter.android": ("twitter", "social"), "com.pinterest": ("pinterest", "social"),
+                  "com.microsoft.office.outlook": ("outlook", "email"), "com.yahoo.mobile.client.android.mail": ("yahoo_mail", "email")}
+# Вградените браузъри на приложенията не пращат referrer, но се познават по User-Agent.
+_INAPP_UA = (("instagram", "instagram"), ("messenger", "messenger"), ("fban", "facebook"),
+             ("fbav", "facebook"), ("fb_iab", "facebook"), ("musical_ly", "tiktok"), ("bytedancewebview", "tiktok"),
+             ("tiktok", "tiktok"), ("viber", "viber"), ("telegram", "telegram"), ("snapchat", "snapchat"),
+             ("pinterest", "pinterest"), ("linkedinapp", "linkedin"), ("line/", "line"), ("gsa/", "google"))
+
+
 def _classify_referrer(host: str) -> tuple:
     """Домейн на препращащата страница → (източник, канал)."""
+    if host in _APP_REFERRERS:
+        return _APP_REFERRERS[host]
+    for site, name in _EMAIL_SITES.items():
+        if host == site or host.endswith("." + site):
+            return name, "email"
     parts = host.split(".")
     for site, name in _SOCIAL_SITES.items():
         if host == site or host.endswith("." + site):
@@ -1673,6 +1743,15 @@ def touch_from_request(request: Request) -> Optional[dict]:
     ref = _referrer_host(request)
     if ref:
         touch["ref"] = ref
+    if "s" not in touch and not ref and not request.headers.get("referer"):
+        # Без referrer изобщо (не вътрешно минаване): вграден браузър на
+        # приложение ли е? Тогава поне знаем от коя мрежа е.
+        ua = (request.headers.get("user-agent") or "").lower()
+        app = next((name for key, name in _INAPP_UA if key in ua), None)
+        if app:
+            touch["s"] = app
+            touch["m"] = "organic" if app == "google" else "social"
+            touch["via"] = "app"
     if "s" not in touch:
         if not ref:
             return None
@@ -3973,6 +4052,12 @@ SEO_DEFAULTS = {
     "google_ads_purchase_label": "",
     "google_ads_signup_label": "",
     "google_ads_lead_label": "",
+    # Umami (собствен сървър, без бисквитки): втори, независим отчет за
+    # посещенията, събитията с приход и скоростта при истинските посетители.
+    # Записът на сесии (recorder.js) тръгва само след съгласие.
+    "umami_host": "https://analytics.blv.bg",
+    "umami_website_id": "36996ad0-fb5a-4a8a-96a1-07f04c1131a3",
+    "umami_replay": "1",
 }
 
 def seo_settings() -> dict:
@@ -6679,16 +6764,41 @@ def _email_html(body_text: str) -> str:
     )
 
 
+def tag_email_links(text: str, campaign: str) -> str:
+    """Към всеки наш линк в писмото — utm_source=email&utm_medium=email&
+    utm_campaign=<вид писмо>. Иначе отварянето от писмо изглежда като
+    „директно“ и не се вижда кое писмо връща хората."""
+    if not text or not campaign:
+        return text
+    domain = re.escape((BRAND_DOMAIN or "").lower())
+    pattern = re.compile(r"https?://(?:www\.)?" + domain + r"(?:/[^\s\"'<>)]*)?", re.I)
+
+    def _tag(m):
+        url = m.group(0)
+        if "utm_source=" in url:
+            return url
+        base, hashmark, frag = url.partition("#")
+        sep = "&" if "?" in base else "?"
+        return (f"{base}{sep}utm_source=email&utm_medium=email&utm_campaign="
+                f"{urllib.parse.quote(campaign)}{hashmark}{frag}")
+    return pattern.sub(_tag, text)
+
+
 def send_email(to: str, subject: str, body: str, attachment: Optional[tuple] = None,
-               html: Optional[str] = None) -> None:
+               html: Optional[str] = None, campaign: str = "") -> None:
     """Send a message over the configured SMTP server.
 
     `attachment` is an optional (filename, bytes, mimetype) triple.
     `html` is an optional HTML body; `body` stays the plain-text fallback.
+    `campaign` — вид на писмото за UTM на линковете (празно = без UTM).
     Raises HTTPException with a readable message on failure.
     """
     import smtplib
     from email.message import EmailMessage
+
+    if campaign:
+        body = tag_email_links(body, campaign)
+        html = tag_email_links(html, campaign) if html else html
 
     host = smtp_setting("smtp_host")
     if not host:
@@ -7249,7 +7359,7 @@ def try_send_template(to: str, kind: str, **fields) -> bool:
         return False
     subject, body = render_email_template(kind, **fields)
     try:
-        send_email(to, subject, body, html=_email_html(body))
+        send_email(to, subject, body, html=_email_html(body), campaign=kind)
         return True
     except Exception as e:
         log.warning("Неуспешен %s имейл до %s: %s", kind, to, e)
@@ -7997,7 +8107,25 @@ def add_refund(payment_id: int, amount_cents: int, *, method: str, source: str,
             conn.commit()
     except sqlite3.IntegrityError:
         return False
+    ga4_refund(payment_id, int(amount_cents))
     return True
+
+
+def ga4_refund(payment_id: int, amount_cents: int) -> None:
+    """Върнатите пари и в GA4 (refund), за да е приходът по кампании нетен.
+    GA4 свързва връщането с покупката по transaction_id (= Stripe сесията);
+    плащане без сесия (ръчно) не е било пращано като покупка, затова и тук не."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute("SELECT stripe_session_id, user_id, currency FROM payments WHERE id = ?",
+                               (payment_id,)).fetchone()
+        if not row or not row[0]:
+            return
+        send_ga4_event(f"refund.{payment_id}", "refund", {
+            "transaction_id": row[0], "value": round(amount_cents / 100, 2),
+            "currency": (row[2] or "EUR").upper()}, user_id=row[1])
+    except Exception:
+        log.warning("GA4 refund не тръгна", exc_info=True)
 
 
 def refunded_cents(payment_id: int) -> int:
@@ -13079,7 +13207,9 @@ def section_offers_html(html: str, viewer: dict) -> str:
             note = ("" if viewer.get("logged_in") else
                     '<p class="horo-offer-note">Първо безплатната ти карта — отнема минута.</p>')
             glyph = next((f.get("glyph", "✦") for f in FEATURE_CATALOGUE if f["key"] == key), "✦")
-            card = (f'<aside class="horo-offer" data-offer="{key}">'
+            card = (f'<aside class="horo-offer" data-offer="{key}" data-promo-id="horo_offer_{key}"'
+                    f' data-promo-name="Оферта в хороскопа" data-promo-creative="section_offer"'
+                    f' data-promo-slot="horoscope_sign" data-promo-items="{key}">'
                     f'<div class="ho-icon" aria-hidden="true">{glyph}</div><div class="ho-body">'
                     f'<span class="ho-kicker">Лично разчитане</span>'
                     f'<p class="horo-offer-q">{question}</p><p class="horo-offer-t">{text}</p>'

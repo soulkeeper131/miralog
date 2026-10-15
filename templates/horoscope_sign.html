@@ -442,7 +442,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=8"></script>
+    <script src="/static/consent.js?v=9"></script>
     {% if not (viewer().logged_in) %}
     <script>
         /* Мини формата към гост-картата. Не е нов API: адресът се търси през
@@ -577,7 +577,7 @@
         })();
     </script>
     {% endif %}
-    <script src="/static/share.js?v=3"></script>
+    <script src="/static/share.js?v=4"></script>
     {% set _sc = primary_cta('horoscope', 'Получи личния си хороскоп') %}
     {% with sticky_href = (_sc.href if _sc.logged_in else '#lichen'),
             sticky_label = ('☽ Отвори личния си хороскоп' if _sc.logged_in else '☽ Личен хороскоп — безплатно'),

@@ -74,14 +74,14 @@ def test_guest_gets_the_mini_form_under_the_text(app, db):
 def test_bundle_line_uses_the_db_price_and_leaves_the_faq(app, db, monkeypatch):
     html = _render(app)
     price = app.landing_pricing()["bundle"]["price"]
-    m = re.search(r'<div class="bundle-card">(.*?)</a>', html, re.S)
+    m = re.search(r'<div class="bundle-card"[^>]*>(.*?)</a>', html, re.S)
     assert m and price in m.group(1)
     assert 'href="/start?want=bundle"' in m.group(1) and 'data-cta="horoscope_sign:bundle"' in m.group(1)
     assert 'data-cta="faq:bundle"' in html            # въпросът си остава
 
     # Цената е от landing_pricing(), не текст в шаблона.
     monkeypatch.setattr(app, "BUNDLE_PRICE_CENTS", 1234)
-    assert app.price_label(1234) in re.search(r'<div class="bundle-card">(.*?)</a>', _render(app), re.S).group(1)
+    assert app.price_label(1234) in re.search(r'<div class="bundle-card"[^>]*>(.*?)</a>', _render(app), re.S).group(1)
 
 
 def test_no_bundle_line_when_bundle_is_not_offered(app, db, monkeypatch):

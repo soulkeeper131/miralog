@@ -8,6 +8,12 @@
 <script>
   window.track = window.track || function () {};
   window.trackPurchase = window.trackPurchase || function () {};
+  {% if actx.enabled %}
+  // Каталогът (име, цена, категория по ключ) — consent.js допълва с него
+  // събитията, които носят само item_id. Марката е item_brand навсякъде.
+  window.AK_ITEMS = {{ analytics_items() | tojson }};
+  window.AK_BRAND = {{ brand().name | tojson }};
+  {% endif %}
 </script>
 
 
@@ -66,6 +72,10 @@ window.addEventListener('load', function () {
   gtag('set', 'url_passthrough', true);
   gtag('set', 'ads_data_redaction', true);
   gtag('js', new Date());
+  {% if actx.customer %}
+  // За аудиториите (ремаркетинг): регистриран без покупка или вече купувал.
+  gtag('set', 'user_properties', { customer_type: {{ actx.customer | tojson }} });
+  {% endif %}
   gtag('config', '{{ gid }}'{% if actx.user_id %}, { 'user_id': '{{ actx.user_id }}' }{% endif %});
   {% set gads = google_ads() %}{% if gads %}
   // Google Ads: тагът на акаунта; конверсиите тръгват от track() в consent.js.
@@ -82,4 +92,18 @@ window.addEventListener('load', function () {
     document.head.appendChild(g);
   });
 </script>
+{% endif %}
+
+{% set um = umami() if actx.enabled else {} %}
+{% if um %}
+{# Umami: без бисквитки, затова тръгва за всички — втори, независим от Google
+   отчет. data-performance събира скоростта при истинските посетители (LCP,
+   INP, CLS). Записът на сесии (recorder.js) се зарежда от consent.js чак след
+   съгласие; личните текстове (карти, разчитания) са с клас rr-mask. #}
+<script>
+  window.UMAMI = {{ {"host": um.host, "id": um.id, "replay": um.replay} | tojson }};
+</script>
+<script defer src="{{ um.host }}/script.js" data-website-id="{{ um.id }}"
+        data-domains="{{ um.domains }}" data-performance="true"{% if actx.user_id %}
+        data-distinct-id="u{{ actx.user_id }}"{% endif %}></script>
 {% endif %}

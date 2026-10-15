@@ -9,11 +9,14 @@
    openShareSheet({ url, title, text, image, feature })
      image — адресът на картата (/og/…); ?size=story|square се добавя тук. */
 (function () {
+    var currentFeature = 'page';
     function withUtm(url, source) {
         try {
             var u = new URL(url, location.origin);
             u.searchParams.set('utm_source', source);
             u.searchParams.set('utm_medium', 'share');
+            // Какво е споделено (хороскоп, карта, разчитане) — за отчета по кампании.
+            u.searchParams.set('utm_campaign', 'share_' + currentFeature);
             return u.toString();
         } catch (e) { return url; }
     }
@@ -141,6 +144,7 @@
     // Прегледът с картинката го прави og:image на страницата. Нашето меню —
     // на компютър или ако системното го няма/откаже.
     window.openShareSheet = async function (o) {
+        currentFeature = String((o && o.feature) || 'page').replace(/[^a-z0-9_-]/gi, '').slice(0, 30) || 'page';
         o = o || {};
         if (isPhone() && navigator.share) {
             try {

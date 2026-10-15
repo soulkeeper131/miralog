@@ -25,7 +25,8 @@
     .bc-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(232, 197, 107, .45); }
     @media (min-width: 640px) { .bc-btn { display: inline-flex; padding: 0 30px; } }
 </style>
-<div class="bundle-card">
+<div class="bundle-card" data-promo-id="bundle" data-promo-name="{{ brand_bundle_name | default('Всички разчитания') }}"
+     data-promo-creative="bundle_card" data-promo-slot="{{ bundle_cta }}" data-promo-items="bundle">
     <span class="bc-ribbon">Спестяваш {{ bundle.saving }}</span>
     <h3>Всички {{ bundle.count }} разчитания за картата ти</h3>
     <p>Профил, любов, хороскоп за период, нумерология, акашови записи и лунен календар — написани по твоята карта.</p>
