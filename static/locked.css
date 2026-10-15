@@ -99,6 +99,28 @@
 .teaser-pos { font-size: 0.95rem; font-weight: 600; color: var(--text); }
 .teaser-row p { margin: 0; }
 .teaser-more { font-style: italic; opacity: 0.85; }
+/* Списък със заглавията в разчитането (профил): първите се четат, останалите
+   са размазани — виждаш колко има, без да получаваш всичко. */
+.teaser-outline { list-style: none; padding: 0; margin: 0 0 12px; }
+.teaser-outline li {
+    position: relative; padding: 4px 0 4px 22px; line-height: 1.5;
+    color: var(--text); font-size: 0.95rem;
+}
+.teaser-outline li::before {
+    content: "✦"; position: absolute; left: 3px; top: 5px;
+    color: var(--accent-light); font-size: 0.8rem;
+}
+.locked-teaser.has-excerpt .teaser-outline li:nth-child(n + 4) {
+    filter: blur(5px); opacity: 0.5;
+}
+/* Размазаният резервен текст е примерен — казва се на глас, за да не изглежда
+   като повредена страница. Изчезва, щом се зареди истинският откъс. */
+.teaser-sample {
+    position: absolute; top: 10px; left: 14px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-dim);
+}
+.locked.has-excerpt .teaser-sample { display: none; }
 
 /* Платените разчитания минават през по-силния модел. Това е реална разлика,
    която досега никой не виждаше — казва се веднъж, дребно, под бутона. */

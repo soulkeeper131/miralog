@@ -21,7 +21,7 @@
         if (force) featuresPromise = null;
         if (!featuresPromise) {
             featuresPromise = fetch('/api/features', { headers: authHeaders() })
-                .then(resp => {
+                .then(async resp => {
                     if (!resp.ok) throw await apiError(resp);
                     return resp.json();
                 })
@@ -44,6 +44,13 @@
         return value.toFixed(2).replace('.00', '').replace('.', ',') + ' ' + symbol;
     }
 
+    // Къде се отваря вече отключено разчитане: Луната е своя страница, останалите
+    // са табове на картата (когато сме на нея).
+    function openHref(key) {
+        if (key === 'moon') return '/moon';
+        return document.getElementById('tab-' + key) ? '#' + key : '';
+    }
+
     function cardHtml(item) {
         const offer = item.offer;
         const bullets = (item.bullets || []).map(b =>
@@ -60,12 +67,16 @@
         const aria = offer
             ? `Отключи „${item.name}“ за ${money(offer.price_cents, offer.currency)}`
             : `Отключи „${item.name}“`;
+        const href = item.unlocked ? openHref(item.key) : '';
         const action = item.unlocked
-            ? ''
+            ? (href ? `<a class="mod-btn mod-open" href="${esc(href)}" data-open="${esc(item.key)}"
+                          style="text-decoration:none"
+                          aria-label="${esc('Отвори „' + item.name + '“')}">Отвори</a>` : '')
             : `<button class="mod-btn" data-key="${esc(item.key)}"
                        aria-label="${esc(aria)}">Отключи</button>`;
 
-        return `<article class="mod-card${item.unlocked ? ' mod-card-owned' : ''}">
+        // Картата с връзка не се затъмнява: на нея се натиска.
+        return `<article class="mod-card${item.unlocked ? ' mod-card-owned' : ''}"${href ? ' style="opacity:1"' : ''}>
             <div class="mod-head">
                 <span class="mod-glyph" aria-hidden="true">${esc(item.glyph || '✦')}</span>
                 <div>
@@ -212,8 +223,8 @@
             <div class="mod-sheet" role="dialog" aria-modal="true" aria-labelledby="mod-title">
                 <button class="mod-close" aria-label="Затвори">✕</button>
                 <div class="mod-intro">
-                    <span class="mod-eyebrow">${opts.firstTime ? 'Картата ти е готова' : 'Добави към картата си'}</span>
-                    <h3 id="mod-title">Какво още искаш да четеш?</h3>
+                    <span class="mod-eyebrow">${opts.firstTime ? 'Картата ти е готова' : 'Твоята карта'}</span>
+                    <h3 id="mod-title">Разчитания</h3>
                     <p>${opts.firstTime
                         ? 'Наталната ти карта, планетите, аспектите и дневният хороскоп вече са твои. Всичко по-долу се добавя поотделно — плащаш веднъж и ти остава завинаги.'
                         : 'Всяко от тези се отключва отделно. Плащаш веднъж и ти остава завинаги.'}</p>
@@ -222,7 +233,7 @@
                     <div class="mod-loading">Зареждане…</div>
                 </div>
                 <div class="mod-foot-note">
-                    Можеш да отключиш и по-късно — намираш ги под всяко заключено меню.
+                    Можеш да отключиш и по-късно — от бутона „Разчитания“ в картата ти.
                 </div>
             </div>`;
         root.appendChild(overlay);
@@ -250,6 +261,15 @@
                 !item.included && (item.offer || item.unlocked));
 
             const grid = overlay.querySelector('#mod-grid');
+            // Всичко е отключено: листът казва това, вместо да показва карти,
+            // на които няма какво да се натисне.
+            const haveAll = sellable.length > 0 && sellable.every(i => i.unlocked);
+            if (haveAll) {
+                overlay.querySelector('#mod-title').textContent = 'Имаш всички разчитания';
+                overlay.querySelector('.mod-intro p').textContent =
+                    'Отвори което поискаш — те са твои завинаги.';
+                overlay.querySelector('.mod-foot-note').hidden = true;
+            }
             grid.innerHTML = sellable.length
                 ? sellable.map(cardHtml).join('')
                 : '<div class="mod-loading">Няма други разчитания в момента.</div>';
@@ -298,12 +318,21 @@
                       .addEventListener('click', ev => unlock(ev.currentTarget, 'bundle'));
             }
 
-            grid.querySelectorAll('.mod-btn').forEach(btn => {
+            grid.querySelectorAll('button.mod-btn').forEach(btn => {
                 btn.addEventListener('click', () => unlock(btn, btn.dataset.key));
+            });
+            grid.querySelectorAll('.mod-open').forEach(link => {
+                link.addEventListener('click', ev => {
+                    const key = link.dataset.open;
+                    if (key === 'moon') return;   // обикновена връзка към /moon
+                    ev.preventDefault();
+                    close();
+                    if (typeof window.showTab === 'function') window.showTab(key);
+                });
             });
         } catch (e) {
             overlay.querySelector('#mod-grid').innerHTML =
-                '<div class="mod-loading">Модулите не се заредиха. Опитай пак по-късно.</div>';
+                '<div class="mod-loading">Разчитанията не се заредиха. Опитай пак по-късно.</div>';
         }
 
         localStorage.setItem(SEEN_KEY, '1');
@@ -376,16 +405,16 @@
                         trackPurchase('purchase', res.d.purchase);
                     }
                     if (typeof uiToast === 'function') {
-                        uiToast('Плащането е получено. Приятно четене!', 'ok');
+                        uiToast('Плащането е получено. Ако разчитането още е заключено, опресни страницата след няколко секунди.', 'ok');
                     }
                     setTimeout(function () { window.location.reload(); }, 900);
                 } else if (typeof uiToast === 'function') {
-                    uiToast('Плащането още се потвърждава. Опресни след малко.', 'ok');
+                    uiToast('Плащането още се потвърждава. Опресни страницата след малко.', 'ok');
                 }
             })
             .catch(function () {
                 // Мрежова грешка: session_id остава, за да провери пак при опресняване.
-                if (typeof uiToast === 'function') uiToast('Плащането още се потвърждава. Опресни след малко.', 'ok');
+                if (typeof uiToast === 'function') uiToast('Плащането още се потвърждава. Опресни страницата след малко.', 'ok');
             });
     });
 })();

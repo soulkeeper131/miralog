@@ -2586,9 +2586,27 @@ def serialize_objects(objects: dict) -> dict:
         }
     return result
 
-def serialize_aspects(aspects: dict) -> list:
+def exact_label(deviation: Optional[float]) -> str:
+    """„точен до 1,2°“ — колко е аспектът от точния, както го разбира човек.
+
+    Библиотеката дава в `orb` допустимия орб (10°, 6°…), не отклонението:
+    „Орб 10.0°“ изглеждаше като силата на аспекта, а е само границата."""
+    if deviation is None:
+        return ""
+    if deviation < 0.05:
+        return "почти точен"
+    return "точен до " + f"{deviation:.1f}".replace(".", ",") + "°"
+
+
+def serialize_aspects(aspects: dict, symmetric: bool = False) -> list:
     """Serialize chart aspects to JSON-friendly format.
-    Aspects are nested: {active_id: {passive_id: Aspect}}"""
+    Aspects are nested: {active_id: {passive_id: Aspect}}
+
+    Библиотеката връща всеки аспект два пъти, затова повторенията се махат
+    (по двойка и вид) и списъкът се подрежда по истинското отклонение —
+    най-точните първи. `symmetric` е за карта на един човек, където
+    „Слънце–Луна“ и „Луна–Слънце“ са един аспект; при транзити към натала
+    двете посоки са различни аспекти и се пазят."""
     icons = {
         'Conjunction': '☌', 'Opposition': '☍', 'Square': '□', 'Trine': '△',
         'Sextile': '⚹', 'Semisquare': '∠', 'Sesquisquare': '⚼',
@@ -2602,11 +2620,16 @@ def serialize_aspects(aspects: dict) -> list:
         'Quintile': 'minor', 'Biquintile': 'minor'
     }
     result = []
+    seen = set()
     for active_id, passive_dict in aspects.items():
         for passive_id, aspect in passive_dict.items():
             aspect_type = aspect.type if isinstance(aspect.type, str) else aspect.type.name
             active = aspect._active_name if hasattr(aspect, '_active_name') else str(aspect.active)
             passive = aspect._passive_name if hasattr(aspect, '_passive_name') else str(aspect.passive)
+            key = (frozenset((active, passive)) if symmetric else (active, passive), aspect_type)
+            if key in seen:
+                continue
+            seen.add(key)
             result.append({
                 "type": aspect_type,
                 "type_bg": tr_aspect(aspect_type),
@@ -2624,6 +2647,10 @@ def serialize_aspects(aspects: dict) -> list:
                 "movement": aspect.movement.formatted if hasattr(aspect, 'movement') and aspect.movement else None,
                 "condition": aspect.condition.formatted if hasattr(aspect, 'condition') and aspect.condition else None,
             })
+            dev = aspect_deviation(result[-1])
+            result[-1]["deviation"] = round(dev, 2) if dev is not None else None
+            result[-1]["deviation_label"] = exact_label(dev)
+    result.sort(key=lambda a: (a["deviation"] is None, a["deviation"] or 0))
     return result
 
 def serialize_houses(houses: dict) -> list:
@@ -2664,7 +2691,7 @@ def compute_natal(person: dict) -> dict:
         "moon_phase_bg": tr_moon_phase(natal.moon_phase.formatted if hasattr(natal, 'moon_phase') and natal.moon_phase else None),
         "moon_phase_meaning": meaning_moon_phase(natal.moon_phase.formatted if hasattr(natal, 'moon_phase') and natal.moon_phase else None),
         "objects": serialize_objects(natal.objects),
-        "aspects": serialize_aspects(natal.aspects),
+        "aspects": serialize_aspects(natal.aspects, symmetric=True),
         "houses": serialize_houses(natal.houses) if hasattr(natal, 'houses') else [],
         "time_unknown": time_unknown_of(person),
     }
@@ -2699,7 +2726,7 @@ def compute_composite(person1: dict, person2: dict) -> dict:
         "moon_phase": composite.moon_phase.formatted if hasattr(composite, 'moon_phase') and composite.moon_phase else None,
         "moon_phase_bg": tr_moon_phase(composite.moon_phase.formatted if hasattr(composite, 'moon_phase') and composite.moon_phase else None),
         "objects": serialize_objects(composite.objects),
-        "aspects": serialize_aspects(composite.aspects),
+        "aspects": serialize_aspects(composite.aspects, symmetric=True),
     }
 
 # --- Ranking transits for a reading -------------------------------------
@@ -8992,13 +9019,15 @@ def build_profile(chart_data: dict) -> dict:
     aspect_bodies = PERSONAL_PLANETS | {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"}
     if not unknown:
         aspect_bodies |= {"Asc", "MC"}
+    # По истинското отклонение от точния аспект, не по допустимия орб (10°, 6°):
+    # „най-силните“ излизаха най-широките.
     scored = [
         a for a in chart_data.get("aspects", [])
-        if a.get("orb") is not None
+        if a.get("deviation") is not None
         and a["active"] in aspect_bodies and a["passive"] in aspect_bodies
         and a["type"] in {"Conjunction", "Sextile", "Square", "Trine", "Opposition"}
     ]
-    scored.sort(key=lambda a: abs(a["orb"]))
+    scored.sort(key=lambda a: a["deviation"])
     seen = set()
     key_aspects = []
     for a in scored:
@@ -9054,7 +9083,8 @@ def build_profile(chart_data: dict) -> dict:
             {
                 "active_bg": a["active_bg"], "passive_bg": a["passive_bg"],
                 "type_bg": a["type_bg"], "type_meaning": a.get("type_meaning", ""),
-                "orb": round(a["orb"], 1),
+                "orb": round(a["deviation"], 1),
+                "exact": a.get("deviation_label", ""),
             }
             for a in key_aspects
         ],
@@ -9103,22 +9133,139 @@ def build_teaser(prof: dict, name: str = "") -> dict:
     }
 
 
+# Какво има в платения профил — по заглавията на самото разчитане (виж
+# подканата в api_profile_interpretation). Безплатното „Накратко за теб“
+# вече показва Слънцето, Луната и Асцендента, затова превюто не ги повтаря.
+PROFILE_OUTLINE = [
+    "Кой си ти в едно изречение", "Силните ти страни", "Слабите ти места",
+    "Твоят темперамент", "Къде е фокусът на живота ти", "Интересни особености",
+    "Какво да развиваш",
+]
+
+
+def _teaser_where(o: dict, unknown: bool) -> str:
+    """„Овен, 5-ти дом“ — без дома, когато часът е неизвестен."""
+    house = "" if unknown else (o.get("house_bg") or "")
+    return f"{o['sign_bg']}, {house}" if house else o["sign_bg"]
+
+
+def _teaser_planet(o: dict, label: str, unknown: bool) -> dict:
+    return {
+        "label": label,
+        "position": _teaser_where(o, unknown),
+        "meaning": " ".join(x for x in ((o.get("name_meaning") or "").strip(),
+                                        (o.get("sign_meaning") or "").strip()) if x),
+    }
+
+
+def build_feature_teaser(feature: str, person: dict, user_id: int, name: str = "") -> Optional[dict]:
+    """Превю на заключен модул, свързано с модула: нумерология — числото на
+    съдбата, любов — Венера и Марс, период — първите дни напред, акашови —
+    лунните възли, профил — какво има в разчитането.
+
+    Всичко е вече изчислимо и безплатно (карта или дата на раждане), нищо не
+    се генерира с AI. За непознат ключ връща None — тогава важи общото превю.
+    """
+    unknown = time_unknown_of(person)
+
+    if feature == "numerology":
+        num = compute_numerology(person["name"], person["year"], person["month"], person["day"])
+        lp = num["life_path"]
+        return {
+            "name": name, "feature": feature,
+            "intro": f"Числото на съдбата се смята от датата ти на раждане "
+                     f"({person['day']:02d}.{person['month']:02d}.{person['year']}):",
+            "rows": [{"label": "Число на съдбата", "position": str(lp["number"]),
+                      "meaning": lp.get("meaning", "")}],
+            "more": "…и още пет числа от името и датата ти — в пълното разчитане.",
+        }
+
+    if feature in ("love", "akashic", "profile"):
+        chart = chart_for_prompt(compute_natal(person))
+        by_name = {o["name"]: o for o in chart["objects"].values()}
+        if feature == "love":
+            rows = [_teaser_planet(by_name[n], label, unknown)
+                    for n, label in (("Venus", "Венера — как обичаш"), ("Mars", "Марс — какво те запалва"))
+                    if n in by_name]
+            return {"name": name, "feature": feature,
+                    "intro": "Любовта в картата ти започва от тези две планети:",
+                    "rows": rows,
+                    "more": "…а как се срещат с планетите на партньора ти — в пълното разчитане."}
+        if feature == "akashic":
+            rows = [_teaser_planet(by_name[n], label, unknown)
+                    for n, label in (("True North Node", "Северен възел — посока на растеж"),
+                                     ("True South Node", "Южен възел — наследено от миналото"))
+                    if n in by_name]
+            return {"name": name, "feature": feature,
+                    "intro": "Акашовите записи се четат от лунните възли:",
+                    "rows": rows,
+                    "more": "…заедно с Хирон, Сатурн, Плутон и Лилит — в пълното разчитане."}
+        # Профил: безплатното над него вече показва ядрото на картата.
+        n_aspects = len(build_profile(chart).get("key_aspects") or [])
+        return {"name": name, "feature": feature,
+                "intro": "Пълният профил е писмено разчитане по твоята карта. В него има:",
+                "rows": [], "outline": PROFILE_OUTLINE,
+                "aspect_count": n_aspects,
+                "more": f"…и разбор на {n_aspects} от най-силните ти аспекта." if n_aspects else ""}
+
+    if feature == "period":
+        today = datetime.date.today()
+        end = today + datetime.timedelta(days=10)
+        try:
+            days = api_period_influence(
+                PeriodRequest(person_id=person["id"], start_date=today.isoformat(),
+                              end_date=end.isoformat()), (user_id, "")).get("days", [])
+        except HTTPException:
+            return None
+        rows = []
+        for day in days[:3]:
+            d = datetime.date.fromisoformat(day["date"])
+            planets = []
+            for a in day["entering"] + day["leaving"]:
+                if a["active_bg"] not in planets:
+                    planets.append(a["active_bg"])
+            rows.append({
+                "label": f"{d.day}.{d.month:02d}",
+                "position": f"{len(day['entering']) + len(day['leaving'])} промени",
+                "meaning": "Менят се влиянията на: " + ", ".join(planets) + ".",
+            })
+        if not rows:
+            rows.append({"label": "Следващите 10 дни", "position": "без големи промени",
+                         "meaning": "Значимите влияния идват по-късно в периода."})
+        horizon = today + datetime.timedelta(days=30)
+        return {"name": name, "feature": feature,
+                "intro": "Така започват следващите ти 30 дни:",
+                "rows": rows,
+                "more": f"…остатъкът до {horizon.day}.{horizon.month:02d} и какво означава всеки ден — в пълното разчитане."}
+
+    return None
+
+
 @app.get("/api/persons/{person_id}/teaser")
-def api_teaser(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart"))):
+def api_teaser(person_id: int, user: Tuple[int, str] = Depends(require_feature("chart")),
+               feature: Optional[str] = None):
     """Истински откъс от картата за размазания панел.
 
     Досега под размазването стоеше измислен текст — еднакъв за всички. А
     ядрото на картата (Слънце, Луна, Асцендент) вече е изчислено и е
     безплатно. Показваме него: конкретно за този човек, вярно, и без нито
     една обещана дума, която платеното разчитане да не покрие.
+
+    С `feature` превюто е на съответния модул (число на съдбата, Венера и
+    Марс…), а не едно и също навсякъде.
     """
     user_id, _ = user
     person = get_person(person_id, user_id)
     if not person:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
 
+    short = first_name(person["name"]) or person["name"]
+    if feature:
+        own = build_feature_teaser(feature, person, user_id, short)
+        if own is not None:
+            return own
     prof = build_profile(compute_natal(person))
-    return build_teaser(prof, first_name(person["name"]) or person["name"])
+    return build_teaser(prof, short)
 
 
 @app.get("/api/persons/{person_id}/profile")
@@ -11452,6 +11599,11 @@ def _token_from_request(request: Request) -> Optional[str]:
     # a 404 on their own chart.
     return request.query_params.get("token") or request.cookies.get("miralog_token") or None
 
+PLANET_DISPLAY_ORDER = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus",
+                        "Neptune", "Pluto", "Chiron", "True North Node", "True South Node",
+                        "True Lilith", "Asc", "Desc", "MC", "IC", "Part of Fortune", "Vertex"]
+
+
 @app.get("/chart/{person_id}", response_class=HTMLResponse)
 async def view_chart(request: Request, person_id: int):
     """Chart view — JWT from cookie, Authorization header, or legacy ?token=."""
@@ -11471,7 +11623,13 @@ async def view_chart(request: Request, person_id: int):
     p = get_person(person_id, user_id)
     if not p:
         raise HTTPException(404, "Този човек не е намерен в профила ти.")
-    chart_data = compute_natal(p)
+    # Без час на раждане страницата не показва ъглите, домовете и аспектите към
+    # тях като факт: те са на обедната карта (същото правило като за подканите).
+    chart_data = chart_for_prompt(compute_natal(p))
+    # Планетите първи (Слънце, Луна…), после възлите и ъглите — както ги чете човек.
+    rank = {n: i for i, n in enumerate(PLANET_DISPLAY_ORDER)}
+    chart_data["objects"] = dict(sorted(
+        chart_data["objects"].items(), key=lambda kv: rank.get(kv[1]["name"], 99)))
     return HTMLResponse(templates.get_template("chart.html").render({
         "request": request,
         "person": p,
