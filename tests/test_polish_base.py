@@ -108,3 +108,30 @@ def test_digest_has_a_way_out(app):
 def test_terms_do_not_mention_a_subscription():
     text = (ROOT / "templates" / "terms.html").read_text(encoding="utf-8")
     assert "Абонаментът може" not in text and "платения период" not in text
+
+
+# --- синтаксис на JavaScript ---------------------------------------------------
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="няма node")
+def test_every_script_parses():
+    """`await` в функция без async счупи modules.js — нито един бутон за покупка
+    в картата не работеше. Проверява файловете и вградените скриптове."""
+    import subprocess
+    import tempfile
+    bad = []
+    for path in sorted((ROOT / "static").glob("*.js")):
+        r = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        if r.returncode:
+            bad.append(f"{path.name}: {r.stderr.strip().splitlines()[:4]}")
+    for path in sorted((ROOT / "templates").glob("*.html")):
+        text = path.read_text(encoding="utf-8")
+        for i, m in enumerate(re.finditer(
+                r"<script(?![^>]*\bsrc=)(?![^>]*ld\+json)[^>]*>(.*?)</script>", text, re.S)):
+            code = re.sub(r"\{%.*?%\}", "", re.sub(r"\{\{.*?\}\}", "0", m.group(1)), flags=re.S)
+            with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+                f.write(code)
+            r = subprocess.run(["node", "--check", f.name], capture_output=True, text=True)
+            Path(f.name).unlink()
+            if r.returncode:
+                bad.append(f"{path.name} #{i}: {r.stderr.strip().splitlines()[:4]}")
+    assert not bad, "\n".join(bad)

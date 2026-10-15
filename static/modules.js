@@ -21,7 +21,7 @@
         if (force) featuresPromise = null;
         if (!featuresPromise) {
             featuresPromise = fetch('/api/features', { headers: authHeaders() })
-                .then(resp => {
+                .then(async resp => {
                     if (!resp.ok) throw await apiError(resp);
                     return resp.json();
                 })
