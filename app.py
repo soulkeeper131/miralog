@@ -345,6 +345,10 @@ def init_db():
         # тълкуваха асцендента, MC и домовете като точни.
         if "time_unknown" not in cols:
             conn.execute("ALTER TABLE persons ADD COLUMN time_unknown INTEGER NOT NULL DEFAULT 0")
+        # Името на мястото на раждане: таблото показваше сурови координати
+        # (42.6977, 23.3219). Празно за старите карти — тогава не се показва нищо.
+        if "place" not in cols:
+            conn.execute("ALTER TABLE persons ADD COLUMN place TEXT")
         # Settings table (single row of app-wide key/value config, e.g. AI API key)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -1629,6 +1633,14 @@ class BirthDataUpdate(BaseModel):
     lon: float
     timezone: str = "Europe/Sofia"
     time_unknown: bool = False
+    place: Optional[str] = None
+
+
+def clean_place(value: Optional[str]) -> Optional[str]:
+    """Името на мястото на раждане, както се показва: без излишни интервали,
+    най-много 80 знака, а празното е None (не се показва нищо)."""
+    text = re.sub(r"\s+", " ", value or "").strip()[:80]
+    return text or None
 
 
 # При неизвестен час картата се смята за обяд: така Луната е най-много на
@@ -2472,12 +2484,19 @@ def get_ai_config() -> Tuple[Optional[str], str]:
 
 def update_person(person_id: int, user_id: int, data: BirthDataUpdate) -> bool:
     hour, minute = birth_time(data.hour, data.minute, data.time_unknown)
+    place = clean_place(data.place)
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
+            # Мястото се сменя само заедно с координатите: ако са други, а ново
+            # име не е подадено, старото вече не е вярно и се маха.
             """UPDATE persons SET year=?, month=?, day=?, hour=?, minute=?,
-               lat=?, lon=?, timezone=?, time_unknown=? WHERE id=? AND user_id=?""",
+               lat=?, lon=?, timezone=?, time_unknown=?,
+               place = CASE WHEN ? IS NOT NULL THEN ?
+                            WHEN lat = ? AND lon = ? THEN place ELSE NULL END
+               WHERE id=? AND user_id=?""",
             (data.year, data.month, data.day, hour, minute,
-             data.lat, data.lon, data.timezone, int(data.time_unknown), person_id, user_id)
+             data.lat, data.lon, data.timezone, int(data.time_unknown),
+             place, place, data.lat, data.lon, person_id, user_id)
         )
         conn.commit()
         return cur.rowcount > 0
@@ -3115,6 +3134,7 @@ class OnboardRequest(BaseModel):
     password: Optional[str] = None
     wanted: Optional[list] = None
     time_unknown: bool = False
+    place: Optional[str] = None      # по избор: старите клиенти не го пращат
 
 
 @app.post("/api/onboard")
@@ -3160,9 +3180,10 @@ def api_onboard(data: OnboardRequest, request: Request):
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             "INSERT INTO persons (user_id, name, year, month, day, hour, minute,"
-            " lat, lon, timezone, time_unknown) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " lat, lon, timezone, time_unknown, place) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user["id"], data.name.strip(), data.year, data.month, data.day,
-             hour, minute, data.lat, data.lon, data.timezone, int(data.time_unknown)))
+             hour, minute, data.lat, data.lon, data.timezone, int(data.time_unknown),
+             clean_place(data.place)))
         person_id = cur.lastrowid
         conn.commit()
 
@@ -5510,8 +5531,11 @@ def api_admin_2fa_disable(data: Optional[dict] = None, admin: dict = Depends(req
     return {"ok": True}
 
 @app.get("/api/features")
-def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
-    """What the signed-in account can open, and the price of everything else."""
+def api_my_features(peek: bool = False, user: Tuple[int, str] = Depends(get_current_user)):
+    """What the signed-in account can open, and the price of everything else.
+
+    `peek=1` е за таблото: само гледа и не „изяжда“ запомнения при регистрация
+    избор (`pending`), който картата показва при първото си отваряне."""
     user_id, _ = user
     row = get_user_by_id(user_id)
     if not row:
@@ -5531,7 +5555,7 @@ def api_my_features(user: Tuple[int, str] = Depends(get_current_user)):
         ],
         # Какво е избрал при регистрация, ако плащането тогава не е тръгнало.
         # Показва се отметнато, за да не се търси наново.
-        "pending": take_pending_purchase(user_id),
+        "pending": None if peek else take_pending_purchase(user_id),
     }
 
 class PendingPurchase(BaseModel):
@@ -8659,6 +8683,7 @@ def api_create_person(
     lon: float = Form(...),
     timezone: str = Form("Europe/Sofia"),
     time_unknown: bool = Form(False),
+    place: Optional[str] = Form(None),
     user: Tuple[int, str] = Depends(get_current_user),
 ):
     user_id, email = user
@@ -8697,9 +8722,9 @@ def api_create_person(
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.execute(
             "INSERT INTO persons (user_id, name, year, month, day, hour, minute, lat, lon, timezone,"
-            " time_unknown) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " time_unknown, place) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (user_id, name, year, month, day, *birth_time(hour, minute, time_unknown),
-             lat, lon, timezone, int(time_unknown))
+             lat, lon, timezone, int(time_unknown), clean_place(place))
         )
         conn.commit()
         return {"id": cur.lastrowid, "name": name, "user_id": user_id}

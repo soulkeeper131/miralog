@@ -122,7 +122,8 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
   "email": "maria@example.com", "name": "Мария",
   "year": 1988, "month": 10, "day": 3, "hour": 8, "minute": 15,
   "lat": 42.6977, "lon": 23.3219, "timezone": "Europe/Sofia",
-  "password": "...", "wanted": ["love"]
+  "password": "...", "wanted": ["love"],
+  "place": "Варна"            // по избор: име на мястото за таблото (до 80 знака)
 }
 
 // Response 200
@@ -178,7 +179,8 @@ Endpoint-ите `.../interpretation`, `daily-horoscope` и публичните 
 
 `application/x-www-form-urlencoded` или `multipart/form-data` с полета
 `name`, `year`, `month`, `day`, `hour` (0), `minute` (0), `lat`, `lon`,
-`timezone` (`Europe/Sofia`). Отговор: `{"id": 2, "name": "Мария", "user_id": 1}`.
+`timezone` (`Europe/Sofia`), по избор `time_unknown` и `place` (име на мястото
+на раждане, до 80 знака — таблото го показва вместо координати). Отговор: `{"id": 2, "name": "Мария", "user_id": 1}`.
 
 Рождените данни се проверяват навсякъде (`validate_birth`): съществуваща
 дата (не 31.02), година 1800–2200, час 00:00–23:59, координати и часова
@@ -370,7 +372,7 @@ SVG изображение: зодиакално колело с планети,
 
 | Метод | Път | Достъп | Описание |
 |-------|-----|--------|----------|
-| GET | `/api/features` | вход | Каталог на модулите за този акаунт (отключени, цени, пакет) |
+| GET | `/api/features` | вход | Каталог на модулите за този акаунт (отключени, цени, пакет). `?peek=1` (таблото) не взима запомнения при регистрация избор `pending` |
 | POST | `/api/features/{key}/request` | вход | Купуване на модул: Stripe Checkout, ако е включен, иначе имейл до админа |
 | POST | `/api/features/bundle/request` | вход | Същото за пакета „Всички модули“ |
 | POST | `/api/features/pending` | вход | `{keys?, bundle?}` — запомня избраните преди вход през Google/Facebook модули; картата отваря избора с тях |

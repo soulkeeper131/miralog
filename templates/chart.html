@@ -157,6 +157,31 @@
         .tab-locked { color: var(--text-dim); }
         .tab-locked.active { color: inherit; }
 
+        /* --- лента с пакета ---
+           Тънък ред под менюто, без затваряне и без движение: показва се само
+           докато има поне две заключени разчитания, после изчезва сама. */
+        .bundle-strip {
+            display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+            gap: 6px 14px; margin: 0 0 18px; padding: 6px 6px 6px 14px;
+            border: 1px solid var(--border); border-radius: 12px;
+            background: var(--bg-card);
+            font-size: .88rem; line-height: 1.4; color: var(--text);
+        }
+        .bundle-strip[hidden] { display: none; }
+        .bundle-strip b { color: var(--text-heading); font-weight: 600; }
+        .bundle-strip-btn {
+            min-height: 44px; padding: 0 16px; border-radius: 10px; cursor: pointer;
+            border: 1px solid var(--accent); background: transparent; color: var(--accent-light);
+            font-family: var(--font-body); font-size: .86rem; font-weight: 600;
+        }
+        .bundle-strip-btn:hover { background: var(--accent); color: #fff; }
+        .bundle-strip-btn:focus-visible { outline: none; box-shadow: var(--focus-ring, 0 0 0 3px rgba(124,58,237,.28)); }
+        .bundle-strip-btn:disabled { opacity: .6; cursor: not-allowed; }
+        @media (max-width: 600px) {
+            .bundle-strip { padding: 10px 12px; }
+            .bundle-strip-btn { width: 100%; }
+        }
+
         /* --- section grid (phones) ---
            Hidden by default; switched on in the mobile media query below. */
         .sec-grid { display: none; }
@@ -1320,7 +1345,8 @@
             <div class="chart-meta">
                 {{ person.day }}.{{ person.month }}.{{ person.year }},
                 {% if person.time_unknown %}час неизвестен{% else %}{{ person.hour }}:{{ '%02d'|format(person.minute) }} ч.{% endif %}
-                • {{ person.lat }}, {{ person.lon }}
+                {# Име на мястото, не координати; за старите карти без място — нищо. #}
+                {% if person.place %}• {{ person.place }}{% endif %}
                 • {{ person.timezone }}
             </div>
             {% if person.time_unknown %}
@@ -1376,6 +1402,14 @@
              module. Here everything is visible at once. Built from the tabs
              themselves, so the two can never drift apart. -->
         <nav class="sec-grid" id="secGrid" aria-label="Раздели"></nav>
+
+        <!-- Пакетът под менюто: пълен текст се слага от renderBundleStrip(),
+             когато има оферта и поне две заключени разчитания. -->
+        <div class="bundle-strip" id="bundleStrip" hidden>
+            <span id="bundleStripText"></span>
+            <button type="button" class="bundle-strip-btn" id="bundleStripBtn"
+                    data-cta="chart:bundle_strip" onclick="unlockModule('bundle')">Вземи всички</button>
+        </div>
 
         <div id="tab-wheel" class="tab-content active">
             <div class="section wheel-section">
@@ -3055,7 +3089,33 @@
                 // The grid carries the price of what is still locked, so it
                 // needs the same answer the padlocks were built from.
                 buildSectionGrid(data);
+                renderBundleStrip(data);
             } catch (e) { /* no padlocks is better than a broken tab bar */ }
+        }
+
+        // Цена по български: „9 €“, „2,99 €“.
+        function bundleMoney(cents, currency) {
+            const v = ((Number(cents) || 0) / 100).toFixed(2).replace('.', ',').replace(',00', '');
+            return v + ' ' + ((currency || 'EUR') === 'EUR' ? '€' : currency);
+        }
+
+        /* Лентата с пакета: само ако сървърът има оферта (bundle не е null) и
+           още поне две разчитания са заключени. След покупка страницата се
+           зарежда наново от /api/features и лентата се скрива. */
+        function renderBundleStrip(data) {
+            const strip = document.getElementById('bundleStrip');
+            if (!strip) return;
+            const sellable = (data.catalogue || []).filter(i => !i.included && (i.unlocked || i.offer));
+            const locked = sellable.filter(i => !i.unlocked);
+            const b = data.bundle;
+            if (!b || locked.length < 2) { strip.hidden = true; return; }
+            // „Всичките“ само ако наистина са всички; иначе „останалите“.
+            const all = b.keys.length >= sellable.length;
+            document.getElementById('bundleStripText').innerHTML =
+                (all ? 'Отключи всичките ' : 'Отключи останалите ') + b.keys.length
+                + ' разчитания за <b>' + bundleMoney(b.price_cents, b.currency) + '</b>'
+                + ' (вместо ' + bundleMoney(b.full_price_cents, b.currency) + ')';
+            strip.hidden = false;
         }
 
         /* --- section grid (phones) ---

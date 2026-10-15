@@ -817,7 +817,8 @@
         }
 
         function choosePlace(r) {
-            picked = { lat: r.lat, lon: r.lon, timezone: r.timezone || 'Europe/Sofia', label: r.label };
+            picked = { lat: r.lat, lon: r.lon, timezone: r.timezone || 'Europe/Sofia', label: r.label,
+                       place: r.place || '' };
             placeInput.value = r.label;
             suggestBox.innerHTML = '';
             coordsBox.hidden = false;
@@ -951,6 +952,9 @@
             btn.textContent = 'Изчисляваме картата...';
             lastBirth = Object.assign({}, birth, {
                 lat: picked.lat, lon: picked.lon, timezone: picked.timezone,
+                // Кратко име на мястото („Варна“), за таблото вместо координати.
+                // Връща се и към /api/guest/chart, който го игнорира.
+                place: picked.place || String(picked.label || '').split(',')[0].trim(),
             });
 
             try {
