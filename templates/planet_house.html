@@ -57,6 +57,7 @@
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
+    {% include "_seo_shared.html" %}
     <style>
         .horo-reading { max-width: 760px; margin: 0 auto; }
         .horo-reading h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin: 1.6em 0 0.5em; }
@@ -82,8 +83,9 @@
                 <a class="back-link" href="/">← Начало</a>
             </div>
             <div class="hero-glyph" aria-hidden="true">{{ planet.glyph }}</div>
-            <p><span class="kicker">Позиция в наталната карта · {{ house.name }}</span></p>
-            <h1>{{ planet.name }} в {{ house.short }}</h1>
+            {# „7-ми дом“ не се чупи на два реда: цялото име е на един ред. #}
+            <p><span class="kicker">Позиция в картата · <span style="white-space: nowrap;">{{ house.name }}</span></span></p>
+            <h1>{{ planet.name }} в {{ house.name }}</h1>
             <p class="lede">Какво означава тази позиция — общото значение за характера, любовта и работата.</p>
             <div class="cta-row">
                 {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
@@ -100,7 +102,7 @@
 
             <div class="wall">
                 <h3>Това е общият случай — не точното ти разчитане</h3>
-                <p>Горното описва {{ planet.name|lower }} в {{ house.short }} общо за всички, родени с тази позиция. В <strong>твоята</strong> карта значението зависи от знака на върха на дома и от аспектите с другите планети — една и съща позиция може да значи нещо съвсем различно при двама души.</p>
+                <p>Горното описва {{ planet.name|lower }} в {{ house.name }} общо за всички, родени с тази позиция. В <strong>твоята</strong> карта значението зависи от знака на върха на дома и от аспектите с другите планети — една и съща позиция може да значи нещо съвсем различно при двама души.</p>
                 <div class="cta-row">
                     {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
@@ -119,10 +121,10 @@
         <div class="wrap">
             <div class="sec-head">
                 <span class="mark">{{ planet.glyph }}</span>
-                <h2>Другите планети в {{ house.short }}</h2>
+                <h2>Другите планети в {{ house.name }}</h2>
                 <p>Виж какво значат останалите планети в същия дом.</p>
             </div>
-            <div class="related">
+            <div class="related related--chips">
                 {% for p in planets %}{% if p.slug != planet.slug %}
                 <a href="/{{ p.slug }}-v-{{ house.num }}-dom">
                     <span class="r-glyph" aria-hidden="true">{{ p.glyph }}</span>
@@ -140,11 +142,11 @@
                 <h2>{{ planet.name }} в другите домове</h2>
                 <p>Сравни как същата планета се изразява в другите домове.</p>
             </div>
-            <div class="related">
+            <div class="related related--chips related--text">
                 {% for h in houses %}{% if h.num != house.num %}
                 <a href="/{{ planet.slug }}-v-{{ h.num }}-dom">
                     <span class="r-glyph" aria-hidden="true">{{ h.num }}</span>
-                    <span class="r-name">{{ h.short }}</span>
+                    <span class="r-name" style="white-space: nowrap;">{{ h.name }}</span>
                 </a>
                 {% endif %}{% endfor %}
             </div>
@@ -174,22 +176,18 @@
         <div class="wrap">
             <div class="final">
                 <h2>Виж какво пише в твоята карта</h2>
-                <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.</p>
+                {% set _c = primary_cta(None, 'Създай своята натална карта') %}
+                <p>{% if _c.logged_in %}Картата ти е готова — виж своите планети, домове и аспекти.{% else %}Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.{% endif %}</p>
                 <div class="cta-row">
-                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
-                    <a class="btn btn-ghost" href="/login">Вход</a>
+                    <a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
+                    {% if not _c.logged_in %}<a class="btn btn-ghost" href="/login">Вход</a>{% endif %}
                 </div>
             </div>
         </div>
     </section>
 
     </main>
-    <footer>
-        <div class="wrap">
-            {{ brand().name }} · {{ brand().tagline }}<br>
-            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
-        </div>
-    </footer>
+    {% include "_site_footer.html" %}
 
     <script>
         function updateThemeToggleIcon() {

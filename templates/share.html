@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>{% if share %}{{ share.title }} — за {{ share.name }}{% else %}Споделено разчитане{% endif %} — {{ brand().name }}</title>
+    <title>{% if share %}{{ share.title }} — за {{ share.name }}{% else %}Линкът не работи{% endif %} — {{ brand().name }}</title>
     <meta name="robots" content="noindex">
     {% if share %}
     {# Прегледът на линка във Facebook, Viber, WhatsApp, Messenger, Telegram,
@@ -36,59 +36,121 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    {# Същият вид като останалите страници: меню, лого, футър. Преди това
+       страницата беше с друг шрифт и само текст „АстроКарта“ горе. #}
+    {% include "_critical.html" %}
+    <link rel="preload" href="/static/landing.min.css?v=8" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/consent.css?v=4" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="/static/landing.min.css?v=8">
+        <link rel="stylesheet" href="/static/consent.css?v=4">
+    </noscript>
+    {% include "_analytics.html" %}
+    {% include "_seo_shared.html" %}
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-            --font-body: 'Inter', system-ui, sans-serif;
-            --font-display: 'Cormorant Garamond', Georgia, serif;
-            --bg: #0a0a1a; --bg-card: #1a1a2e; --border: #2a2a4a;
-            --text: #e0e0e0; --text-heading: #c9b1ff; --text-muted: #888; --accent: #7c3aed;
-        }
-        :root[data-theme="light"] {
-            --bg: #faf7fb; --bg-card: #fff; --border: #e5d4ec;
-            --text: #2d2438; --text-heading: #6d4a89; --text-muted: #655a78; --accent: #8659a3;
-        }
-        body { font-family: var(--font-body); background: var(--bg); color: var(--text); min-height: 100vh; padding: 32px 16px 64px; }
-        .wrap { max-width: 720px; margin: 0 auto; }
-        .brand { font-family: var(--font-display); color: var(--text-heading); font-size: 1.4rem; margin-bottom: 24px; }
-        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
-        h1 { font-family: var(--font-display); color: var(--text-heading); font-size: 2rem; margin-bottom: 6px; }
-        .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px; }
-        .content { line-height: 1.75; white-space: pre-wrap; font-size: 1rem; }
-        .content-html { white-space: normal; }
-        .content-html h3 { font-size: 1.1rem; margin: 1.4em 0 .4em; }
-        .content-html ul { padding-left: 1.3em; }
-        .cta { margin-top: 28px; }
-        .cta a { color: #fff; background: var(--accent); text-decoration: none; padding: 12px 18px; border-radius: 10px; display: inline-block; }
-        .err { color: var(--text-muted); padding: 40px 0; }
+        .share-wrap { max-width: 760px; margin: 0 auto; padding: 8px clamp(16px, 4vw, 24px) 24px; }
+        .share-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; padding: clamp(20px, 4vw, 32px); box-shadow: var(--shadow-card); }
+        .share-card h1 { font-family: var(--font-display); color: var(--text-heading); font-size: clamp(1.6rem, 5vw, 2.1rem); line-height: 1.2; margin-bottom: 6px; }
+        .share-card .meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 22px; }
+        .share-card .content { line-height: 1.75; white-space: pre-wrap; color: var(--text-soft); }
+        .share-card .content-html { white-space: normal; }
+        .share-card .content-html h3 { font-size: 1.12rem; font-weight: 600; color: var(--text-heading); margin: 1.5em 0 0.45em; }
+        .share-card .content-html h3:first-child { margin-top: 0; }
+        .share-card .content-html h3 span { color: var(--accent); margin-right: 0.15em; }
+        /* Номерът на раздела е „1.“, не слепена цифра. */
+        .share-card .content-html h3 span::after { content: "."; }
+        .share-card .content-html p { color: var(--text-soft); line-height: 1.75; margin-bottom: 0.9em; }
+        .share-card .content-html hr { border: 0; border-top: 1px solid var(--border-soft); margin: 1.4em 0; }
+        .share-card .err { color: var(--text-muted); padding: 24px 0; }
+        .share-about { text-align: center; margin: 28px auto 0; max-width: 520px; }
+        .share-about .btn { min-width: 220px; }
+        .share-about p { margin-top: 14px; font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
+        .share-note { margin: 0 0 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border); font-size: 0.88rem; color: var(--text-soft); }
     </style>
-{% include "_analytics.html" %}
-<link rel="stylesheet" href="/static/consent.css">
     <script src="/static/ui.js?v=3"></script>
 </head>
 <body>
-    <div class="wrap">
-        <div class="brand">{{ brand().name }}</div>
-        <div id="root" class="card"><p class="err">Зареждане…</p></div>
+    {% include "_site_nav.html" %}
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+
+    <main>
+    <div class="share-wrap">
+        <div class="page-nav">
+            <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
+                <img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}">
+            </a>
+            <a class="back-link" href="/">{{ brand().name }}</a>
+        </div>
+
+        {% if share %}
+        <div id="root" class="share-card"><p class="err">Зареждане…</p></div>
+        {% set _c = primary_cta(None, 'Създай своята карта') %}
+        <div class="share-about">
+            <a class="btn btn-primary" href="{{ _c.href }}" data-cta="share:start">{{ _c.label }}</a>
+            <p>{{ brand().name }} изчислява натална карта по датата, часа и мястото на раждане и пише разчитания на разбираем български. Първата карта е безплатна.</p>
+        </div>
+        {% else %}
+        {# Невалиден или спрян линк: човешко съобщение и път към началото, не гола празна страница. #}
+        <div class="share-card">
+            <h1>Този линк не работи</h1>
+            <p class="meta">Или е написан с грешка, или разчитането вече не се споделя.</p>
+            <p class="content" style="white-space: normal;">Помоли човека, който ти го е пратил, да ти изпрати нов линк. Дотогава можеш да видиш какво прави {{ brand().name }}.</p>
+        </div>
+        <div class="share-about">
+            <a class="btn btn-primary" href="/" data-cta="share:home">Към началната страница</a>
+            <p>{{ brand().name }} изчислява натална карта по датата, часа и мястото на раждане и пише разчитания на разбираем български. Първата карта е безплатна.</p>
+        </div>
+        {% endif %}
     </div>
+    </main>
+
+    {% include "_site_footer.html" %}
+
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            if (isLight) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('miralog_theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('miralog_theme', 'light');
+            }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
+    {% if share %}
     <script>
         (async function() {
             const root = document.getElementById('root');
+            // 2026-10-15 [10:04:43] → 15.10.2026
+            function bgDate(v) {
+                const m = /(\d{4})-(\d{2})-(\d{2})/.exec(String(v || ''));
+                return m ? m[3] + '.' + m[2] + '.' + m[1] : '';
+            }
             try {
                 const resp = await fetch('/api/share/{{ token }}');
                 const data = await resp.json().catch(() => ({}));
                 if (!resp.ok) throw new Error(detailText(data.detail));
                 document.title = (data.title || 'Разчитане') + ' — {{ brand().name }}';
+                // Дневният хороскоп е за конкретен ден: той, не денят на писането, е в бележката.
+                const forDay = /^horoscope:(\d{4}-\d{2}-\d{2})/.exec(data.cache_key || '');
+                const when = forDay ? 'за ' + bgDate(forDay[1]) : bgDate(data.generated_at);
                 root.innerHTML =
                     '<h1>' + escapeHtml(data.title || 'Разчитане') + '</h1>' +
                     '<div class="meta">за ' + escapeHtml(data.person_name || '') +
-                    (data.generated_at ? ' · ' + escapeHtml(String(data.generated_at).slice(0, 10)) : '') +
+                    (when ? ' · ' + escapeHtml(when) : '') +
                     '</div>' +
                     (data.content_html
-                        ? '<div class="content content-html">' + data.content_html + '</div>'
-                        : '<div class="content">' + escapeHtml(data.content || '') + '</div>') +
-                    '<div class="cta">{% set _c = primary_cta(None, 'Създай своята карта') %}<a href="{{ _c.href }}" data-cta="share:start">{{ _c.label }}</a></div>';
+                        ? '<div class="content content-html horo-reading">' + data.content_html + '</div>'
+                        : '<div class="content">' + escapeHtml(data.content || '') + '</div>');
             } catch (e) {
                 root.innerHTML = '<p class="err">' + friendlyErrorHtml(e) + '</p>';
             }
@@ -99,6 +161,7 @@
             return d.innerHTML;
         }
     </script>
-<script src="/static/consent.js?v=6"></script>
+    {% endif %}
+    <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

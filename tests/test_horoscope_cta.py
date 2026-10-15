@@ -50,7 +50,7 @@ def _no_ai(app, monkeypatch):
 def test_guest_hero_has_one_primary_button(app, db):
     hero = _hero(_render(app))
     assert hero.count("btn-primary") == 1
-    assert 'href="#lichen"' in hero and "Твоят личен хороскоп за днес" in hero
+    assert 'href="#lichen"' in hero and "Получи личния си хороскоп" in hero
     assert 'data-cta="horoscope_sign:hero"' in hero
     # „Сподели“ е малка икона с достъпно име, не втори голям бутон; без връзка към /start.
     assert 'class="btn btn-ghost btn-icon share-btn"' in hero and 'aria-label="Сподели"' in hero
@@ -64,7 +64,7 @@ def test_guest_gets_the_mini_form_under_the_text(app, db):
     assert 'id="lichenForm"' in block
     for field in ("lfName", "lfDay", "lfMonth", "lfYear", "lfHour", "lfMinute", "lfUnknown", "lfPlace"):
         assert f'id="{field}"' in block
-    assert "Не знам часа на раждане" in block and "Безплатно. Без регистрация." in block
+    assert "Не знам часа на раждане" in block and "Без регистрация" not in html
     assert 'data-cta="horoscope_sign:form"' in block
     # Връзва се към съществуващия път: геокодер → localStorage → /start.
     assert "/api/public/geocode" in html and "miralog_guest_birth" in html
@@ -97,9 +97,9 @@ def test_logged_in_sees_a_link_not_the_form(app, db, user):
     hero = _hero(html)
     assert hero.count("btn-primary") == 1
     assert f'href="/chart/{pid}#horoscope"' in hero
-    block = html[html.index('id="lichen"'):]
-    assert f'href="/chart/{pid}#horoscope"' in block and 'data-cta="horoscope_sign:personal"' in block
-    assert "Твоят личен хороскоп за днес" in block
+    # Един бутон към личния хороскоп: без втори в блока и без размазания „Още N раздела“.
+    assert html.count(f'href="/chart/{pid}#horoscope"') == 1
+    assert "Отвори днешния си личен хороскоп" in hero
 
 
 def test_logged_in_sees_the_first_sentences_of_todays_cached_horoscope(app, db, user):
@@ -112,6 +112,7 @@ def test_logged_in_sees_the_first_sentences_of_todays_cached_horoscope(app, db, 
     html = _render(app, app.create_token(user["id"], user["email"]))
     block = html[html.index('id="lichen"'):]
     assert "Днес Луната ти помага да довършиш старото. Не бързай с отговорите." in block
+    assert f'href="/chart/{pid}#horoscope"' in block and 'data-cta="horoscope_sign:personal"' in block
     assert "Третото изречение" not in html and "СЕКРЕТНО_РЕЗЮМЕ" not in html
     assert "---SUMMARY---" not in html and "**" not in block
 
@@ -120,7 +121,9 @@ def test_no_teaser_without_cache_and_nothing_is_generated(app, db, user):
     _person(app, user["id"])
     html = _render(app, app.create_token(user["id"], user["email"]))     # call_ai гърми, ако се вика
     assert 'class="lichen-teaser"' not in html
-    assert "написан по точно твоята карта" in html
+    # Без откъс няма втори блок: само бутонът в началото, без „общото за всички“.
+    assert 'id="lichen"' not in html and "Това е общото за всички" not in html
+    assert "Отвори днешния си личен хороскоп" in _hero(html)
 
 
 def test_several_charts_have_no_teaser_and_go_to_the_dashboard(app, db, user):

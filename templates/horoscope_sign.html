@@ -57,6 +57,7 @@
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
+    {% include "_seo_shared.html" %}
     <style>
         .horo-reading { max-width: 760px; margin: 0 auto; }
         .horo-reading h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin: 1.6em 0 0.5em; }
@@ -97,9 +98,17 @@
         .lichen-sug button:hover, .lichen-sug button:focus-visible { background: var(--surface-thistle); outline: none; }
         .lichen-err { color: var(--on-pink); font-size: 0.9rem; }
         .lichen-err:empty { display: none; }
-        .lichen-form .btn { width: 100%; }
+        .lichen-form .btn { width: 100%; padding-inline: 14px; }
         .lichen-note { font-size: 0.82rem; color: var(--text-dim); text-align: center; }
         .lichen-bundle { max-width: 760px; margin: 14px auto 0; text-align: center; font-size: 0.92rem; color: var(--text-muted); }
+        .hero-tools { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 0 22px; margin-bottom: 8px; }
+        .hero-tools .sign-hop, .hero-tools .day-switch { margin-bottom: 6px; }
+        .own-sign { display: inline-block; margin: 0 0 14px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--accent); color: var(--text-heading); font-size: 0.9rem; font-weight: 500; }
+        .day-switch { display: inline-flex; margin: 0 0 14px; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card); }
+        .day-switch a, .day-switch span { min-width: 84px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border-radius: 999px; font-size: 0.92rem; font-weight: 500; text-decoration: none; color: var(--text-muted); }
+        .day-switch .on { background: linear-gradient(135deg, var(--accent-light), var(--accent)); color: #fff; }
+        .lichen-open { margin-top: 14px; }
+        .lichen-open a { font-weight: 600; }
         .horo-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
         .horo-meta .trust-item { display: block; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
     </style>
@@ -118,20 +127,40 @@
                 <a class="back-link" href="/horoskop">← Всички зодии</a>
             </div>
             <div class="hero-glyph" aria-hidden="true">{{ sign.glyph }}</div>
-            <p><span class="kicker">Дневен хороскоп · {{ date_bg }}</span></p>
-            <h1>Дневен хороскоп за {{ sign.name }}</h1>
-            <p class="lede">Какво носи днешният ден за родените под знака {{ sign.name }}.</p>
+            <p><span class="kicker">{% if is_tomorrow %}Хороскоп за утре{% else %}Дневен хороскоп{% endif %} · {{ date_bg }}</span></p>
+            <h1>{% if is_tomorrow %}Хороскоп за {{ sign.name }} утре{% else %}Дневен хороскоп за {{ sign.name }}{% endif %}</h1>
+            {# Съседните знаци веднага под заглавието: без връщане към списъка. #}
+            <div class="hero-tools">
+            <nav class="sign-hop" aria-label="Съседни зодии">
+                <a href="/horoskop/{{ prev_sign.slug }}" data-cta="horoscope_sign:prev">← {{ prev_sign.name }}</a>
+                <span aria-hidden="true">·</span>
+                <a href="/horoskop/{{ next_sign.slug }}" data-cta="horoscope_sign:next">{{ next_sign.name }} →</a>
+            </nav>
+            {% if tomorrow_ready %}
+            <div class="day-switch" role="group" aria-label="Ден">
+                {% if is_tomorrow %}<a href="/horoskop/{{ sign.slug }}" data-cta="horoscope_sign:today">Днес</a><span class="on" aria-current="true">Утре</span>
+                {% else %}<span class="on" aria-current="true">Днес</span><a href="/horoskop/{{ sign.slug }}?den=utre" data-cta="horoscope_sign:tomorrow">Утре</a>{% endif %}
+            </div>
+            {% endif %}
+            </div>
+            <p class="lede">Какво носи {% if is_tomorrow %}утрешният{% else %}днешният{% endif %} ден за родените под знака {{ sign.name }}.</p>
             {% if stale_date %}<p class="stale-note">⚠️ Днешният хороскоп още се подготвя — показваме последния наличен (от {{ stale_date }}).</p>{% endif %}
             <p class="sub">{{ sign.name }} е {{ sign.element|lower }} и {{ sign.modality|lower }} знак, управляван от {{ sign.ruler }}. Период: {{ sign.dates }}.</p>
-            {# Един основен бутон над текста: гостът слиза до личния блок (формата е
-               там), вписаният отива направо в картата си. „Сподели“ е икона. #}
-            {% set cta = primary_cta('horoscope', 'Твоят личен хороскоп за днес') %}
+            {% if own_sign %}<p class="own-sign">✦ Това е твоята зодия</p>{% endif %}
+            {# Един основен бутон над текста: гостът слиза до формата, вписаният
+               отива направо в хороскопа в картата си. „Сподели“ е икона. #}
+            {% set cta = primary_cta('horoscope', 'Получи личния си хороскоп') %}
             {% set go = cta.href if cta.logged_in else '#lichen' %}
             <div class="cta-row cta-row--hero">
-                <a class="btn btn-primary" href="{{ go }}" data-cta="horoscope_sign:hero">Твоят личен хороскоп за днес</a>
+                <a class="btn btn-primary" href="{{ go }}" data-cta="horoscope_sign:hero">{% if not cta.logged_in %}Получи личния си хороскоп{% elif viewer().person_count == 1 %}Отвори днешния си личен хороскоп →{% else %}{{ cta.label }}{% endif %}</a>
                 <button type="button" class="btn btn-ghost btn-icon share-btn" aria-label="Сподели" title="Сподели" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="horoskop" data-cta="horoscope_sign:share"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4"/></svg></button>
             </div>
-            <p class="cta-note">{% if cta.logged_in %}Стъпва на точно твоята карта, а не само на зодията.{% else %}Безплатно. Без регистрация.{% endif %}</p>
+            <p class="cta-note">{% if cta.logged_in %}Стъпва на точно твоята карта, а не само на зодията.{% else %}Безплатно: картата ти се вижда веднага, а личният хороскоп за всеки ден — след безплатен запис с имейл.{% endif %}</p>
+            <p class="sign-links">
+                <a href="/zodia/{{ sign.slug }}" data-cta="horoscope_sign:profile">Характеристика на {{ sign.name }}</a>
+                <span aria-hidden="true">·</span>
+                <a href="/savmestimost?znak={{ sign.slug }}" data-cta="horoscope_sign:compat">Съвместимост на {{ sign.name }}</a>
+            </p>
         </div>
     </header>
 
@@ -223,12 +252,12 @@
             <div class="horo-locked">
                 <div class="horo-reading horo-fade" aria-hidden="true">{{ body_hidden|safe }}</div>
                 <div class="horo-more">
-                    <h3>Още {{ hidden_sections }} раздела за днес</h3>
+                    <h3>Още {{ hidden_sections }} раздела за {% if is_tomorrow %}утре{% else %}днес{% endif %}</h3>
                     <p>Любов, работа, здраве и какво да избягваш — но по зодия те
                        важат за милиони души наведнъж. Твоята натална карта показва
                        кои от днешните транзити засягат точно теб.</p>
                     <div class="cta-row">
-                        {# Контурен, не основен: личният блок е веднага под него и носи основния бутон. #}<a class="btn btn-ghost" href="{{ go }}" data-cta="horoscope_sign:locked">Виж личния си хороскоп</a>
+                        {# Контурен, не основен: формата е веднага под него и носи основния бутон. #}<a class="btn btn-ghost" href="{{ go }}" data-cta="horoscope_sign:locked">Получи личния си хороскоп</a>
                     </div>
                 </div>
             </div>
@@ -240,19 +269,21 @@
             </div>
             {% endif %}
 
-            {# Личният блок: честно за разликата между зодийния и личния хороскоп. #}
+            {# Личният блок. Вписаният вече има бутон в началото: тук е само откъсът
+               от хороскопа му (ако е в кеша), без втори бутон и без „общото за всички“.
+               Гостът вижда формата и честно какво следва след нея. #}
+            {% if cta.logged_in %}
+            {% if personal_teaser %}
             <div class="lichen" id="lichen">
-                {% if cta.logged_in %}
-                <h2>Твоят личен хороскоп за днес</h2>
-                {% if personal_teaser %}
+                <h2>Твоят личен хороскоп</h2>
                 <p class="lichen-teaser">{{ personal_teaser }}</p>
-                {% else %}
-                <p>Това е общото за всички родени под знака {{ sign.name }}. Твоят ден зависи и от Луната и асцендента ти — личният хороскоп е написан по точно твоята карта.</p>
-                {% endif %}
-                <p style="margin-top: 16px;"><a class="btn btn-primary" href="{{ cta.href }}" data-cta="horoscope_sign:personal">{% if personal_teaser %}Прочети целия си хороскоп{% else %}Виж личния си хороскоп{% endif %}</a></p>
-                {% else %}
+                <p class="lichen-open"><a href="{{ cta.href }}" data-cta="horoscope_sign:personal">Прочети целия си хороскоп →</a></p>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="lichen" id="lichen">
                 <h2>Това е общото за всички {{ sign.plural }}</h2>
-                <p>Твоят ден зависи и от Луната и асцендента ти — виж личния си хороскоп. Нужни са само датата, часът и мястото на раждане.</p>
+                <p>Твоят ден зависи и от Луната и асцендента ти. Въведи датата, часа и мястото на раждане — картата ти се показва веднага и е безплатна, а личният хороскоп за всеки ден получаваш след безплатен запис с имейл.</p>
                 <form class="lichen-form" id="lichenForm" novalidate>
                     <div>
                         <label for="lfName">Как се казваш?</label>
@@ -274,11 +305,11 @@
                         <div id="lfSug"></div>
                     </div>
                     <p class="lichen-err" id="lfErr" role="alert"></p>
-                    <button type="submit" class="btn btn-primary" id="lfBtn" data-cta="horoscope_sign:form">Виж личния си хороскоп</button>
-                    <p class="lichen-note">Безплатно. Без регистрация.</p>
+                    <button type="submit" class="btn btn-primary" id="lfBtn" data-cta="horoscope_sign:form">Виж картата си безплатно</button>
+                    <p class="lichen-note">Безплатно. Картата се показва веднага; хороскопът за всеки ден идва след запис с имейл.</p>
                 </form>
-                {% endif %}
             </div>
+            {% endif %}
             {% if bundle %}
             <p class="lichen-bundle">Искаш всичко за картата си? <a href="{{ primary_cta('bundle').href }}" data-cta="horoscope_sign:bundle">Всички разчитания — {{ bundle.price }} еднократно</a>.</p>
             {% endif %}
@@ -292,9 +323,9 @@
                 <h2>Другите зодии</h2>
                 <p>Виж дневния хороскоп и за останалите знаци.</p>
             </div>
-            <div class="related">
+            <div class="related related--chips">
                 {% for s in signs %}
-                <a href="/horoskop/{{ s.slug }}" {% if s.slug == sign.slug %}style="border-color: var(--accent);"{% endif %}>
+                <a href="/horoskop/{{ s.slug }}" {% if s.slug == sign.slug %}style="border-color: var(--accent);" aria-current="page"{% endif %}>
                     <span class="r-glyph" aria-hidden="true">{{ s.glyph }}</span>
                     <span class="r-name">{{ s.name }}</span>
                 </a>
@@ -362,13 +393,7 @@
     </section>
 
     </main>
-    <footer>
-        <div class="wrap">
-            <a href="/horoskop">Хороскоп</a> · <a href="/natalna-karta">Натална карта</a> · <a href="/lyubovna-savmestimost">Любовна съвместимост</a> · <a href="/akashovi-zapisi">Акашови записи</a><br>
-            {{ brand().name }} · {{ brand().tagline }}<br>
-            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
-        </div>
-    </footer>
+    {% include "_site_footer.html" %}
 
     <script>
         function updateThemeToggleIcon() {
@@ -499,7 +524,7 @@
                     };
                     try { localStorage.setItem(GUEST_KEY, JSON.stringify({ birth: birth, label: pl.label || '', at: Date.now() })); }
                     catch (x) { /* частен режим: /start ще поиска данните пак */ }
-                    window.location.href = '/start';
+                    window.location.href = '/start?from=horoscope';
                 });
             });
         })();
