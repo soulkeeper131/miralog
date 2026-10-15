@@ -1453,7 +1453,13 @@
         }
         .btn-ghost:hover { border-color: var(--accent); }
         .edit-sheet .place-group { position: relative; }
-    </style>
+            .saved-note { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between;
+            margin: 0 0 16px; padding: 14px 16px; border-radius: 14px; font-size: 0.92rem; line-height: 1.5;
+            background: var(--surface-icy, rgba(189,224,254,0.15)); border: 1px solid var(--border);
+            color: var(--text); overflow-wrap: anywhere; }
+        .saved-note-x { background: none; border: 0; color: var(--text-muted); font-size: 1rem;
+            min-width: 44px; min-height: 44px; margin: -12px -12px -12px 0; cursor: pointer; }
+</style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
 </head>
@@ -1801,7 +1807,7 @@
                         </div>
                         <div class="form-group">
                             <label for="pYear">Година</label>
-                            <input type="number" id="pYear" placeholder="1990" min="1800" max="2100" inputmode="numeric">
+                            <input type="number" id="pYear" placeholder="1990" min="1800" max="{{ current_year }}" inputmode="numeric">
                         </div>
                     </div>
                     <div class="row">
@@ -1877,7 +1883,7 @@
                 </div>
                 <div class="form-group">
                     <label for="edYear">Година</label>
-                    <input type="number" id="edYear" min="1800" max="2100" inputmode="numeric" required>
+                    <input type="number" id="edYear" min="1800" max="{{ current_year }}" inputmode="numeric" required>
                 </div>
             </div>
             <div class="row-2">
@@ -1916,7 +1922,7 @@
     <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=3"></script>
     <script src="/static/modules.js?v=9"></script>
-    <script src="/static/onboarding.js?v=4"></script>
+    <script src="/static/onboarding.js?v=5"></script>
     <script>
         // slow: платените разчитания се пишат до минута — казваме го, за да не
         // изглежда, че е увиснало.
@@ -3406,7 +3412,28 @@
             } else if (paid === '0') {
                 uiToast('Плащането не беше завършено. Не е удържана сума — можеш да опиташ отново.');
             }
+            // Запис от /start без парола: досега никъде не пишеше как се влиза
+            // пак — след 30 дни или на друг телефон човекът оставаше отвън.
+            if (q.get('saved') === '1') showSavedNote();
         });
+
+        function showSavedNote() {
+            let email = '';
+            try { email = localStorage.getItem('miralog_email') || ''; } catch (e) { /* private mode */ }
+            const note = document.createElement('div');
+            note.className = 'saved-note';
+            note.setAttribute('role', 'status');
+            note.innerHTML = '<span>✉ Пратихме ти писмо' + (email ? ' на <strong>' + escapeHtmlText(email) + '</strong>' : '')
+                + ' — задай парола от него, за да влизаш и от друго устройство. Не го виждаш? Провери и в спама.</span>'
+                + '<button type="button" class="saved-note-x" aria-label="Затвори">✕</button>';
+            note.querySelector('button').onclick = () => note.remove();
+            const header = document.querySelector('.chart-header');
+            if (header) header.parentNode.insertBefore(note, header);
+            // Презареждането не бива да го показва пак.
+            const url = new URL(location.href);
+            url.searchParams.delete('saved');
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+        }
 
         // What this account can open. Filled by markLockedTabs, read by the
         // panels before they call a paid endpoint.

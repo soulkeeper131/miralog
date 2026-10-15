@@ -292,7 +292,7 @@
                     <div class="lichen-row lichen-row--3">
                         <div><label for="lfDay">Ден</label><input type="number" id="lfDay" placeholder="8" min="1" max="31" inputmode="numeric"></div>
                         <div><label for="lfMonth">Месец</label><input type="number" id="lfMonth" placeholder="1" min="1" max="12" inputmode="numeric"></div>
-                        <div><label for="lfYear">Година</label><input type="number" id="lfYear" placeholder="1988" min="1800" max="2100" inputmode="numeric"></div>
+                        <div><label for="lfYear">Година</label><input type="number" id="lfYear" placeholder="1988" min="1800" max="{{ current_year }}" inputmode="numeric"></div>
                     </div>
                     <div class="lichen-row lichen-row--2">
                         <div><label for="lfHour">Час</label><input type="number" id="lfHour" value="12" min="0" max="23" inputmode="numeric"></div>
@@ -494,7 +494,7 @@
                 var name = $('lfName').value.trim();
                 var day = +$('lfDay').value, month = +$('lfMonth').value, year = +$('lfYear').value;
                 if (!name) return fail('Въведи името си.', $('lfName'));
-                if (!(day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1800 && year <= 2100))
+                if (!(day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1800 && year <= {{ current_year }}))
                     return fail('Въведи пълна дата на раждане.', $('lfDay'));
                 var typed = place.value.trim();
                 if (!typed) return fail('Въведи място на раждане.', place);

@@ -1262,6 +1262,15 @@ templates.env.globals["primary_cta"] = _primary_cta
 templates.env.globals["viewer"] = _viewer_ctx
 # Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
 templates.env.globals["main_domain"] = BRAND_DOMAIN
+# Горната граница на годината на раждане във формите (бъдеща дата се отказва).
+class _CurrentYear:
+    """{{ current_year }} — годината в момента на показване, не при старта на сървъра."""
+    def __str__(self) -> str:
+        return str(datetime.date.today().year)
+    __html__ = __str__
+
+
+templates.env.globals["current_year"] = _CurrentYear()
 
 def api_docs_settings(production: bool) -> dict:
     """/docs, /redoc и /openapi.json са карта на цялото API, админа включително.
