@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Табло — {{ brand().name }}</title>
+    <title>Моите карти — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
     <link rel="apple-touch-icon" href="/static/favicon-180.png">
     <script>
@@ -596,7 +596,7 @@
          a thumb. Hidden on desktop, where the header already carries them. -->
     <nav class="bottom-nav" aria-label="Основно меню">
         <a href="/dashboard" class="bn-current" aria-current="page">
-            <span class="bn-ico" aria-hidden="true">✦</span>Табло</a>
+            <span class="bn-ico" aria-hidden="true">✦</span>Карти</a>
         <a href="#" id="moonLinkMobile">
             <span class="bn-ico" aria-hidden="true">☾</span>Луна</a>
         <a href="#" id="settingsLinkMobile">
@@ -677,7 +677,7 @@
         </div>
     </div>
 
-    <script src="/static/ui.js?v=2"></script>
+    <script src="/static/ui.js?v=3"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -782,7 +782,7 @@
             }
             if (!resp.ok) {
                 const data = await resp.json().catch(() => ({}));
-                throw new Error(data.detail || 'API грешка');
+                throw new Error(detailText(data.detail));
             }
             return resp.json();
         }
@@ -831,7 +831,7 @@
                 listEl.innerHTML = html;
                 loadModuleStatus(persons[0].id);
             } catch (err) {
-                listEl.innerHTML = `<div class="error-banner">Грешка при зареждане: ${escapeHtml(err.message)}</div>`;
+                listEl.innerHTML = `<div class="error-banner">${friendlyErrorHtml(err)}</div>`;
             }
         }
 
@@ -841,10 +841,9 @@
             return v + ' ' + ((currency || 'EUR') === 'EUR' ? '€' : currency);
         }
 
-        // Кратки имена: пълните ("Любовен хороскоп и емоционална съвместимост")
-        // не се събират в плочка на телефон.
+        // Кратки имена (същите като в картата): пълните не се събират в плочка на телефон.
         const MOD_SHORT = {
-            profile: 'Астро портрет', period: 'Период', love: 'Любовен хороскоп',
+            profile: 'Профил', period: 'Период', love: 'Любов',
             akashic: 'Акашови записи', numerology: 'Нумерология', moon: 'Лунен календар',
         };
 
@@ -922,11 +921,11 @@
                 if (resp.status === 401) { logout(); return; }
                 if (!resp.ok) {
                     const data = await resp.json().catch(() => ({}));
-                    throw new Error(data.detail || 'Грешка при изтриване');
+                    throw new Error(detailText(data.detail));
                 }
                 fetchPersons();
             } catch (err) {
-                showError(err.message);
+                showError(friendlyError(err));
             }
         }
 
@@ -954,7 +953,7 @@
             try {
                 const resp = await fetch('/api/geocode?q=' + encodeURIComponent(query), { headers: authHeaders() });
                 if (resp.status === 401) { logout(); return; }
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
                 const results = data.results || [];
                 if (!results.length) {
@@ -971,7 +970,7 @@
                     </div>`;
                 }).join('');
             } catch (e) {
-                box.innerHTML = '<div class="place-status">Грешка при търсене: ' + escapeHtml(e.message) + '</div>';
+                box.innerHTML = '<div class="place-status">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -1043,7 +1042,7 @@
                 closeAddModal();
                 fetchPersons();
             } catch (err) {
-                modalError.textContent = err.message;
+                modalError.textContent = friendlyError(err);
                 modalError.style.display = 'block';
             } finally {
                 submitBtn.disabled = false;

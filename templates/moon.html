@@ -298,7 +298,7 @@
     <div class="container">
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-mark" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
-            <a href="#" id="backLink" class="back-link">← Табло</a>
+            <a href="#" id="backLink" class="back-link">← Моите карти</a>
         </div>
 
         <h1>Лунен календар</h1>
@@ -315,8 +315,8 @@
         </div>
     </div>
 
-    <script src="/static/locked.js?v=7"></script>
-    <script src="/static/ui.js?v=2"></script>
+    <script src="/static/locked.js?v=8"></script>
+    <script src="/static/ui.js?v=3"></script>
     <script>
         function getToken() {
             const params = new URLSearchParams(window.location.search);
@@ -422,7 +422,7 @@
             try {
                 const resp = await guardedFetch(`/api/lunar-calendar?year=${viewYear}&month=${viewMonth}`, { headers: authHeaders() });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
                 currentDays = data.days || [];
 
@@ -458,7 +458,7 @@
                     renderLocked(el, e.detail, loadCalendar);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + escapeHtml(e.message) + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 

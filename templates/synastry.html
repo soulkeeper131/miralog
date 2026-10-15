@@ -303,7 +303,7 @@
     <div class="container">
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
-            <a href="#" id="backLink" class="back-link">← Табло</a>
+            <a href="#" id="backLink" class="back-link">← Моите карти</a>
         </div>
         <h1>Съвместимост</h1>
         <div class="subtitle">Синастрия между двама души</div>
@@ -334,8 +334,8 @@
         </div>
     </div>
 
-    <script src="/static/locked.js?v=7"></script>
-    <script src="/static/ui.js?v=2"></script>
+    <script src="/static/locked.js?v=8"></script>
+    <script src="/static/ui.js?v=3"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -485,7 +485,7 @@
                     document.getElementById('computeBtn').disabled = true;
                 }
             } catch (e) {
-                showBanner('Грешка при зареждане на хората: ' + e.message);
+                showBanner(friendlyErrorHtml(e));
             }
         }
 
@@ -515,7 +515,7 @@
                 });
                 if (!resp.ok) {
                     const data = await resp.json().catch(() => ({}));
-                    throw new Error(data.detail || ('HTTP ' + resp.status));
+                    throw new Error(detailText(data.detail) || 'HTTP ' + resp.status);
                 }
                 const data = await resp.json();
                 synastryPerson1Id = Number(id1);
@@ -531,7 +531,7 @@
                 }
                 document.getElementById('resultSection').style.display = 'none';
                 document.getElementById('resultAspects').innerHTML = '';
-                showBanner('Грешка при изчисляване: ' + e.message);
+                showBanner(friendlyErrorHtml(e));
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Изчисли съвместимост';
@@ -601,7 +601,7 @@
                 if (e instanceof LockedFeature) {
                     renderLocked(box, e.detail, getInterpretation);
                 } else {
-                    box.innerHTML = '<div class="error-banner">Грешка: ' + e.message + '</div>';
+                    box.innerHTML = '<div class="error-banner">' + friendlyErrorHtml(e) + '</div>';
                 }
             } finally {
                 btn.disabled = false;

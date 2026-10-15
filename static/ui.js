@@ -144,6 +144,49 @@
         }).then(r => (r && r.index === 1) ? r.values.value : null);
     };
 
+    /* Грешките към човека — на български и с подсказка какво да направи.
+       Досега на екрана излизаха „HTTP 502“, „Failed to fetch“, „[object Object]“. */
+    const GENERIC_ERROR = 'Нещо се обърка от наша страна. Опитай пак след малко.';
+    const OFFLINE_ERROR = 'Няма връзка със сървъра. Провери интернета и опитай пак.';
+
+    window.detailText = function (detail, fallback) {
+        if (typeof detail === 'string' && detail) return detail;
+        if (detail && typeof detail === 'object' && detail.message) return detail.message;
+        return fallback || '';
+    };
+
+    function statusText(status) {
+        if (status === 401) return 'Сесията ти е изтекла. Влез отново.';
+        if (status === 404) return 'Не намерихме това, което търсиш.';
+        if (status === 413) return 'Файлът е твърде голям.';
+        if (status === 429) return 'Твърде много опити. Изчакай малко и опитай пак.';
+        if (status >= 500) return GENERIC_ERROR;
+        return 'Заявката не мина. Опитай пак.';
+    }
+
+    // Грешка от отговор на сървъра: неговото съобщение, ако има, иначе по кода.
+    window.apiError = async function (resp) {
+        let data = {};
+        try { data = await resp.clone().json(); } catch (e) { /* не е JSON */ }
+        const err = new Error(window.detailText(data && data.detail) || statusText(resp.status));
+        err.status = resp.status;
+        err.detail = data && data.detail;
+        return err;
+    };
+
+    window.friendlyError = function (err) {
+        if (!err) return GENERIC_ERROR;
+        const msg = String(err.message != null ? err.message : err).trim();
+        if (/Failed to fetch|Load failed|NetworkError|network error|fetch/i.test(msg)
+            && (err.name === 'TypeError' || /fetch|network/i.test(msg))) return OFFLINE_ERROR;
+        if (err.name === 'TypeError' || err.name === 'SyntaxError' || err.name === 'ReferenceError'
+            || !msg || /^(HTTP|Грешка) \d{3}$|API грешка|\[object Object\]|^Грешка\.?$/.test(msg)) {
+            return GENERIC_ERROR;
+        }
+        return msg;
+    };
+    window.friendlyErrorHtml = function (err) { return esc(window.friendlyError(err)); };
+
     // Short confirmations that do not need a decision from the reader.
     window.uiToast = function (message, tone) {
         let stack = document.getElementById('ui-toast-stack');

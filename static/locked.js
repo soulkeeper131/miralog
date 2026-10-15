@@ -159,7 +159,7 @@ function reportLockedView(feature) {
 
 function renderLocked(el, detail, retry) {
     const offer = detail.offer;
-    const name = detail.feature_name || (offer && offer.name) || 'Тази функция';
+    const name = detail.feature_name || (offer && offer.name) || 'Това разчитане';
     reportLockedView(detail.feature || (offer && offer.key));
 
     /* Пакетът се показва само когато наистина е по-изгоден от този модул
@@ -173,7 +173,7 @@ function renderLocked(el, detail, retry) {
     const bundleBlock = bundleWorthIt
         ? `<div class="locked-alt">
                <span>или всичките ${b.keys.length} за ${money(b.price_cents, b.currency)}</span>
-               <button class="locked-alt-btn" data-bundle="1">Виж пакета</button>
+               <button class="locked-alt-btn" data-bundle="1">Вземи всички</button>
            </div>`
         : '';
 
@@ -181,11 +181,11 @@ function renderLocked(el, detail, retry) {
         ? `<div class="locked-price">${money(offer.price_cents, offer.currency)}
                <small>еднократно, остава завинаги</small></div>
            <button class="locked-btn" data-feature="${escapeHtml(offer.key)}">Отключи „${escapeHtml(offer.name)}“</button>
-           <p class="locked-perk">Платените разчитания се пишат от по-силния модел —
-              по-дълги и по-конкретни за твоята карта.</p>
+           <p class="locked-perk">Платените разчитания са по-дълги и написани
+              точно по твоята карта.</p>
            ${bundleBlock}`
         : `<a class="locked-btn" href="/settings"
-               style="text-decoration:none;">Виж пакетите</a>`;
+               style="text-decoration:none;">Виж цените</a>`;
 
     el.classList.add('locked');
     el.innerHTML = teaserText(name) + `
@@ -267,7 +267,7 @@ async function lockedCanMockPay() {
 async function requestUnlock(btn, featureKey, retry) {
     btn.disabled = true;
     const original = btn.textContent;
-    btn.textContent = 'Изпращане…';
+    btn.textContent = 'Момент…';
     try {
         // Test builds unlock straight away, so the paywall can be walked
         // through end to end before Stripe is wired up.
@@ -292,7 +292,7 @@ async function requestUnlock(btn, featureKey, retry) {
                 'изпълнението да започне сега и потвърждаваш ли, че с това губиш ' +
                 'правото си на 14-дневен отказ по чл. 57, т. 13 от ЗЗП?',
                 { title: 'Съгласие за незабавно изпълнение',
-                  ok: 'Съгласен съм, продължи', cancel: 'Отказ' });
+                  ok: 'Съгласен съм, продължи', cancel: 'Назад' });
             if (!agreed) { btn.disabled = false; btn.textContent = original; return; }
         }
 
@@ -320,11 +320,12 @@ async function requestUnlock(btn, featureKey, retry) {
             window.location.href = data.checkout_url;
             return;
         }
-        uiAlert('Ще се свържем с теб, за да уредим плащането. След това функцията '
-              + 'се отключва за постоянно.', { title: 'Заявката е изпратена' });
-        btn.textContent = 'Заявката е изпратена';
+        // Без онлайн плащане (Stripe не е настроен): заявката е стигнала до собственика.
+        uiAlert('Онлайн плащането в момента не е включено. Записахме заявката ти — '
+              + 'разчитането ще бъде отключено, щом плащането бъде уредено.', { title: 'Заявката е записана' });
+        btn.textContent = 'Заявката е записана';
     } catch (e) {
-        uiAlert('Заявката не можа да се изпрати: ' + e.message,
+        uiAlert(friendlyError(e),
                 { title: 'Нещо се обърка', tone: 'danger' });
         btn.disabled = false;
         btn.textContent = original;

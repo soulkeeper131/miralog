@@ -22,7 +22,7 @@
         if (!featuresPromise) {
             featuresPromise = fetch('/api/features', { headers: authHeaders() })
                 .then(resp => {
-                    if (!resp.ok) throw new Error('Грешка ' + resp.status);
+                    if (!resp.ok) throw await apiError(resp);
                     return resp.json();
                 })
                 .then(data => { lastFeatures = data; return data; })
@@ -124,7 +124,7 @@
                 'изпълнението да започне сега и потвърждаваш ли, че с това губиш ' +
                 'правото си на 14-дневен отказ по чл. 57, т. 13 от ЗЗП?',
                 { title: 'Съгласие за незабавно изпълнение',
-                  ok: 'Съгласен съм, продължи', cancel: 'Отказ' });
+                  ok: 'Съгласен съм, продължи', cancel: 'Назад' });
             if (!agreed) { btn.disabled = false; btn.textContent = original; return; }
 
             // The bundle has its own endpoint: it works out what is still
@@ -170,9 +170,9 @@
 
             // No payment processor configured — the request was logged instead.
             btn.textContent = 'Заявено';
-            uiToast('Ще се свържем с теб, за да уредим плащането.', 'ok');
+            uiToast('Записахме заявката ти — онлайн плащането в момента не е включено.', 'ok');
         } catch (e) {
-            uiAlert(e.message, { title: 'Нещо се обърка', tone: 'danger' });
+            uiAlert(friendlyError(e), { title: 'Нещо се обърка', tone: 'danger' });
             btn.disabled = false;
             btn.textContent = original;
         }
@@ -215,7 +215,7 @@
                     <span class="mod-eyebrow">${opts.firstTime ? 'Картата ти е готова' : 'Добави към картата си'}</span>
                     <h3 id="mod-title">Какво още искаш да четеш?</h3>
                     <p>${opts.firstTime
-                        ? 'Наталната ти карта, астро портретът, планетите и аспектите вече са отключени. Всичко по-долу се добавя поотделно — плащаш веднъж и ти остава завинаги.'
+                        ? 'Наталната ти карта, планетите, аспектите и дневният хороскоп вече са твои. Всичко по-долу се добавя поотделно — плащаш веднъж и ти остава завинаги.'
                         : 'Всяко от тези се отключва отделно. Плащаш веднъж и ти остава завинаги.'}</p>
                 </div>
                 <div class="mod-grid" id="mod-grid">
@@ -252,7 +252,7 @@
             const grid = overlay.querySelector('#mod-grid');
             grid.innerHTML = sellable.length
                 ? sellable.map(cardHtml).join('')
-                : '<div class="mod-loading">Няма допълнителни модули в момента.</div>';
+                : '<div class="mod-loading">Няма други разчитания в момента.</div>';
 
             /* Ако плащането при регистрацията не е тръгнало, човекът е избрал
                нещо и го е загубил. Не отмятаме вместо него — тук всяко копче
@@ -284,14 +284,14 @@
                 banner.innerHTML = `
                     <div class="mod-bundle-text">
                         <h4>${esc(b.name)}</h4>
-                        <p>Всички останали ${b.keys.length} модула наведнъж.
+                        <p>Всички останали ${b.keys.length} разчитания наведнъж.
                            Поотделно излизат ${money(b.full_price_cents, b.currency)}.</p>
                     </div>
                     <div class="mod-bundle-buy">
                         <div class="mod-bundle-price">${money(b.price_cents, b.currency)}
                             <span>спестяваш ${money(b.saving_cents, b.currency)}</span></div>
                         <button class="mod-btn mod-btn-bundle" data-bundle="1"
-                                aria-label="Отключи всички модули за ${esc(money(b.price_cents, b.currency))}">Вземи всички</button>
+                                aria-label="Отключи всички разчитания за ${esc(money(b.price_cents, b.currency))}">Вземи всички</button>
                     </div>`;
                 grid.parentNode.insertBefore(banner, grid);
                 banner.querySelector('[data-bundle]')

@@ -1618,7 +1618,22 @@ async def _http_error_with_code(request: Request, exc: _StarletteHTTPException):
         log.warning("%d: %s", exc.status_code, exc.detail)
         return JSONResponse({"detail": f"{exc.detail} (код {code})"},
                             status_code=exc.status_code, headers=getattr(exc, "headers", None))
+    if exc.status_code == 404 and _wants_html(request):
+        # Стар или сгрешен линк: страница с меню и изход, не {"detail":"Not Found"}.
+        page = templates.get_template("error.html").render({
+            "request": request, "title": "Тази страница не съществува",
+            "message": "Може линкът да е стар или да има грешка в адреса. "
+                       "Започни от началото — или виж днешния си хороскоп."})
+        return HTMLResponse(page, status_code=404)
     return await _default_http_handler(request, exc)
+
+
+def _wants_html(request: Request) -> bool:
+    """Браузър, който отваря страница — не API и не файл (картинка, CSS…)."""
+    path = request.url.path
+    if path.startswith(("/api/", "/static/", "/uploads/", "/og/")) or "." in path.rsplit("/", 1)[-1]:
+        return False
+    return "text/html" in (request.headers.get("accept") or "")
 
 
 async def _background_jobs_loop():
@@ -1861,7 +1876,7 @@ def user_for_token(token: Optional[str]) -> dict:
     стар токен след смяна на паролата продължаваха да работят 30 дни.
     """
     if not token:
-        raise HTTPException(401, "Не си влязъл в профила си. Влез отново.")
+        raise HTTPException(401, "Влез в акаунта си, за да продължиш.")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
@@ -1869,7 +1884,7 @@ def user_for_token(token: Optional[str]) -> dict:
         raise HTTPException(401, "Сесията изтече. Влез отново.")
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     try:
         token_ver = int(payload.get("tv", 0) or 0)
     except (TypeError, ValueError):
@@ -2085,7 +2100,7 @@ FEATURE_PERSON_GRANTS = {"love": 1}
 # a plan: it grants the same individual purchases, so there is still only one
 # way an account can own something.
 BUNDLE_KEY = "bundle"
-BUNDLE_NAME = "Всички модули"
+BUNDLE_NAME = "Всички разчитания"
 BUNDLE_PRICE_CENTS = 2500
 
 def bundle_offer(user: dict) -> Optional[dict]:
@@ -2220,7 +2235,7 @@ def require_feature(feature: str):
     def _check(user: Tuple[int, str] = Depends(get_current_user)) -> Tuple[int, str]:
         row = get_user_by_id(user[0])
         if not row:
-            raise HTTPException(401, "Невалиден акаунт.")
+            raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
         if row.get("is_blocked"):
             raise HTTPException(403, "Акаунтът е блокиран.")
         if row.get("role") == "admin":
@@ -2936,7 +2951,7 @@ def api_mock_pay(data: MockPayRequest,
     user_id, _ = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
 
     requested = list(data.keys or [])
     # "bundle" is not a feature: it stands for everything still missing, at
@@ -3302,14 +3317,14 @@ def api_onboard(data: OnboardRequest, request: Request):
             log.warning("Onboarding checkout за %s се провали: %s", email, e, exc_info=True)
             report_checkout_failure("регистрация с избрани модули (/start)", e)
             result["checkout_error"] = (
-                "Профилът е готов, но плащането не можа да се подготви. "
+                "Акаунтът е готов, но плащането не можа да започне. "
                 "Избраните разчитания те чакат в картата — опитай оттам.")
             remember_pending_purchase(user["id"], wanted, is_bundle)
     elif wanted:
         # Нито тестов режим, нито Stripe: акаунтът е направен, но няма как да
         # се плати. Изборът пак се пази, за да не се губи.
         result["checkout_error"] = (
-            "Профилът е готов. Плащанията са временно изключени — "
+            "Акаунтът е готов. Плащанията са временно изключени — "
             "избраните разчитания те чакат в картата.")
         remember_pending_purchase(user["id"], wanted, is_bundle)
     result["wanted"] = wanted
@@ -3336,7 +3351,7 @@ def api_register(data: AuthRequest, request: Request):
     notify_new_user(user["id"], email, "имейл и парола")
     try_send_template(
         email, "welcome",
-        name=email.split("@")[0],
+        name="",
         link=f"{site_base_url(request)}/dashboard",
         expires="",
     )
@@ -3348,7 +3363,7 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     plan = effective_plan(row)
     is_admin = row.get("role") == "admin"
     return {
@@ -3379,41 +3394,41 @@ def api_me(user: Tuple[int, str] = Depends(get_current_user)):
 FEATURE_CATALOGUE = [
     # "bullets" and "glyph" drive the module picker; "included" marks what a
     # chart already carries, so the picker never offers it for sale.
-    {"key": "chart", "name": "Натална карта", "note": "Колелото и позициите",
+    {"key": "chart", "name": "Натална карта", "short": "Карта", "note": "Колелото и позициите",
      "glyph": "⊕", "included": True,
-     "bullets": ["Колелото с домовете по Плацидус",
+     "bullets": ["Колелото с домовете",
                  "Всяка планета и точка с обяснение",
                  "Аспектите и какво носят"]},
-    {"key": "planets", "name": "Планети", "note": "Списък с обяснения",
+    {"key": "planets", "name": "Планети", "short": "Планети", "note": "Списък с обяснения",
      "glyph": "☿", "included": True, "bullets": []},
-    {"key": "aspects", "name": "Аспекти", "note": "Аспектите в картата",
+    {"key": "aspects", "name": "Аспекти", "short": "Аспекти", "note": "Аспектите в картата",
      "glyph": "△", "included": True, "bullets": []},
 
-    {"key": "profile", "name": "Пълен астрологически профил",
-     "note": "Какво ще узнаеш?", "glyph": "☉",
+    {"key": "profile", "name": "Пълен астрологически профил", "short": "Профил",
+     "note": "Подробният разказ за характера ти", "glyph": "☉",
      "bullets": ["Своята същност",
                  "Твоето призвание",
                  "Как те виждат отстрани",
                  "Твоят емоционален свят и темпераментът ти",
                  "Къде да насочиш енергията си"]},
 
-    {"key": "horoscope", "name": "Дневен хороскоп",
-     "note": "Какво ще узнаеш?", "glyph": "☽", "included": True,
+    {"key": "horoscope", "name": "Дневен хороскоп", "short": "Хороскоп",
+     "note": "Всяка сутрин по твоята карта", "glyph": "☽", "included": True,
      "bullets": ["Какви са активните транзитни аспекти",
                  "Какво да правиш и какво да избягваш",
                  "Какви емоции ще ти донесе денят",
                  "Какъв ще бъде денят ти"]},
 
-    {"key": "period", "name": "Хороскоп за конкретен период",
-     "note": "Какво ще узнаеш?", "glyph": "♃",
+    {"key": "period", "name": "Хороскоп за период", "short": "Период",
+     "note": "Какво носят следващите седмици", "glyph": "♃",
      "bullets": ["Какво да очакваш до 60 дни напред",
                  "Как са ти повлияли минали събития",
                  "Кога да планираш важни събития",
-                 "Как да елиминираш неприятни ситуации",
+                 "Как да избегнеш неприятни ситуации",
                  "Къде да насочиш енергията си"]},
 
-    {"key": "love", "name": "Любовен хороскоп и емоционална съвместимост",
-     "note": "Какво ще узнаеш?", "glyph": "♀",
+    {"key": "love", "name": "Любовен хороскоп и съвместимост", "short": "Любов",
+     "note": "Ти и партньорът ти", "glyph": "♀",
      "bullets": ["Дали между вас има истинско привличане",
                  "Кое ви свързва и кое ви дели",
                  "Къде да подходите предпазливо",
@@ -3421,22 +3436,22 @@ FEATURE_CATALOGUE = [
                  "Съвпадения по рождени данни или зодия — и още една карта "
                  "за партньора ти"]},
 
-    {"key": "akashic", "name": "Акашови записи",
-     "note": "Какво ще узнаеш?", "glyph": "☊",
+    {"key": "akashic", "name": "Акашови записи", "short": "Акашови записи",
+     "note": "Мисия и кармични уроци", "glyph": "☊",
      "bullets": ["Твоята мисия",
                  "Кармичните уроци, които трябва да научиш",
                  "Какво носиш в душата си",
                  "Как да развиеш потенциала си"]},
 
-    {"key": "numerology", "name": "Нумерология",
-     "note": "Какво ще узнаеш?", "glyph": "7",
+    {"key": "numerology", "name": "Нумерология", "short": "Нумерология",
+     "note": "Числата от датата ти на раждане", "glyph": "7",
      "bullets": ["Каква е символиката на числата, свързани с раждането ти",
                  "Каква е жизнената ти мисия",
                  "Какво е влиянието на цифрите върху живота и съдбата ти",
                  "Коя е твоята лична година"]},
 
-    {"key": "moon", "name": "Лунен хороскоп календар",
-     "note": "Какво ще узнаеш?", "glyph": "◐",
+    {"key": "moon", "name": "Лунен календар", "short": "Луна",
+     "note": "Фазите на Луната и какво е подходящо всеки ден", "glyph": "◐",
      "bullets": ["Как Луната влияе върху ежедневието ти",
                  "Защо понякога нещата не се получават, въпреки усилията ти",
                  "Ежедневни съвети за здраве, дом и красота",
@@ -3449,16 +3464,17 @@ FEATURE_CATALOGUE = [
 # {brand} is filled in from the brand settings, so renaming the app does not
 # mean rewriting every template by hand.
 EMAIL_TEMPLATES = {
-    "welcome_subject": "Добре дошъл в {brand}",
+    "welcome_subject": "Акаунтът ти в {brand} е готов",
     "welcome_body": (
         "Здравей, {name}!\n\n"
-        "Акаунтът ти в {brand} е готов. Влез и създай първата си натална карта.\n\n"
+        "Акаунтът ти в {brand} е готов. Влез и създай наталната си карта — "
+        "тя и дневният хороскоп по нея са безплатни.\n\n"
         "{link}\n\nПоздрави,\nЕкипът на {brand}"
     ),
     "set_password_subject": "Картата ти е готова — задай парола",
     "set_password_body": (
         "Здравей!\n\n"
-        "Наталната ти карта е запазена в профила ти.\n"
+        "Наталната ти карта е запазена в акаунта ти.\n"
         "Задай парола, за да влизаш в него и от друго устройство:\n\n"
         "{link}\n\n"
         "Връзката е валидна 2 часа. Ако изтече, използвай „Забравена парола“ "
@@ -3467,22 +3483,22 @@ EMAIL_TEMPLATES = {
     "reset_password_subject": "Нулиране на парола — {brand}",
     "reset_password_body": (
         "Здравей, {name}!\n\n"
-        "Заяви нулиране на паролата си. Линкът е валиден 2 часа:\n\n"
+        "Получихме заявка за нова парола. Линкът е валиден 2 часа:\n\n"
         "{link}\n\n"
-        "Ако не си го заявил/а, игнорирай това писмо.\n\n{brand}"
+        "Ако не си ти, просто игнорирай това писмо.\n\n{brand}"
     ),
     "digest_subject": "Денят ти в {brand} — {date}",
     "digest_body": (
         "Здравей, {name}!\n\n"
         "{reading}\n\n"
-        "Можеш да спреш тези писма от Настройки.\n\n"
+        "Не искаш тези писма? Спри ги от Настройки: {settings_link}\n\n"
         "Поздрави,\n{brand}"
     ),
     "share_subject": "{title} — {person_name}",
     "share_body": (
         "Здравей!\n\n"
         "Прикачено е разчитането „{title}“ за {name}, изготвено от {brand}.\n"
-        "Позициите в него са изчислени със Swiss Ephemeris.\n\n"
+        "Позициите в него са изчислени с астрономическа точност.\n\n"
         "Приятно четене!\n— {brand}"
     ),
     # Касов документ (Н-18, чл. 52а) и фактура (ЗДДС) се издават като PDF —
@@ -3490,8 +3506,8 @@ EMAIL_TEMPLATES = {
     "receipt_subject": "Документ за продажба от {brand} — №{unp}",
     "receipt_body": (
         "Здравей!\n\n"
-        "Благодарим за покупката! Документът за регистриране на продажбата "
-        "е прикачен към това писмо като PDF. Можеш да го свалиш и от "
+        "Благодарим за покупката! Касовата бележка е прикачена към това "
+        "писмо като PDF. Можеш да я свалиш и от "
         "Настройки → Моите документи.\n\n"
         "Поздрави,\n{brand}"
     ),
@@ -5562,7 +5578,7 @@ def api_my_features(peek: bool = False, user: Tuple[int, str] = Depends(get_curr
     user_id, _ = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     unlocked = unlocked_features(row)
     return {
         "unlocked": unlocked,
@@ -5619,11 +5635,11 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
 
     bundle = bundle_offer(row)
     if not bundle:
-        raise HTTPException(400, "Няма достатъчно модули за пакет.")
+        raise HTTPException(400, "Остана само едно заключено разчитане — отключи го отделно.")
 
     keys = bundle["keys"]
     if billing.stripe_enabled():
@@ -5663,6 +5679,9 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
         except Exception as e:
             log.warning("Stripe checkout за пакета се провали: %s", e)
             report_checkout_failure("покупка на пакета", e)
+            # Досега клиентът четеше „ще се свържем с теб“ — а никой не се
+            # свързваше: плащанията са онлайн, това е грешка, не заявка.
+            raise HTTPException(502, CHECKOUT_FAILED_MSG) from e
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
@@ -5680,13 +5699,13 @@ def api_request_feature(feature_key: str, request: Request,
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if feature_key in unlocked_features(row):
         return {"ok": True, "already": True}
 
     offer = feature_offer(feature_key)
     if not offer:
-        raise HTTPException(404, "Тази функция не се продава отделно.")
+        raise HTTPException(404, "Това разчитане не се продава отделно.")
 
     if billing.stripe_enabled():
         base = site_base_url(request)
@@ -5714,6 +5733,7 @@ def api_request_feature(feature_key: str, request: Request,
         except Exception as e:
             log.warning("Stripe checkout за %s се провали: %s", feature_key, e)
             report_checkout_failure(f"покупка на модул {feature_key}", e)
+            raise HTTPException(502, CHECKOUT_FAILED_MSG) from e
 
     to = get_setting("smtp_from") or get_setting("smtp_user")
     if to:
@@ -6061,7 +6081,7 @@ def _template_preview_data() -> list:
         ("set_password", dict(link="https://astrokarta.bg/reset-password?token=DEMO_TOKEN_123")),
         ("reset_password", dict(name="Иван", link="https://astrokarta.bg/reset-password?token=DEMO_TOKEN_123")),
         ("digest", dict(
-            name="Иван", date="24.08.2026",
+            name="Иван", date="24.08.2026", settings_link="https://astrokarta.bg/settings",
             reading="Дневното разчитане за Иван Петров:\n\nСлънцето в Дева подсказва ден за подреждане на делата. Внимателен с обещанията в късния следобед.\n\nПълният текст: https://astrokarta.bg/chart/42")),
         ("share", dict(title="Натална карта", person_name="Иван Петров", name="Иван")),
         ("unlock_request", dict(email="ivan@example.com", user_id=42,
@@ -6156,7 +6176,10 @@ def render_email_template(kind: str, **fields) -> Tuple[str, str]:
     safe = {k: ("" if v is None else str(v)) for k, v in fields.items()}
     # Every template may reference {brand}; a caller-supplied value wins.
     safe.setdefault("brand", brand_name())
-    return _fill_template(subject, safe), _fill_template(body, safe)
+    body = _fill_template(body, safe)
+    # Без име за обръщение: „Здравей!“, не „Здравей, ime.prezime!“ или „Здравей, !“.
+    body = re.sub(r"(Здравей|Здравейте),\s*!", r"\1!", body)
+    return _fill_template(subject, safe), body
 
 def notify_new_user(user_id: int, email: str, method: str) -> None:
     """Известява собственика за нова регистрация.
@@ -6246,6 +6269,10 @@ def notify_owner(kind: str, subject: str, body: str) -> bool:
     except Exception:
         log.warning("Известието „%s“ не тръгна", subject, exc_info=True)
         return False
+
+
+CHECKOUT_FAILED_MSG = ("Плащането не можа да започне. Не е удържана сума — "
+                       "опитай пак след малко.")
 
 
 def report_checkout_failure(where: str, error: Exception) -> None:
@@ -6717,7 +6744,7 @@ def sale_lines(meta: dict, kind: str, keys: list, amount_cents: int,
                subtotal_cents: int) -> Tuple[list, list]:
     """(редове за документите, [(модул, платено)] за достъпа) за една сесия.
 
-    Пакетът е един продаден артикул — „Всички модули“ за 25 € — и така стои
+    Пакетът е един продаден артикул — „Всички разчитания“ за 25 € — и така стои
     в бележката и в одиторския файл. Достъпът все пак е по модул, затова
     сумата се разпределя и по ключовете (сборът е точно платеното).
     """
@@ -7504,7 +7531,7 @@ def run_digest_emails(now: Optional[datetime.datetime] = None) -> None:
             person_today = today
         cache_key = f"horoscope:{person_today}"
         cached = get_ai_cache(person["id"], cache_key)
-        name = u.get("display_name") or (u.get("email") or "").split("@")[0]
+        name = u.get("display_name") or ""
         chart_link = f"{base}/chart/{person['id']}"
         if cached and cached.get("content"):
             _, prose = split_summary(cached["content"])
@@ -7522,7 +7549,8 @@ def run_digest_emails(now: Optional[datetime.datetime] = None) -> None:
             # try_send_template не хвърля, а връща False — досега грешката се
             # пропускаше и неизпратеното се отбелязваше като изпратено.
             if not try_send_template(u["email"], "digest", name=name, reading=reading,
-                                     date=today):
+                                     date=datetime.date.fromisoformat(today).strftime("%d.%m.%Y"),
+                                     settings_link=f"{base}/settings"):
                 log.warning("Digest до %s не тръгна — ще се опита пак в следващия час",
                             u["email"])
                 continue
@@ -7989,7 +8017,7 @@ def api_forgot_password(data: ForgotPasswordRequest, request: Request):
     if user:
         token = create_password_reset(user["id"])
         link = f"{site_base_url(request)}/reset-password?token={urllib.parse.quote(token)}"
-        name = user.get("display_name") or email.split("@")[0]
+        name = user.get("display_name") or ""
         if smtp_setting("smtp_host"):
             try_send_template(email, "reset_password", name=name, link=link)
     return {"ok": True}
@@ -8014,7 +8042,7 @@ def api_reset_password(data: ResetPasswordRequest):
 def api_billing_status(user: Tuple[int, str] = Depends(get_current_user)):
     row = get_user_by_id(user[0])
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     return {
         "stripe_enabled": billing.stripe_enabled(),
         "plan_key": row.get("plan_key"),
@@ -8030,12 +8058,12 @@ def api_checkout_feature(feature_key: str, request: Request,
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if feature_key in unlocked_features(row):
         return {"ok": True, "already": True}
     offer = feature_offer(feature_key)
     if not offer:
-        raise HTTPException(404, "Тази функция не се продава отделно.")
+        raise HTTPException(404, "Това разчитане не се продава отделно.")
     base = site_base_url(request)
     success = stripe_success_url(f"{base}/settings?paid=1", amount_cents=offer["price_cents"], currency=offer["currency"])
     cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}/settings?paid=0"
@@ -8059,7 +8087,8 @@ def api_checkout_feature(feature_key: str, request: Request,
                         source="billing")
     except Exception as e:
         report_checkout_failure(f"покупка на модул {feature_key} (billing)", e)
-        raise HTTPException(502, f"Stripe грешка: {e}") from e
+        # Суровият текст на Stripe е на английски и може да носи вътрешни подробности.
+        raise HTTPException(502, CHECKOUT_FAILED_MSG) from e
     return {"url": url}
 
 @app.get("/api/billing/session/{session_id}")
@@ -8199,7 +8228,7 @@ def api_onboarding_state(user: Tuple[int, str] = Depends(get_current_user)):
     го показва като превключвател (по подразбиране изключен)."""
     row = get_user_by_id(user[0])
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     return {"done": bool(row.get("onboarded_at")),
             "digest_opt_in": bool(row.get("digest_opt_in"))}
 
@@ -8330,7 +8359,7 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     plan = effective_plan(row)
     return {
         "id": user_id,
@@ -8418,7 +8447,7 @@ def api_change_password(data: PasswordChange, user: Tuple[int, str] = Depends(ge
     user_id, _ = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if not verify_password(data.current_password or "", row["password_hash"]):
         raise HTTPException(403, "Текущата парола не е вярна.")
     check_new_password(data.new_password or "")
@@ -8481,7 +8510,7 @@ def api_export_account(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         persons = [dict(r) for r in conn.execute(
@@ -8513,7 +8542,7 @@ def api_delete_account(user: Tuple[int, str] = Depends(get_current_user)):
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if row.get("role") == "admin":
         raise HTTPException(403, "Администраторският акаунт не може да се изтрие от тук.")
 
@@ -8735,7 +8764,7 @@ def api_create_person(
     user_id, email = user
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if row.get("is_blocked"):
         raise HTTPException(403, "Акаунтът е блокиран.")
     name = (name or "").strip()[:80]
@@ -9799,10 +9828,10 @@ def api_synastry(data: SynastryRequest, user: Tuple[int, str] = Depends(require_
     user_id, email = user
     p1 = get_person(data.person1_id, user_id)
     if not p1:
-        raise HTTPException(404, f"Person 1 (id={data.person1_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
     p2 = get_person(data.person2_id, user_id)
     if not p2:
-        raise HTTPException(404, f"Person 2 (id={data.person2_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
     return compute_composite(p1, p2)
 
 
@@ -9815,10 +9844,10 @@ def api_synastry_interpretation(data: SynastryRequest, refresh: bool = False, us
     refresh = refresh and _is_admin_id(user_id)
     p1 = get_person(data.person1_id, user_id)
     if not p1:
-        raise HTTPException(404, f"Person 1 (id={data.person1_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
     p2 = get_person(data.person2_id, user_id)
     if not p2:
-        raise HTTPException(404, f"Person 2 (id={data.person2_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
 
     # Cache key: sort IDs to be order-independent
     cache_key = f"synastry:{min(data.person1_id, data.person2_id)}:{max(data.person1_id, data.person2_id)}"
@@ -9911,7 +9940,7 @@ def api_transits(data: TransitsRequest, user: Tuple[int, str] = Depends(require_
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, f"Person (id={data.person_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
     try:
         target_date = datetime.datetime.fromisoformat(data.target_date)
         # Attach person's timezone to naive datetime
@@ -10178,7 +10207,7 @@ def api_period_influence(data: PeriodRequest, user: Tuple[int, str] = Depends(re
     user_id, email = user
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, f"Person (id={data.person_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
 
     try:
         start = datetime.date.fromisoformat(data.start_date)
@@ -10252,7 +10281,7 @@ def api_period_interpretation(data: PeriodRequest, refresh: bool = False,
     refresh = refresh and _is_admin_id(user_id)
     p = get_person(data.person_id, user_id)
     if not p:
-        raise HTTPException(404, f"Person (id={data.person_id}) not found")
+        raise HTTPException(404, "Този човек не е намерен в акаунта ти.")
 
     cache_key = f"period:{data.start_date}:{data.end_date}"
     if not refresh:
@@ -10651,7 +10680,7 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
 # Every reading the user can export. The label becomes the PDF's title, and the
 # cache key is either fixed or a prefix the client completes (date, period, sign).
 READING_TITLES = {
-    "profile":    "Личен портрет",
+    "profile":    "Пълен астрологически профил",
     "akashic":    "Акашови записи",
     "numerology": "Нумерологичен анализ",
     "horoscope":  "Дневен хороскоп",
@@ -10761,7 +10790,7 @@ def require_reading_access(user_id: int, cache_key: str) -> None:
         return
     row = get_user_by_id(user_id)
     if not row:
-        raise HTTPException(401, "Невалиден акаунт.")
+        raise HTTPException(401, "Акаунтът не е намерен. Влез отново.")
     if not _reading_allowed(row, feature):
         raise HTTPException(402, {
             "reason": "locked",
@@ -11500,8 +11529,8 @@ _SIGN_FAQ = [
     {"q": "Каква е разликата с персоналния дневен хороскоп?",
      "a": "Тук прогнозата е по слънчевия знак — обща за милиони. Персоналният хороскоп се изчислява от транзитите спрямо точно твоята натална карта и е уникален за теб."},
     {"q": "Къде да получа пълното разчитане на картата си?",
-     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -11850,8 +11879,8 @@ _HOUSE_FAQ = [
     {"q": "Как да разбера в кой дом е моята планета?",
      "a": "Създай безплатната си натална карта — тя изчислява позицията на всяка планета по дом до градус и я обяснява конкретно за теб."},
     {"q": "Къде да получа пълното разчитане на картата си?",
-     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -11941,8 +11970,8 @@ _PLANET_FAQ = [
     {"q": "Как да разбера точната си позиция?",
      "a": "Създай безплатната си натална карта — тя изчислява позицията на всяка планета до градус и я обяснява конкретно за теб."},
     {"q": "Къде да получа пълното разчитане на всичките си позиции?",
-     "a": "Пълният астрологически профил събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a": "Пълният астрологически профил събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -12030,8 +12059,8 @@ _SIGN_PROFILE_FAQ = [
     {"q": "Каква е разликата с наталната карта?",
      "a": "Слънчевият знак е само едно парче от пъзела. Наталната карта показва всички планети заедно и какво значи това лично за теб — много по-точно от една обща характеристика."},
     {"q": "Къде да получа пълното си разчитане?",
-     "a": "Пълният астрологически профил събира всички позиции в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички позиции в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a": "Пълният астрологически профил събира всички позиции в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички позиции в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -12118,8 +12147,8 @@ _COMPAT_FAQ = [
     {"q": "Как да разбера истинската ни съвместимост?",
      "a": "Създай наталната си карта и тази на партньора — сравнението на двете карти показва реалната ви съвместимост до градус."},
     {"q": "Къде да получа пълния анализ на връзката?",
-     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 

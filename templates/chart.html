@@ -1383,13 +1383,13 @@
                 aria-label="Предишни менюта" hidden>‹</button>
         <div class="tabs" id="tabStrip">
             <div class="tab active" onclick="showTab('wheel')">Карта</div>
-            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile" data-feature="profile">Астро портрет</div>
+            <div class="tab" onclick="showTab('profile')" id="tabbtn-profile" data-feature="profile">Профил</div>
             <div class="tab" onclick="showTab('planets')">Планети</div>
             <div class="tab" onclick="showTab('aspects')">Аспекти</div>
             <div class="tab" onclick="showTab('horoscope')" id="tabbtn-horoscope" data-feature="horoscope">Дневен хороскоп</div>
             <div class="tab" onclick="showTab('period')" id="tabbtn-period" data-feature="period">Период</div>
             <div class="tab" onclick="showTab('numerology')" id="tabbtn-numerology" data-feature="numerology">Нумерология</div>
-            <div class="tab" onclick="showTab('love')" id="tabbtn-love" data-feature="love">Любовен хороскоп</div>
+            <div class="tab" onclick="showTab('love')" id="tabbtn-love" data-feature="love">Любов</div>
             <div class="tab" onclick="showTab('akashic')" id="tabbtn-akashic" data-feature="akashic">Акашови записи</div>
             <!-- „Пълно разчитане“ е временно свалено от менюто. Панелът и
                  endpoint-ът остават, за да се върне с един ред. -->
@@ -1424,7 +1424,7 @@
 
         <div id="tab-profile" class="tab-content">
             <div class="section">
-                <h2>Астро портрет</h2>
+                <h2>Накратко за теб</h2>
                 <div id="profile-content"><div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>Изчисляване...</div></div>
             </div>
             <div class="section">
@@ -1692,11 +1692,11 @@
     </div>
 
     <div id="onboarding-root"></div>
-    <script src="/static/locked.js?v=7"></script>
+    <script src="/static/locked.js?v=8"></script>
     <script src="/static/share.js?v=1"></script>
-    <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=7"></script>
-    <script src="/static/onboarding.js?v=3"></script>
+    <script src="/static/ui.js?v=3"></script>
+    <script src="/static/modules.js?v=8"></script>
+    <script src="/static/onboarding.js?v=4"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -1925,9 +1925,9 @@
             const panel = document.getElementById(panelId);
             if (!panel || panel.dataset.gated === '1') return true;
             const meta = {
-                period: { name: 'Хороскоп за конкретен период',
+                period: { name: 'Хороскоп за период',
                           msg: 'Какво да очакваш до 60 дни напред и кога да планираш важните неща.' },
-                love:   { name: 'Любовен хороскоп и емоционална съвместимост',
+                love:   { name: 'Любовен хороскоп и съвместимост',
                           msg: 'Има ли истинско привличане, кое ви свързва и имате ли дългосрочен потенциал.' },
             }[feature] || { name: feature, msg: '' };
 
@@ -1989,11 +1989,11 @@
             const el = document.getElementById('chart-wheel');
             try {
                 const resp = await fetch('/api/persons/{{ person.id }}/chart.svg', { headers: authHeaders() });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const svgText = await resp.text();
                 el.innerHTML = svgText;
             } catch (e) {
-                el.innerHTML = '<div class="error">Грешка при зареждане на картата: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
         loadChartWheel();
@@ -2016,7 +2016,7 @@
                 });
                 if (!resp.ok) {
                     const data = await resp.json().catch(() => ({}));
-                    throw new Error(data.detail || ('HTTP ' + resp.status));
+                    throw new Error(detailText(data.detail) || 'HTTP ' + resp.status);
                 }
                 const data = await resp.json();
 
@@ -2046,7 +2046,7 @@
 
                 el.innerHTML = html;
             } catch (e) {
-                el.innerHTML = '<div class="error">Грешка при изчисляване на хороскопа: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2083,11 +2083,11 @@
         var audioPlayer = { key: null, audio: null, state: 'idle' };
 
         var FP_TITLES = {
-            profile: 'Личен портрет',
+            profile: 'Пълен астрологически профил',
             akashic: 'Акашови записи',
-            numerology: 'Нумерологичен анализ',
+            numerology: 'Нумерология',
             horoscope: 'Дневен хороскоп',
-            period: 'Анализ на период',
+            period: 'Хороскоп за период',
             love: 'Любовен хороскоп',
             'love-full': 'Любовен хороскоп'
         };
@@ -2354,7 +2354,7 @@
                 a.remove();
                 URL.revokeObjectURL(url);
             } catch (e) {
-                uiAlert('PDF-ът не можа да се изтегли: ' + e.message,
+                uiAlert('PDF-ът не можа да се изтегли: ' + friendlyError(e),
                         { title: 'Нещо се обърка', tone: 'danger' });
             }
         }
@@ -2386,7 +2386,7 @@
                 if (!resp.ok) throw new Error(detailText(data.detail, 'Грешка ' + resp.status));
                 uiToast('Разчитането е изпратено на ' + data.to, 'ok');
             } catch (e) {
-                uiAlert('Имейлът не можа да се изпрати: ' + e.message,
+                uiAlert('Имейлът не можа да се изпрати: ' + friendlyError(e),
                         { title: 'Нещо се обърка', tone: 'danger' });
             }
         }
@@ -2412,7 +2412,7 @@
                     uiAlert(url, { title: 'Линк за споделяне' });
                 }
             } catch (e) {
-                uiAlert('Споделянето не успя: ' + e.message,
+                uiAlert('Споделянето не успя: ' + friendlyError(e),
                         { title: 'Нещо се обърка', tone: 'danger' });
             }
         }
@@ -2453,7 +2453,7 @@
             const el = document.getElementById('profile-content');
             try {
                 const resp = await guardedFetch('/api/persons/{{ person.id }}/profile', { headers: authHeaders() });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const d = await resp.json();
 
                 let html = '<div class="prof-grid">';
@@ -2504,7 +2504,7 @@
                     renderLocked(el, e.detail, loadProfile);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
                 return;
             }
             loadProfileAI();
@@ -2556,7 +2556,7 @@
                     renderLocked(el, e.detail, loadProfileAI);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2589,7 +2589,7 @@
                     renderLocked(el, e.detail, loadHoroscopeAI);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2714,7 +2714,7 @@
                     renderLocked(el, e.detail, loadPeriod);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при анализа: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Анализирай период';
@@ -2734,7 +2734,7 @@
                 });
                 if (!resp.ok) {
                     const d = await resp.json().catch(() => ({}));
-                    throw new Error(d.detail || ('HTTP ' + resp.status));
+                    throw new Error(detailText(d.detail) || 'HTTP ' + resp.status);
                 }
                 const data = await resp.json();
                 if (data.interpretation) {
@@ -2749,7 +2749,7 @@
                     renderLocked(el, e.detail, () => loadPeriodAI(start, end));
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при разчитането: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2759,7 +2759,7 @@
             const aiEl = document.getElementById('numerology-ai-content');
             try {
                 const resp = await guardedFetch('/api/persons/{{ person.id }}/numerology', { headers: authHeaders() });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
 
                 const labels = {
@@ -2814,7 +2814,7 @@
                     renderLocked(el, e.detail, loadNumerology);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
                 return;
             }
 
@@ -2839,7 +2839,7 @@
                     renderLocked(el, e.detail, loadNumerologyAI);
                     return;
                 }
-                aiEl.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                aiEl.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2929,7 +2929,7 @@
                     renderLocked(el, e.detail, () => runSynastry(otherId));
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при сравняването: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2955,7 +2955,7 @@
                     renderLocked(el, e.detail, () => loadSynastryAI(otherId));
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -2979,7 +2979,7 @@
             box.classList.add('open');
             try {
                 const resp = await fetch('/api/geocode?q=' + encodeURIComponent(query), { headers: authHeaders() });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
                 const results = data.results || [];
                 if (!results.length) {
@@ -2994,7 +2994,7 @@
                     </div>`;
                 }).join('');
             } catch (e) {
-                box.innerHTML = '<div class="place-status">Грешка при търсене: ' + escapeHtmlText(e.message) + '</div>';
+                box.innerHTML = '<div class="place-status">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -3068,9 +3068,9 @@
             const q = new URLSearchParams(location.search);
             const paid = q.get('paid');
             if (paid === '1' && !q.get('session_id')) {
-                uiToast('Плащането е прието. Ако модулите още са заключени, презареди след няколко секунди.', 'ok');
+                uiToast('Плащането е получено. Ако разчитането още е заключено, опресни страницата след няколко секунди.', 'ok');
             } else if (paid === '0') {
-                uiToast('Плащането беше отказано.', 'err');
+                uiToast('Плащането не беше завършено. Не е удържана сума — можеш да опиташ отново.');
             }
         });
 
@@ -3137,10 +3137,9 @@
         // beats one cut off mid-word — the full name stays on the tab, in the
         // panel heading and in the card's aria-label.
         const SECTION_SHORT = {
-            horoscope: 'Дневен',
-            love: 'Любовен',
-            profile: 'Портрет',
-            akashic: 'Акашови',
+            horoscope: 'Хороскоп',
+            love: 'Любов',
+            profile: 'Профил',
         };
 
         function buildSectionGrid(features) {
@@ -3220,7 +3219,7 @@
             unlockPanel(el);
             try {
                 const resp = await fetch('/api/zodiac-signs', { headers: authHeaders() });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const d = await resp.json();
                 el.innerHTML = d.signs.map(s => `
                     <button class="sign-btn" data-sign="${s.key}" onclick="pickSign('${s.key}')">
@@ -3229,7 +3228,7 @@
                         <span class="sign-el">${s.element_bg}</span>
                     </button>`).join('');
             } catch (e) {
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -3357,7 +3356,7 @@
                     renderLocked(el, e.detail, loadLoveMatch);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
                 return;
             }
             loadLoveAI();
@@ -3386,7 +3385,7 @@
                     renderLocked(el, e.detail, loadLoveAI);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
 
@@ -3394,7 +3393,7 @@
             const el = document.getElementById('akashic-content');
             try {
                 const resp = await guardedFetch('/api/persons/{{ person.id }}/akashic', { headers: authHeaders() });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const d = await resp.json();
 
                 const labels = {
@@ -3447,7 +3446,7 @@
                     renderLocked(el, e.detail, loadAkashic);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при изчисляване: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
                 return;
             }
             loadAkashicAI();
@@ -3472,7 +3471,7 @@
                     renderLocked(el, e.detail, loadAkashicAI);
                     return;
                 }
-                el.innerHTML = '<div class="error">Грешка при зареждане: ' + e.message + '</div>';
+                el.innerHTML = '<div class="error">' + friendlyErrorHtml(e) + '</div>';
             }
         }
     </script>

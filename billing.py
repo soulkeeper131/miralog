@@ -150,7 +150,7 @@ def create_feature_checkout(
 
 
 def _bundle_line(items: list, brand: str, bundle_name: str) -> list:
-    """Пакетът е един ред в Stripe: „Всички модули (6 разчитания) — 25 €“.
+    """Пакетът е един ред в Stripe: „Всички разчитания (6) — 25 €“.
 
     Досега страницата за плащане показваше шестте модула с разделената между
     тях цена на пакета (4,20 €, 4,16 €…) — изглеждаше като други цени, не като
@@ -162,7 +162,7 @@ def _bundle_line(items: list, brand: str, bundle_name: str) -> list:
             "currency": (items[0].get("currency") or "eur").lower(),
             "unit_amount": sum(int(i["amount_cents"]) for i in items),
             "product_data": {
-                "name": f"{brand} — {bundle_name} ({len(items)} разчитания)",
+                "name": f"{brand} — {bundle_name} ({len(items)})",
                 "description": f"Включва: {names}."[:500],
             },
         },
@@ -181,7 +181,7 @@ def create_features_checkout(
     brand: str = "АстроКарта",
     bundle: bool = False,
     extra_metadata: Optional[dict] = None,
-    bundle_name: str = "Всички модули",
+    bundle_name: str = "Всички разчитания",
 ) -> str:
     """Checkout for several one-off unlocks at once.
 

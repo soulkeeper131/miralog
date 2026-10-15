@@ -158,7 +158,7 @@
                         headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                         body: JSON.stringify({ digest_opt_in: want }),
                     });
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    if (!r.ok) throw await apiError(r);
                     if (typeof uiToast === 'function') {
                         uiToast(want ? 'Ще ти пращаме хороскопа на имейл.' : 'Хороскопът на имейл е изключен.', 'ok');
                     }
@@ -188,7 +188,7 @@
             if (b) {
                 html += '<div class="onb-mod onb-bundle' + (pending && pending.bundle ? ' onb-wanted' : '') + '">' +
                     '<div class="onb-mod-text"><div class="onb-mod-name">' + esc(b.name) + '</div>' +
-                    '<div class="onb-mod-note">Всички ' + b.keys.length + ' модула с едно плащане. Поотделно: ' +
+                    '<div class="onb-mod-note">Всички ' + b.keys.length + ' разчитания с едно плащане. Поотделно: ' +
                     money(b.full_price_cents, b.currency) + '.</div></div>' +
                     '<span class="onb-mod-price">' + money(b.price_cents, b.currency) + '</span>' +
                     '<button type="button" class="onb-mod-btn" data-key="bundle" aria-label="Вземи пакета за ' +

@@ -327,6 +327,7 @@
 </style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
+    <script src="/static/ui.js?v=3"></script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -335,7 +336,7 @@
             <img class="logo-img" src="{{ brand().logo }}" alt="{{ brand().name }}">
             <h1>{{ brand().name }}</h1>
         </a>
-        <p class="subtitle">Създай своя астрологичен профил</p>
+        <p class="subtitle">Създай акаунт</p>
 
         <div class="card">
             <div id="error" class="error-msg"></div>
@@ -473,7 +474,7 @@
                 const data = await resp.json();
 
                 if (!resp.ok) {
-                    throw new Error(data.detail || 'Грешка при регистрация');
+                    throw new Error(detailText(data.detail));
                 }
 
                 // Registration successful — store token and go to dashboard
@@ -490,7 +491,7 @@
                     window.location.replace(wantFull ? '/settings?subscribe=1' : '/dashboard');
                 }, 800);
             } catch (err) {
-                errorEl.textContent = err.message;
+                errorEl.textContent = friendlyError(err);
                 errorEl.classList.add('visible');
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Регистрация';

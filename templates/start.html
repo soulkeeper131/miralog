@@ -685,7 +685,7 @@
                 <div class="price-row">
                     <span class="price-what">
                         Наталната ти карта
-                        <small>Колелото, позициите, аспектите и астро портретът — без плащане</small>
+                        <small>Колелото, позициите, аспектите и основното за теб — без плащане</small>
                     </span>
                     <span class="price-amount" id="priceTag">0 €</span>
                 </div>
@@ -708,7 +708,7 @@
             </div>
 
             <div class="card result-card">
-                <h3 class="result-h3">Астро портрет</h3>
+                <h3 class="result-h3">Накратко за теб</h3>
                 <div id="resultPoints" class="prof-grid"></div>
             </div>
 
@@ -801,7 +801,7 @@
         </p>
     </div>
 
-    <script src="/static/ui.js?v=2"></script>
+    <script src="/static/ui.js?v=3"></script>
     <script>
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -1221,7 +1221,7 @@
                     })(),
                 });
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка при запис.');
+                if (!resp.ok) throw new Error(detailText(data.detail));
                 // sign_up/login се пращат от oauth_done (там се знае дали акаунтът е нов).
                 // Избраните модули не бива да се губят по пътя през Google:
                 // картата ще отвори избора с тях отметнати.
@@ -1241,7 +1241,7 @@
                 clearGuestBirth();
                 window.location.href = '/chart/' + data.id + '?token=' + encodeURIComponent(token);
             } catch (e) {
-                uiAlert(e.message, { title: 'Картата не се запази', tone: 'danger' });
+                uiAlert(friendlyError(e), { title: 'Картата не се запази', tone: 'danger' });
             }
         })();
 
@@ -1260,7 +1260,7 @@
             const grid = document.getElementById('offerGrid');
             try {
                 const resp = await fetch('/api/public/catalogue');
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                if (!resp.ok) throw await apiError(resp);
                 const data = await resp.json();
                 catalogue = data.catalogue || [];
                 bundleData = data.bundle || null;
@@ -1280,7 +1280,7 @@
                             <span class="offer-glyph">✦</span>
                             <span class="offer-titles">
                                 <span class="offer-name">${escapeHtml(bundleData.name)}<span class="offer-badge">Промо</span></span>
-                                <span class="offer-note">Всички ${bundleData.keys.length} модула с едно плащане — завинаги</span>
+                                <span class="offer-note">Всички ${bundleData.keys.length} разчитания с едно плащане — завинаги</span>
                             </span>
                             <span class="offer-price">
                                 <span class="offer-strike">${moneyBg(bundleData.full_price_cents, bundleData.currency)}</span>
@@ -1398,7 +1398,7 @@
                         <span class="basket-price">${moneyBg(bundleData.price_cents, bundleData.currency)}</span>
                     </div>`;
                 title.textContent = 'Създай профил и плати';
-                copy.textContent = 'Профилът пази картата и всичките модули. Плащаш веднъж '
+                copy.textContent = 'Акаунтът пази картата и всички разчитания. Плащаш веднъж '
                     + 'и всичко ти остава завинаги.';
                 btn.textContent = 'Към плащането';
                 pickText.textContent = 'Избрано: ' + bundleData.name + ' · ' + moneyBg(bundleData.price_cents, bundleData.currency);
@@ -1463,7 +1463,7 @@
                     'изпълнението да започне сега и потвърждаваш ли, че с това губиш ' +
                     'правото си на 14-дневен отказ по чл. 57, т. 13 от ЗЗП?',
                     { title: 'Съгласие за незабавно изпълнение',
-                      ok: 'Съгласен съм, продължи', cancel: 'Отказ' });
+                      ok: 'Съгласен съм, продължи', cancel: 'Назад' });
                 if (!agreed) return;
             }
 
@@ -1529,14 +1529,14 @@
 
                 if (data.mock_paid && data.mock_paid.length) {
                     // Test build: the modules were granted without a processor.
-                    await uiAlert('Профилът е готов и избраните разчитания са '
+                    await uiAlert('Акаунтът е готов и избраните разчитания са '
                         + 'отключени. Това е тестово плащане — истинско не е направено.',
                         { title: 'Готово (тест)' });
                 } else if (wanted.size && !data.checkout_error) {
                     // Stripe is not configured on this install: the account is
                     // made, the modules are noted, somebody follows up by hand.
-                    await uiAlert('Профилът е готов. Ще се свържем с теб за '
-                        + 'плащането на избраните разчитания.', { title: 'Готово' });
+                    await uiAlert('Акаунтът е готов. Плащанията са временно изключени — '
+                        + 'избраните разчитания те чакат в картата.', { title: 'Готово' });
                 }
                 if (data.chart_url) {
                     window.track('generate_natal_chart');

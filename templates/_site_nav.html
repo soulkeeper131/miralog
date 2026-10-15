@@ -9,12 +9,12 @@
     <a href="/login" class="site-nav-account" data-track="nav_account">Вход</a>
 </nav>
 <script>
-    // Вписаният вижда „Моят профил“ вместо „Вход“.
+    // Вписаният вижда „Моите карти“ вместо „Вход“.
     (function () {
         try {
             if (localStorage.getItem('miralog_token')) {
                 var a = document.querySelector('.site-nav-account');
-                if (a) { a.textContent = 'Моят профил'; a.href = '/dashboard'; }
+                if (a) { a.textContent = 'Моите карти'; a.href = '/dashboard'; }
             }
         } catch (e) { /* private mode */ }
     })();

@@ -330,6 +330,7 @@
 </style>
     <link rel="stylesheet" href="/static/consent.css">
 {% include "_analytics.html" %}
+    <script src="/static/ui.js?v=3"></script>
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -338,7 +339,7 @@
             <img class="logo-img" src="{{ brand().logo }}" alt="{{ brand().name }}">
             <h1>{{ brand().name }}</h1>
         </a>
-        <p class="subtitle">Влез в своя астрологичен профил</p>
+        <p class="subtitle">Влез в акаунта си</p>
 
         <div class="card">
             <div id="error" class="error-msg"></div>
@@ -523,7 +524,7 @@
                     window.location.replace('/dashboard');
                 }
             } catch (err) {
-                errorEl.textContent = err.message;
+                errorEl.textContent = friendlyError(err);
                 errorEl.classList.add('visible');
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Вход';

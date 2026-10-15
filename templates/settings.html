@@ -283,10 +283,10 @@
     <div class="container">
         <div class="page-nav">
             <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница"><img class="page-logo" src="{{ brand().logo }}" alt="{{ brand().name }}"></a>
-            <a href="#" id="backLink" class="back-link">← Табло</a>
+            <a href="#" id="backLink" class="back-link">← Моите карти</a>
         </div>
         <h1>Моят акаунт</h1>
-        <div class="subtitle">Данни за профила и отключените модули</div>
+        <div class="subtitle">Данните ти и отключените разчитания</div>
 
         <div id="banner"></div>
 
@@ -386,8 +386,8 @@
         </div>
     </div>
 
-    <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=7"></script>
+    <script src="/static/ui.js?v=3"></script>
+    <script src="/static/modules.js?v=8"></script>
     <script>
         function updateThemeToggleIcon() {
             const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -467,7 +467,7 @@
                     : 'още никакви — картата и дневният хороскоп са безплатни');
             document.getElementById('planInfo').innerHTML = `
                 <div class="info-row">
-                    <span class="info-label">Отключени модули</span>
+                    <span class="info-label">Отключени разчитания</span>
                     <span class="info-value">${ownedText}</span>
                 </div>
                 <div class="info-row">
@@ -484,7 +484,7 @@
             if (!acc.is_admin) {
                 const pick = document.createElement('button');
                 pick.className = 'btn btn-primary';
-                pick.textContent = 'Разгледай модулите';
+                pick.textContent = 'Разгледай разчитанията';
                 pick.onclick = () => openModulePicker();
                 actions.appendChild(pick);
                 if (!acc.stripe_enabled) {
@@ -531,14 +531,14 @@
                     // гърмеше (consent.js не беше зареден) и вместо „прието“
                     // клиентът виждаше грешка при зареждане на профила.
                 }
-                if (paid === '0') showBanner('Плащането беше отказано.', 'error');
+                if (paid === '0') showBanner('Плащането не беше завършено. Не е удържана сума — можеш да опиташ отново.', 'info');
                 if (new URLSearchParams(location.search).get('subscribe') === '1' && acc.stripe_enabled && (acc.plan || {}).key !== 'full') {
                     const btn = document.querySelector('#billingActions .btn-primary');
                     if (btn) btn.click();
                 }
             } catch (e) {
                 revealSettings();
-                showBanner('Грешка при зареждане на профила: ' + e.message, 'error');
+                showBanner(friendlyErrorHtml(e), 'error');
             }
         }
 
@@ -550,11 +550,11 @@
                     body: JSON.stringify({ digest_opt_in: e.target.checked }),
                 });
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка');
+                if (!resp.ok) throw new Error(detailText(data.detail));
                 showBanner(e.target.checked ? 'Дневният digest е включен.' : 'Дневният digest е изключен.', 'success');
             } catch (err) {
                 e.target.checked = !e.target.checked;
-                showBanner(err.message, 'error');
+                showBanner(friendlyErrorHtml(err), 'error');
             }
         });
 
@@ -594,7 +594,7 @@
                 showBanner('Профилът е запазен.', 'success');
                 loadAccount();
             } catch (err) {
-                showBanner(err.message, 'error');
+                showBanner(friendlyErrorHtml(err), 'error');
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Запази';
@@ -621,13 +621,13 @@
                 });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка при смяна на паролата');
+                if (!resp.ok) throw new Error(detailText(data.detail));
                 // Новата парола прекъсва другите сесии; тази остава с нов токен.
                 storeToken(data.token);
                 document.getElementById('passwordForm').reset();
                 showBanner('Паролата е сменена.', 'success');
             } catch (err) {
-                showBanner(err.message, 'error');
+                showBanner(friendlyErrorHtml(err), 'error');
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Смени паролата';
@@ -639,7 +639,7 @@
                 const resp = await fetch('/api/account/export', { headers: authHeaders() });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка при изтегляне');
+                if (!resp.ok) throw new Error(detailText(data.detail));
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -651,7 +651,7 @@
                 URL.revokeObjectURL(url);
                 showBanner('Данните са изтеглени.', 'success');
             } catch (err) {
-                showBanner(err.message, 'error');
+                showBanner(friendlyErrorHtml(err), 'error');
             }
         });
 
@@ -662,12 +662,12 @@
                 const resp = await fetch('/api/account', { method: 'DELETE', headers: authHeaders() });
                 if (resp.status === 401) { window.location.replace('/login'); return; }
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Грешка при изтриване');
+                if (!resp.ok) throw new Error(detailText(data.detail));
                 localStorage.removeItem('miralog_token');
                 document.cookie = 'miralog_token=; path=/; max-age=0';
                 window.location.replace('/');
             } catch (err) {
-                showBanner(err.message, 'error');
+                showBanner(friendlyErrorHtml(err), 'error');
             }
         });
 
@@ -703,7 +703,7 @@
                             a.href = url; a.download = 'dokument-' + d.number + '.pdf';
                             document.body.appendChild(a); a.click(); a.remove();
                             URL.revokeObjectURL(url);
-                        } catch (e) { showBanner(e.message, 'error'); }
+                        } catch (e) { showBanner(friendlyErrorHtml(e), 'error'); }
                     });
                     row.appendChild(text);
                     row.appendChild(btn);

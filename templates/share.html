@@ -65,6 +65,7 @@
     </style>
 {% include "_analytics.html" %}
 <link rel="stylesheet" href="/static/consent.css">
+    <script src="/static/ui.js?v=3"></script>
 </head>
 <body>
     <div class="wrap">
@@ -77,7 +78,7 @@
             try {
                 const resp = await fetch('/api/share/{{ token }}');
                 const data = await resp.json().catch(() => ({}));
-                if (!resp.ok) throw new Error(data.detail || 'Линкът не е валиден');
+                if (!resp.ok) throw new Error(detailText(data.detail));
                 document.title = (data.title || 'Разчитане') + ' — {{ brand().name }}';
                 root.innerHTML =
                     '<h1>' + escapeHtml(data.title || 'Разчитане') + '</h1>' +
@@ -89,7 +90,7 @@
                         : '<div class="content">' + escapeHtml(data.content || '') + '</div>') +
                     '<div class="cta">{% set _c = primary_cta(None, 'Създай своята карта') %}<a href="{{ _c.href }}" data-cta="share:start">{{ _c.label }}</a></div>';
             } catch (e) {
-                root.innerHTML = '<p class="err">' + escapeHtml(e.message) + '</p>';
+                root.innerHTML = '<p class="err">' + friendlyErrorHtml(e) + '</p>';
             }
         })();
         function escapeHtml(s) {

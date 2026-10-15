@@ -93,7 +93,7 @@ def test_bundle_is_one_line_on_the_stripe_page(app, monkeypatch):
     lines = sent["line_items"]
     assert len(lines) == 1
     assert lines[0]["price_data"]["unit_amount"] == app.BUNDLE_PRICE_CENTS
-    assert "Всички модули (6 разчитания)" in lines[0]["price_data"]["product_data"]["name"]
+    assert "Всички разчитания (6)" in lines[0]["price_data"]["product_data"]["name"]
     assert "Акашови записи" in lines[0]["price_data"]["product_data"]["description"]
     # По metadata се отключва и пишат документите — не се е променила.
     meta = sent["metadata"]

@@ -43,6 +43,7 @@
         a { color: var(--accent); }
         @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
     </style>
+    <script src="/static/ui.js?v=3"></script>
 </head>
 <body>
     {% if totp_challenge %}
@@ -106,7 +107,7 @@
                         finishLogin(data.token, data.email, data.next || '/dashboard');
                     });
                 }).catch(function (err) {
-                    errorEl.textContent = err.message;
+                    errorEl.textContent = friendlyError(err);
                     btn.disabled = false;
                 });
             });
