@@ -186,8 +186,11 @@ def test_account_deletion_needs_the_password(app, user):
     assert r.status_code == 200 and app.get_user_by_id(user["id"]) is None
 
 
-def test_email_confirms_deletion_only_for_provider_accounts(app, user):
+def test_email_confirms_deletion_for_every_account(app, user):
+    """Акаунт от /start без парола не можеше да се изтрие — паролата му е случайна."""
     c = _client(app)
     h = _bearer(app, user)
-    r = c.request("DELETE", "/api/account", headers=h, json={"confirm": user["email"]})
+    r = c.request("DELETE", "/api/account", headers=h, json={"confirm": "drug@example.com"})
     assert r.status_code == 403
+    r = c.request("DELETE", "/api/account", headers=h, json={"confirm": " " + user["email"].upper()})
+    assert r.status_code == 200 and app.get_user_by_id(user["id"]) is None

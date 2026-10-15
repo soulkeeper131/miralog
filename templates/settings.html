@@ -509,7 +509,6 @@
         }
 
         let loadedEmail = '';
-        let oauthLinked = false;
         // Нов токен (след смяна на имейл или парола) — в паметта и в бисквитката,
         // иначе страниците, които четат бисквитката, биха ползвали стария.
         function storeToken(token) {
@@ -526,7 +525,6 @@
                 document.getElementById('displayName').value = acc.display_name || '';
                 document.getElementById('accountEmail').value = acc.email || '';
                 loadedEmail = (acc.email || '').trim().toLowerCase();
-                oauthLinked = !!acc.oauth_linked;
                 renderPlan(acc);
                 if (acc.is_admin) {
                     document.getElementById('adminSection').hidden = false;
@@ -673,12 +671,11 @@
                 'Губиш и платените разчитания, и документите си. Действието е необратимо.',
                 { title: 'Да изтрия ли акаунта?', ok: 'Продължи', danger: true });
             if (!ok) return;
-            // Парола (или имейлът, ако акаунтът се ползва през Google/Facebook):
-            // отворена сесия сама не бива да стига за изтриване.
-            const confirmValue = await uiPrompt(oauthLinked
-                ? 'Въведи паролата си или, ако влизаш с Google или Facebook, имейла на акаунта.'
-                : 'За да изтрием акаунта, въведи паролата си.', {
-                title: 'Потвърди изтриването', type: oauthLinked ? 'text' : 'password',
+            // Имейлът на акаунта (или паролата): отворена сесия сама не стига,
+            // а акаунтите от /start нямат парола, която човекът знае.
+            const confirmValue = await uiPrompt(
+                'За да потвърдиш, въведи имейла на акаунта (или паролата си).', {
+                title: 'Потвърди изтриването', type: 'text',
                 ok: 'Изтрий акаунта' });
             if (confirmValue === null) return;
             try {

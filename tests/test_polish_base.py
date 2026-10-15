@@ -136,3 +136,31 @@ def test_every_script_parses():
             if r.returncode:
                 bad.append(f"{path.name} #{i}: {r.stderr.strip().splitlines()[:4]}")
     assert not bad, "\n".join(bad)
+
+
+# --- от прегледа на сървъра -----------------------------------------------------
+
+def test_stale_ai_job_does_not_write_after_birth_data_change(db):
+    app = db
+    """Разчитане, тръгнало по старите данни, не бива да влезе в кеша след поправката им."""
+    import time
+    pid = 999001
+    token = app._AI_JOB_STARTED.set(time.monotonic())
+    try:
+        app.clear_ai_cache(pid)                       # поправка на данните по време на задачата
+        app.set_ai_cache(pid, "profile", "стар текст")
+        assert app.get_ai_cache(pid, "profile") is None
+    finally:
+        app._AI_JOB_STARTED.reset(token)
+    app.set_ai_cache(pid, "profile", "нов текст")     # нова задача / извън задача — пише
+    assert app.get_ai_cache(pid, "profile")["content"] == "нов текст"
+
+
+def test_birth_on_new_years_day_in_new_zealand_is_not_in_the_future(app):
+    import datetime
+    from zoneinfo import ZoneInfo
+    today_nz = datetime.datetime.now(ZoneInfo("Pacific/Auckland")).date()
+    app.validate_birth(today_nz.year, today_nz.month, today_nz.day, 0, 5, -36.85, 174.76,
+                       "Pacific/Auckland")
+    with pytest.raises(HTTPException):
+        app.validate_birth(datetime.date.today().year + 2, 1, 1, 0, 0, 42.69, 23.32, "Europe/Sofia")

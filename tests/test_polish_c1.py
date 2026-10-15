@@ -64,8 +64,11 @@ def test_symmetric_flag_only_for_one_persons_chart(app):
             2: {1: _fake_aspect("Trine", "Moon", "Sun", "01°00'00\"")}}
     assert len(app.serialize_aspects(both)) == 2
     assert len(app.serialize_aspects(both, symmetric=True)) == 1
-    dup = {1: {2: _fake_aspect("Trine", "Sun", "Moon", "01°00'00\"")}, 3: {4: _fake_aspect("Trine", "Sun", "Moon", "01°00'00\"")}}
-    assert len(app.serialize_aspects(dup)) == 1
+    # Транзитите не се пипат: две посоки с еднакви имена са два различни аспекта
+    # (транзитна Луна – натален Юпитер и транзитен Юпитер – натална Луна).
+    same_names = {1: {2: _fake_aspect("Opposition", "Moon", "Jupiter", "00°01'48\"")},
+                  3: {4: _fake_aspect("Opposition", "Moon", "Jupiter", "00°09'00\"")}}
+    assert len(app.serialize_aspects(same_names)) == 2
 
 
 def test_profile_key_aspects_use_the_real_deviation(app):

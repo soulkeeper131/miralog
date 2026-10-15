@@ -1748,10 +1748,12 @@ def validate_birth(year, month, day, hour, minute, lat, lon, timezone) -> None:
         raise HTTPException(400, "Невалидна дата на раждане — провери деня и месеца.")
     # Горната граница е днешната година, не 2200: сгрешената година (2099
     # вместо 1990) досега даваше карта без никакъв сигнал.
+    # Тук е грубата граница (+1: на 31.12 вечер по UTC в Нова Зеландия вече е 1.01);
+    # точната — „не след днес“ по часовата зона на мястото — е по-долу.
     today_year = datetime.date.today().year
-    if not 1800 <= int(year) <= today_year:
-        if int(year) > today_year:
-            raise HTTPException(400, FUTURE_BIRTH_MSG)
+    if int(year) > today_year + 1:
+        raise HTTPException(400, FUTURE_BIRTH_MSG)
+    if int(year) < 1800:
         raise HTTPException(400, f"Годината на раждане трябва да е между 1800 и {today_year}.")
     try:
         hour_i, minute_i = int(hour or 0), int(minute or 0)
@@ -2448,7 +2450,29 @@ def get_ai_cache(person_id: int, cache_key: str) -> Optional[dict]:
         # в кеша завинаги и платеното разчитане оставаше „не се получи“.
         return {"content": row[0], "generated_at": row[1]} if row and (row[0] or "").strip() else None
 
+# Кога за последно са сменени рождените данни на човек (clear_ai_cache), и кога е
+# тръгнала текущата фонова AI задача. Задача, тръгнала преди смяната, пише текст
+# по старите данни — той не бива да влезе в кеша след чистенето (иначе остава
+# завинаги, а страницата казва „разчитанията се пишат наново“).
+_AI_CACHE_RESET: dict = {}
+_AI_JOB_STARTED: "contextvars.ContextVar[Optional[float]]" = contextvars.ContextVar(
+    "ai_job_started", default=None)
+
+
+def _written_by_stale_job(person_id: int, cache_key: str) -> bool:
+    started = _AI_JOB_STARTED.get()
+    if started is None:
+        return False
+    ids = {int(person_id)}
+    if cache_key.startswith("synastry:"):
+        ids.update(int(x) for x in cache_key.split(":")[1:3] if x.isdigit())
+    return any(_AI_CACHE_RESET.get(i, 0) > started for i in ids)
+
+
 def set_ai_cache(person_id: int, cache_key: str, content: str) -> None:
+    if _written_by_stale_job(person_id, cache_key):
+        log.info("AI %s за човек %s е по старите рождени данни — не се записва", cache_key, person_id)
+        return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO ai_cache (person_id, cache_key, content, generated_at) "
@@ -2465,6 +2489,7 @@ def clear_ai_cache(person_id: int) -> None:
     другия също трябва да отпадне (ключът е synastry:<по-малкия>:<по-големия>).
     """
     pid = int(person_id)
+    _AI_CACHE_RESET[pid] = time.monotonic()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM ai_cache WHERE person_id = ?", (pid,))
         conn.execute("DELETE FROM ai_cache WHERE cache_key LIKE ? OR cache_key LIKE ?",
@@ -2659,10 +2684,14 @@ def serialize_aspects(aspects: dict, symmetric: bool = False) -> list:
             aspect_type = aspect.type if isinstance(aspect.type, str) else aspect.type.name
             active = aspect._active_name if hasattr(aspect, '_active_name') else str(aspect.active)
             passive = aspect._passive_name if hasattr(aspect, '_passive_name') else str(aspect.passive)
-            key = (frozenset((active, passive)) if symmetric else (active, passive), aspect_type)
-            if key in seen:
-                continue
-            seen.add(key)
+            # Само в една карта: immanuel пази „Слънце–Луна“ и „Луна–Слънце“ поотделно.
+            # При транзити имената на двете посоки съвпадат („транзитна Луна –
+            # натален Юпитер“ и обратно), а са различни аспекти — там не махаме нищо.
+            if symmetric:
+                key = (frozenset((active, passive)), aspect_type)
+                if key in seen:
+                    continue
+                seen.add(key)
             result.append({
                 "type": aspect_type,
                 "type_bg": tr_aspect(aspect_type),
@@ -8665,11 +8694,12 @@ def api_delete_account(data: Optional[AccountDelete] = None,
         raise HTTPException(403, "Администраторският акаунт не може да се изтрие от тук.")
     confirm = ((data.confirm if data else None) or "").strip()
     by_password = bool(confirm) and verify_password(confirm, row.get("password_hash") or "")
-    by_email = (bool(confirm) and _has_oauth_link(user_id)
-                and confirm.lower() == (row.get("email") or "").strip().lower())
+    # Имейлът стига за всеки: акаунтите от /start нямат парола, която човекът
+    # знае, а правото на изтриване (чл. 17) не бива да зависи от нея.
+    by_email = bool(confirm) and confirm.lower() == (row.get("email") or "").strip().lower()
     if not (by_password or by_email):
-        raise HTTPException(403, "За изтриване на акаунта въведи паролата си. "
-                                 "Ако влизаш с Google или Facebook — имейла на акаунта.")
+        raise HTTPException(403, "За да потвърдиш изтриването, въведи имейла на акаунта "
+                                 "(или паролата си).")
 
     # Най-напред спираме евентуален активен абонамент в Stripe, за да не
     # продължи таксуването след изтриването (best-effort, никога не блокира).
@@ -10351,6 +10381,7 @@ def ai_job(cache_key: str, fn):
 
     def _work():
         started = time.monotonic()
+        _AI_JOB_STARTED.set(started)
         try:
             with _AI_JOB_SLOTS:
                 fn()
