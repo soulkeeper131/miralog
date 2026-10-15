@@ -97,6 +97,10 @@
         .hub-picker a:hover { border-color: var(--accent); }
         .hub-picker span { color: var(--gilt); }
         .hub-personal { margin-bottom: 8px; }
+        .hub-personal .btn-primary { min-height: 58px; font-size: 1.05rem; padding-inline: 26px;
+            box-shadow: 0 0 0 6px rgba(124, 58, 237, .12), 0 14px 32px rgba(124, 58, 237, .4); }
+        .hub-free { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #e8c56b;
+            color: #2a1650; font-size: .72rem; font-weight: 800; vertical-align: middle; }
     </style>
 </head>
 <body>
@@ -123,7 +127,7 @@
             </nav>
             {% set _pc = primary_cta('horoscope', 'Твоят личен хороскоп') %}
             <div class="cta-row hub-personal">
-                <a class="btn btn-primary" href="{{ _pc.href if _pc.logged_in else '/start?from=horoscope' }}" data-cta="horoscope_index:personal">{% if _pc.logged_in %}Отвори личния си хороскоп →{% else %}Твоят личен хороскоп по картата ти{% endif %}</a>
+                <a class="btn btn-primary" href="{{ _pc.href if _pc.logged_in else '/start?from=horoscope' }}" data-cta="horoscope_index:personal">{% if _pc.logged_in %}Отвори личния си хороскоп →{% else %}☽ Личен хороскоп <span class="hub-free">безплатно</span>{% endif %}</a>
             </div>
             {% if not _pc.logged_in %}<p class="cta-note">Безплатно — по датата, часа и мястото ти на раждане, а не само по зодията.</p>{% endif %}
         </div>
@@ -171,6 +175,7 @@
                 {% endfor %}
             </div>
             <p style="margin-top: 18px; text-align: center; font-size: 0.82rem; color: var(--text-dim);">С информативна и развлекателна цел — не е медицински или финансов съвет.</p>
+            {% if bundle %}{% with bundle_cta = 'horoscope_index:bundle' %}{% include "_bundle_card.html" %}{% endwith %}{% endif %}
         </div>
     </section>
 

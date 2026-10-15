@@ -12592,10 +12592,13 @@ def section_offers_html(html: str, viewer: dict) -> str:
             cta = cta_for(viewer, key)
             note = ("" if viewer.get("logged_in") else
                     '<p class="horo-offer-note">Първо безплатната ти карта — отнема минута.</p>')
+            glyph = next((f.get("glyph", "✦") for f in FEATURE_CATALOGUE if f["key"] == key), "✦")
             card = (f'<aside class="horo-offer" data-offer="{key}">'
+                    f'<div class="ho-icon" aria-hidden="true">{glyph}</div><div class="ho-body">'
+                    f'<span class="ho-kicker">Лично разчитане</span>'
                     f'<p class="horo-offer-q">{question}</p><p class="horo-offer-t">{text}</p>'
                     f'<a class="horo-offer-btn" href="{cta["href"]}" data-cta="horoscope_sign:offer_{key}">'
-                    f'{label} · {prices[key]} →</a>{note}</aside>')
+                    f'<span>{label}</span><span class="ho-price">{prices[key]}</span></a>{note}</div></aside>')
             end_of_section = heads[i + 1][0] if i + 1 < len(heads) else len(html)
             inserts.append((end_of_section, card))
             break
@@ -12688,6 +12691,8 @@ async def horoskop_hub(request: Request):
         "date_iso": date_iso,
         "sky": daily_sky(),
         "faq": _SIGN_FAQ,
+        # Пакетът и тук — /horoskop е входът с най-много хора от Google.
+        "bundle": sign_page_bundle(viewer_info(request)),
     })
     return HTMLResponse(templates.get_template("horoscope_index.html").render(ctx))
 

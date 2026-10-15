@@ -1,0 +1,35 @@
+{# Пакетът като истинска оферта: тъмна карта, златна цена, спестеното.
+   Нужни: bundle (landing_pricing()["bundle"]), bundle_cta (име за отчета). #}
+<style>
+    .bundle-card { position: relative; max-width: 760px; margin: 26px auto 0; padding: 26px 22px 22px; border-radius: 20px;
+        background: radial-gradient(120% 140% at 0% 0%, #6d3fd0 0%, #3a1a78 45%, #1d0f45 100%);
+        color: #f3eefe; box-shadow: 0 18px 40px rgba(58, 26, 120, .35), inset 0 0 0 1px rgba(232, 197, 107, .35);
+        overflow: hidden; text-align: left; }
+    .bundle-card::after { content: ""; position: absolute; right: -60px; top: -60px; width: 200px; height: 200px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(232, 197, 107, .28), transparent 70%); pointer-events: none; }
+    .bc-ribbon { display: inline-block; margin-bottom: 12px; padding: 4px 12px; border-radius: 999px; background: #e8c56b;
+        color: #2a1650; font-size: .78rem; font-weight: 700; letter-spacing: .02em; }
+    .bundle-card h3 { font-family: var(--font-display); font-size: clamp(1.25rem, 4.6vw, 1.55rem); line-height: 1.2;
+        color: #fff; margin: 0 0 6px; }
+    .bundle-card p { margin: 0 0 14px; color: rgba(243, 238, 254, .82); font-size: .94rem; line-height: 1.55; }
+    .bc-glyphs { display: flex; gap: 8px; margin: 0 0 16px; flex-wrap: wrap; }
+    .bc-glyphs span { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+        background: rgba(255, 255, 255, .1); border: 1px solid rgba(232, 197, 107, .45); color: #e8c56b; font-size: .95rem; }
+    .bc-price { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .bc-price .now { font-size: 2rem; font-weight: 800; color: #e8c56b; line-height: 1; }
+    .bc-price s { color: rgba(243, 238, 254, .6); font-size: 1rem; }
+    .bc-price .once { font-size: .82rem; color: rgba(243, 238, 254, .75); }
+    .bc-btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; border-radius: 14px;
+        background: linear-gradient(135deg, #f2d98f, #e8c56b 55%, #d4a945); color: #2a1650; font-weight: 800; font-size: 1.02rem;
+        text-decoration: none; box-shadow: 0 8px 22px rgba(232, 197, 107, .35); transition: transform .15s ease, box-shadow .15s ease; }
+    .bc-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(232, 197, 107, .45); }
+    @media (min-width: 640px) { .bc-btn { display: inline-flex; padding: 0 30px; } }
+</style>
+<div class="bundle-card">
+    <span class="bc-ribbon">Спестяваш {{ bundle.saving }}</span>
+    <h3>Всички {{ bundle.count }} разчитания за картата ти</h3>
+    <p>Профил, любов, хороскоп за период, нумерология, акашови записи и лунен календар — написани по твоята карта.</p>
+    <div class="bc-glyphs" aria-hidden="true"><span>☉</span><span>♀</span><span>♃</span><span>7</span><span>☊</span><span>◐</span></div>
+    <div class="bc-price"><span class="now">{{ bundle.price }}</span><s>{{ bundle.full_price }}</s><span class="once">еднократно · остават ти завинаги</span></div>
+    <a class="bc-btn" href="{{ primary_cta('bundle').href }}" data-cta="{{ bundle_cta }}">Вземи всички разчитания →</a>
+</div>

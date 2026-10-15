@@ -173,4 +173,4 @@ def test_horoscope_pages_have_the_sticky_bar_and_picker():
     hub = (root / "horoscope_index.html").read_text(encoding="utf-8")
     assert '_horo_sticky.html' in sign and '_horo_sticky.html' in hub
     assert 'class="hub-picker"' in hub and 'horoscope_index:personal' in hub
-    assert 'class="bundle-card"' in sign
+    assert '_bundle_card.html' in sign and '_bundle_card.html' in hub

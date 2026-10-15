@@ -11,6 +11,13 @@
     .horo-sticky a { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 48px;
         border-radius: 12px; background: linear-gradient(135deg, var(--accent-light), var(--accent)); color: #fff;
         font-weight: 600; text-decoration: none; font-size: .98rem; text-align: center; padding: 0 10px; }
+    /* Лек отблясък по бутона на всеки няколко секунди — привлича окото, без да мига. */
+    .horo-sticky a { position: relative; overflow: hidden; box-shadow: 0 8px 22px rgba(124, 58, 237, .4); }
+    .horo-sticky a::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .35), transparent);
+        animation: horo-shine 4.5s ease-in-out 1s infinite; }
+    @keyframes horo-shine { 0%, 70% { left: -60%; } 100% { left: 130%; } }
+    @media (prefers-reduced-motion: reduce) { .horo-sticky a::after { animation: none; display: none; } }
     .horo-sticky button { flex: 0 0 44px; height: 44px; border: 0; background: none; color: var(--text-muted);
         font-size: 1.1rem; cursor: pointer; }
     @media (min-width: 761px) { .horo-sticky { display: none !important; } }
