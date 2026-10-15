@@ -63,23 +63,20 @@
 }
 
 @media (max-width: 600px) {
-    /* A storage notice should not cost a fifth of the screen. Keeping the
-       button beside the text rather than under it, and trimming the padding,
-       holds the bar to roughly two lines — small enough that the page needs
-       only a modest amount of room made for it. */
+    /* Банерът е тънка лента долу, не 40% от екрана: кратък текст на 1–2 реда
+       и двата бутона един до друг на цяла ширина — ясни и лесни за натискане.
+       Пълното обяснение е на „Подробности“ (.consent-more се скрива).
+       Лентата е закачена, не променя оформлението — иначе скача страницата. */
     .consent {
-        bottom: max(10px, env(safe-area-inset-bottom));
-        gap: 10px; padding: 11px 13px; border-radius: 12px;
+        left: 8px; right: 8px;
+        bottom: max(8px, env(safe-area-inset-bottom));
+        flex-direction: column; align-items: stretch; flex-wrap: nowrap;
+        gap: 8px; padding: 10px 12px; border-radius: 12px;
     }
-    .consent-text { flex: 1 1 auto; font-size: .76rem; line-height: 1.45; }
-    .consent-actions { gap: 6px; }
-    .consent-ok { padding: 9px 16px; font-size: .78rem; }
-    .consent-no { padding: 9px 12px; font-size: .78rem; }
-    /* The script sets this class while the notice is on screen. A :has()
-       selector would be neater but is not safe on every phone browser.
-       The notice is a fixed overlay — it must NOT change layout (padding on
-       body/hero causes CLS), so it simply floats above the footer until
-       dismissed. */
+    .consent-text { flex: 0 0 auto; font-size: .78rem; line-height: 1.4; }
+    .consent-more { display: none; }
+    .consent-actions { gap: 8px; }
+    .consent-actions button { flex: 1 1 0; min-height: 44px; padding: 8px 12px; font-size: .88rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

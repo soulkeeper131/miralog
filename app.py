@@ -596,6 +596,10 @@ def init_db():
             # Празно = още не е показвано. Пази се на сървъра, за да не се
             # връща на друго устройство.
             ("onboarded_at", "ALTER TABLE users ADD COLUMN onboarded_at TIMESTAMP"),
+            # Изгледът на акаунта: „easy“ (само най-важното) или „pro“ (планети,
+            # аспекти, градуси). Пази се на сървъра, за да следва човека и на
+            # друго устройство; по подразбиране всички са на лесния.
+            ("ui_mode", "ALTER TABLE users ADD COLUMN ui_mode TEXT NOT NULL DEFAULT 'easy'"),
         ]:
             if col not in user_cols:
                 conn.execute(ddl)
@@ -977,10 +981,11 @@ async def lifespan(app: FastAPI):
 
     job_task = asyncio.create_task(_background_jobs_loop())
     warm_task = asyncio.create_task(_horoscope_warm_loop())
+    prewarm_task = asyncio.create_task(_horoscope_prewarm_loop())
     try:
         yield
     finally:
-        for task in (job_task, warm_task):
+        for task in (job_task, warm_task, prewarm_task):
             task.cancel()
             try:
                 await task
@@ -7631,6 +7636,64 @@ def password_reset_valid(token: str) -> bool:
         return False
 
 
+def main_person(user_id: int) -> Optional[dict]:
+    """Човекът на акаунта — най-старата му карта (най-малкият id).
+
+    `get_all_persons` е по азбука: щом добавеш „Анна“ след „Мария“, дневното
+    писмо и предварителното писане сменяха човека. Първата карта е тази, която
+    е създаден акаунтът за нея."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM persons WHERE user_id = ? ORDER BY id LIMIT 1",
+                           (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def person_now(person: dict, now: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """Сега по часовата зона на човека — по нея е ключът на дневния хороскоп."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    try:
+        return now.astimezone(ZoneInfo(person.get("timezone") or "Europe/Sofia"))
+    except Exception:
+        return now.astimezone(ZoneInfo("Europe/Sofia"))
+
+
+def _digest_summary_line(summary: Optional[dict]) -> str:
+    """Едно изречение от резюмето на деня: настроение и фокус."""
+    if not isinstance(summary, dict):
+        return ""
+    mood = str(summary.get("mood") or "").strip().rstrip(".")
+    focus = str(summary.get("focus") or "").strip().rstrip(".")
+    parts = []
+    if mood:
+        parts.append(f"настроение — {mood[:1].lower() + mood[1:]}")
+    if focus:
+        parts.append(f"фокус — {focus[:1].lower() + focus[1:]}")
+    return f"Днес: {', '.join(parts)}." if parts else ""
+
+
+def _day_essence(prose: str) -> str:
+    """Текстът на раздела „Есенцията на деня“ (последният, 1–2 изречения)."""
+    lines = (prose or "").splitlines()
+    title = "Есенцията на деня"
+    for i, raw in enumerate(lines):
+        pos = raw.find(title)
+        if pos < 0:
+            continue
+        chunk = [re.sub(r"^[\s*:_—–\-]+", "", raw[pos + len(title):])]
+        for nxt in lines[i + 1:]:
+            if re.match(r"^\s*(#|\d+[.)]\s)", nxt):
+                break
+            chunk.append(nxt)
+        text = re.sub(r"[*#`_>]", "", " ".join(c.strip() for c in chunk))
+        text = re.sub(r"\s+", " ", text).strip()
+        if text:
+            return text if len(text) <= 420 else _first_sentences(text, 2, 420)
+    return ""
+
+
 def run_digest_emails(now: Optional[datetime.datetime] = None) -> None:
     """Opt-in daily nudge. Uses cached horoscope text when available; never calls AI.
 
@@ -7652,27 +7715,25 @@ def run_digest_emails(now: Optional[datetime.datetime] = None) -> None:
             continue
         if "horoscope" not in unlocked_features(u):
             continue
-        persons = get_all_persons(u["id"])
-        if not persons:
+        person = main_person(u["id"])
+        if not person:
             continue
-        person = persons[0]
         # Ключът на хороскопа е по часовата зона на човека.
-        try:
-            person_today = datetime.datetime.now(
-                ZoneInfo(person.get("timezone") or "Europe/Sofia")).date().isoformat()
-        except Exception:
-            person_today = today
-        cache_key = f"horoscope:{person_today}"
-        cached = get_ai_cache(person["id"], cache_key)
+        person_day = person_now(person, now).date().isoformat()
+        cached = get_ai_cache(person["id"], f"horoscope:{person_day}")
         name = u.get("display_name") or ""
-        chart_link = f"{base}/chart/{person['id']}"
+        # #horoscope отваря направо таба с хороскопа, не колелото.
+        chart_link = f"{base}/chart/{person['id']}#horoscope"
         if cached and cached.get("content"):
-            _, prose = split_summary(cached["content"])
-            excerpt = (prose or cached["content"]).strip()
-            if len(excerpt) > 900:
-                excerpt = excerpt[:900].rsplit(" ", 1)[0] + "…"
-            reading = (f"Дневното разчитане за {person['name']}:\n\n{excerpt}\n\n"
-                       f"Пълният текст: {chart_link}")
+            summary, prose = split_summary(cached["content"])
+            lines = [f"Дневното разчитане за {person['name']}:"]
+            mood_line = _digest_summary_line(summary)
+            if mood_line:
+                lines.append(mood_line)
+            essence = _day_essence(prose) or _first_sentences(prose or cached["content"], 2, 300)
+            if essence:
+                lines.append(f"Есенцията на деня: {essence}")
+            reading = "\n\n".join(lines) + f"\n\nЦелият хороскоп: {chart_link}"
         else:
             reading = (f"Дневният хороскоп за {person['name']} те чака в "
                        f"{brand_name()}:\n{chart_link}")
@@ -8353,6 +8414,31 @@ def api_account_digest(data: DigestUpdate, user: Tuple[int, str] = Depends(get_c
         conn.commit()
     return {"ok": True, "digest_opt_in": bool(data.digest_opt_in)}
 
+UI_MODES = ("easy", "pro")
+
+
+def ui_mode_of(row: Optional[dict]) -> str:
+    """Изгледът на акаунта; всичко непознато се чете като лесния."""
+    mode = (row or {}).get("ui_mode")
+    return mode if mode in UI_MODES else "easy"
+
+
+class UiModeUpdate(BaseModel):
+    mode: str
+
+
+@app.post("/api/account/ui-mode")
+def api_account_ui_mode(data: UiModeUpdate, user: Tuple[int, str] = Depends(get_current_user)):
+    """„Лесно“ или „За напреднали“ — какво показват картата и останалите страници."""
+    mode = data.mode
+    if mode not in UI_MODES:
+        raise HTTPException(400, "Изгледът е „Лесно“ или „За напреднали“.")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("UPDATE users SET ui_mode = ? WHERE id = ?", (mode, user[0]))
+        conn.commit()
+    return {"ok": True, "ui_mode": mode}
+
+
 @app.get("/api/account/onboarding")
 def api_onboarding_state(user: Tuple[int, str] = Depends(get_current_user)):
     """Дали въвеждането в картата вече е показвано на този акаунт.
@@ -8522,6 +8608,7 @@ def api_get_account(user: Tuple[int, str] = Depends(get_current_user)):
             if not f.get("included") and f["key"] in set(purchased_features(user_id))
         ],
         "digest_opt_in": bool(row.get("digest_opt_in")),
+        "ui_mode": ui_mode_of(row),
         "stripe_enabled": billing.stripe_enabled(),
         # Остава ли какво да се купи — иначе „Разгледай разчитанията“ води
         # до празен списък.
@@ -12371,6 +12458,111 @@ async def _horoscope_warm_loop():
         except Exception:
             log.exception("Генерирането на хороскопите по зодия не тръгна")
         await asyncio.sleep(HOROSCOPE_WARM_EVERY)
+
+
+# --- Личният дневен хороскоп се пише предварително --------------------------------
+# Досега текстът започваше да се пише чак когато човекът отвори картата, и той
+# гледаше въртящо се колело — най-лошото при най-честата причина да се върне.
+# Сега за хората, които наистина ползват сайта, хороскопът е готов от сутринта.
+HOROSCOPE_PREWARM_MAX = max(0, int(os.environ.get("HOROSCOPE_PREWARM_MAX", "100") or 0))
+HOROSCOPE_PREWARM_FROM_HOUR = 5      # по часовника на самия човек
+HOROSCOPE_PREWARM_ACTIVE_DAYS = 7    # „активен“: влязъл или отварял сайта скоро
+HOROSCOPE_PREWARM_EVERY = 3600       # секунди
+# Най-много толкова наведнъж: другите слотове остават за хората, които чакат
+# разчитане в момента (AI_JOB_CONCURRENCY е общ за целия сайт).
+HOROSCOPE_PREWARM_BATCH = max(1, AI_JOB_CONCURRENCY // 2)
+HOROSCOPE_PREWARM_BUDGET = 2400      # сек.: след това остатъкът чака следващия час
+
+
+def _prewarm_candidates(now: datetime.datetime) -> list:
+    """Акаунти, чийто хороскоп си заслужава да е готов: с писмо по имейл или
+    с вход/отваряне през последните дни."""
+    cutoff = (now - datetime.timedelta(days=HOROSCOPE_PREWARM_ACTIVE_DAYS)).date().isoformat()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        # last_seen е „2026-10-15T08:12:00“, last_login — „2026-10-15 08:12:00“:
+        # сравняваме само датата, за да няма значение разделителят.
+        return [dict(r) for r in conn.execute(
+            "SELECT id, email, role, plan_key, plan_expires FROM users"
+            " WHERE is_blocked = 0 AND (digest_opt_in = 1"
+            "   OR substr(COALESCE(last_seen, ''), 1, 10) >= ?"
+            "   OR substr(COALESCE(last_login, ''), 1, 10) >= ?)"
+            " ORDER BY last_seen IS NULL, last_seen DESC, id", (cutoff, cutoff))]
+
+
+def run_horoscope_prewarm(now: Optional[datetime.datetime] = None) -> int:
+    """Пуска писането на днешния личен хороскоп за допустимите акаунти.
+
+    Само най-старата карта на акаунта (както в дневното писмо), само ако
+    модулът е отключен и след 5:00 по часовника на човека. Минава през
+    `api_daily_horoscope` — същият ключ в кеша, същата задача и същият модел
+    (Pro за платилите) като при отваряне на картата, така че нищо не се пише
+    два пъти. Таванът е на ден (по София) и се пази в базата, за да не се
+    удвоява при рестарт. Връща колко генерирания са пуснати."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    ai_key, _ = get_ai_config()
+    if not ai_key or HOROSCOPE_PREWARM_MAX <= 0:
+        return 0
+    day = now.astimezone(ZoneInfo("Europe/Sofia")).date().isoformat()
+    counter = f"prewarm:{day}"
+    used = int(get_setting(counter) or 0)
+    started, pending, deadline = 0, [], time.monotonic() + HOROSCOPE_PREWARM_BUDGET
+
+    def _settle():
+        for job in pending:
+            job["done"].wait(max(1.0, deadline - time.monotonic()))
+        pending.clear()
+
+    for u in _prewarm_candidates(now):
+        if used + started >= HOROSCOPE_PREWARM_MAX or time.monotonic() > deadline:
+            break
+        try:
+            if "horoscope" not in unlocked_features(u):
+                continue
+            person = main_person(u["id"])
+            if not person:
+                continue
+            local = person_now(person, now)
+            if local.hour < HOROSCOPE_PREWARM_FROM_HOUR:
+                continue
+            day_iso = local.date().isoformat()
+            if get_ai_cache(person["id"], f"horoscope:{day_iso}"):
+                continue
+            job_key = f"horoscope:{person['id']}:{day_iso}"
+            with _AI_JOBS_LOCK:
+                running = _AI_JOBS.get(job_key)
+            # Тече вече, или току-що се е провалило — не го пипаме.
+            if (running and not running["done"].is_set()) or ai_job_failed_recently(running):
+                continue
+            if len(pending) >= HOROSCOPE_PREWARM_BATCH:
+                _settle()
+            api_daily_horoscope(person["id"], False, (u["id"], u["email"]))
+            with _AI_JOBS_LOCK:
+                job = _AI_JOBS.get(job_key)
+            if job:
+                pending.append(job)
+            started += 1
+            set_setting(counter, str(used + started))
+        except Exception:
+            log.warning("Предварителният хороскоп за акаунт %s не тръгна", u.get("id"), exc_info=True)
+    _settle()
+    return started
+
+
+async def _horoscope_prewarm_loop():
+    """Всеки час: личните хороскопи на активните акаунти (виж run_horoscope_prewarm)."""
+    await asyncio.sleep(90)
+    while True:
+        try:
+            started = await asyncio.to_thread(run_horoscope_prewarm)
+            if started:
+                log.info("Лични хороскопи: предварително пуснати %d (таван %d на ден)",
+                         started, HOROSCOPE_PREWARM_MAX)
+        except Exception:
+            log.exception("Предварителното писане на личните хороскопи не тръгна")
+        await asyncio.sleep(HOROSCOPE_PREWARM_EVERY)
 
 
 @app.get("/api/horoskop/warm")

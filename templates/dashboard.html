@@ -580,7 +580,7 @@
             font-size: .85rem; color: var(--text-muted); cursor: pointer; }
         .time-unknown-row input { min-width: 16px; min-height: 16px; accent-color: var(--accent); }
 </style>
-    <link rel="stylesheet" href="/static/consent.css">
+    <link rel="stylesheet" href="/static/consent.css?v=5">
 {% include "_analytics.html" %}
 </head>
 <body>
@@ -784,11 +784,13 @@
         // The admin link only appears for accounts that actually hold the role.
         (async function revealAdminLink() {
             try {
-                const resp = await fetch('/api/auth/me', { headers: authHeaders() });
+                const resp = await fetch('/api/account', { headers: authHeaders() });
                 if (!resp.ok) return;
                 const me = await resp.json();
                 accountName = (me.display_name || '').trim();
                 renderGreeting();
+                // Изгледът следва акаунта и на ново устройство — картата го чете оттук.
+                try { localStorage.setItem('miralog_mode', me.ui_mode === 'pro' ? 'pro' : 'easy'); } catch (e) { /* private mode */ }
                 if (me.is_admin) {
                     // Админ панелът е на отделен поддомейн, а localStorage е per-origin,
                     // затова токенът се подава през ?token= (admin.html го чете от URL).
@@ -895,7 +897,7 @@
                                 <a href="/chart/${p.id}#horoscope" class="btn btn-cancel btn-today"
                                    data-cta="dashboard:today" onclick="rememberPerson(${p.id})"
                                    aria-label="Хороскоп за днес — ${name}">☽ Хороскоп за днес</a>
-                                <a href="/chart/${p.id}" class="btn btn-primary" data-cta="dashboard:chart"
+                                <a href="/chart/${p.id}#wheel" class="btn btn-primary" data-cta="dashboard:chart"
                                    onclick="rememberPerson(${p.id})" aria-label="Карта — ${name}">Карта</a>
                                 <div class="person-menu">
                                     <button type="button" class="btn btn-cancel btn-icon" aria-haspopup="true"
@@ -1323,6 +1325,6 @@
             fetchPersons();
         }
     </script>
-    <script src="/static/consent.js?v=6"></script>
+    <script src="/static/consent.js?v=7"></script>
 </body>
 </html>

@@ -279,9 +279,29 @@
             font-size: 0.95rem; font-weight: 500;
         }
         .admin-link:hover { background: var(--accent-hover); }
+
+        /* Изглед: два големи избора, цяла плочка е бутон (по-лесно с палец) */
+        .mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .mode-option {
+            display: flex; align-items: flex-start; gap: 12px; cursor: pointer;
+            padding: 14px 16px; min-height: 44px; border-radius: 10px;
+            border: 1px solid var(--border); background: var(--bg-card);
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .mode-option:hover { border-color: var(--accent-light); }
+        .mode-option:has(input:checked) {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+        }
+        .mode-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .mode-option input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+        .mode-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .mode-name { color: var(--text-heading); font-weight: 600; font-size: 1rem; }
+        .mode-desc { color: var(--text-muted); font-size: 0.85rem; line-height: 1.5; }
+        @media (max-width: 560px) { .mode-choice { grid-template-columns: 1fr; } }
     </style>
 {% include "_analytics.html" %}
-    <link rel="stylesheet" href="/static/consent.css">
+    <link rel="stylesheet" href="/static/consent.css?v=5">
 </head>
 <body>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
@@ -322,6 +342,38 @@
             </div>
 
             <div class="section">
+                <h2>Дневният хороскоп на имейла</h2>
+                <div class="desc">
+                    Всяка сутрин ти пращаме кратко писмо с днешния ти хороскоп — настроението
+                    на деня, есенцията му и връзка към целия текст. Спираш го по всяко време.
+                </div>
+                <label class="check" for="digestOptIn" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input type="checkbox" id="digestOptIn"> Искам дневния хороскоп на имейла си
+                </label>
+            </div>
+
+            <div class="section" id="viewSection">
+                <h2>Изглед</h2>
+                <div class="desc">Колко подробно да показваме картата и разчитанията. Сменяш го когато поискаш.</div>
+                <div class="mode-choice" role="radiogroup" aria-label="Изглед">
+                    <label class="mode-option" for="modeEasy">
+                        <input type="radio" name="uiMode" id="modeEasy" value="easy">
+                        <span class="mode-text">
+                            <span class="mode-name">Лесно</span>
+                            <span class="mode-desc">Само най-важното, без градуси и таблици.</span>
+                        </span>
+                    </label>
+                    <label class="mode-option" for="modePro">
+                        <input type="radio" name="uiMode" id="modePro" value="pro">
+                        <span class="mode-text">
+                            <span class="mode-name">За напреднали</span>
+                            <span class="mode-desc">Планети, аспекти, градуси и домове.</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="section">
                 <h2>Парола</h2>
                 <div class="desc">За смяна на паролата въведи текущата и новата.</div>
                 <form id="passwordForm">
@@ -354,16 +406,6 @@
                 <div class="desc">Документите за продажба (Наредба Н-18) за всяко плащане — същите,
                     които получаваш по имейл.</div>
                 <div id="documentsList"></div>
-            </div>
-
-            <div class="section">
-                <h2>Дневен имейл</h2>
-                <div class="desc">
-                    Всяка сутрин ти пращаме дневния хороскоп.
-                </div>
-                <label class="check" for="digestOptIn" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
-                    <input type="checkbox" id="digestOptIn"> Искам дневния хороскоп на имейла си
-                </label>
             </div>
 
             <div class="section">
@@ -506,7 +548,39 @@
             }
 
             document.getElementById('digestOptIn').checked = !!acc.digest_opt_in;
+            renderMode(acc.ui_mode);
         }
+
+        // --- Изглед: Лесно / За напреднали ---
+        // Сървърът е източникът на истината (следва човека на друго устройство);
+        // localStorage е само за страниците, които не питат сървъра.
+        function renderMode(mode) {
+            const m = mode === 'pro' ? 'pro' : 'easy';
+            document.getElementById(m === 'pro' ? 'modePro' : 'modeEasy').checked = true;
+            try { localStorage.setItem('miralog_mode', m); } catch (e) { /* private mode */ }
+        }
+        document.querySelectorAll('input[name="uiMode"]').forEach(function (radio) {
+            radio.addEventListener('change', async function () {
+                const before = localStorage.getItem('miralog_mode') === 'pro' ? 'pro' : 'easy';
+                const mode = radio.value;
+                try {
+                    const resp = await fetch('/api/account/ui-mode', {
+                        method: 'POST',
+                        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: mode }),
+                    });
+                    const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok) throw new Error(detailText(data.detail));
+                    renderMode(mode);
+                    showBanner(mode === 'pro'
+                        ? 'Изгледът е „За напреднали“ — с планети, аспекти, градуси и домове.'
+                        : 'Изгледът е „Лесно“ — само най-важното.', 'success');
+                } catch (err) {
+                    renderMode(before);
+                    showBanner(friendlyErrorHtml(err), 'error');
+                }
+            });
+        });
 
         let loadedEmail = '';
         // Нов токен (след смяна на имейл или парола) — в паметта и в бисквитката,
@@ -739,6 +813,6 @@
         }
         loadDocuments();
     </script>
-    <script src="/static/consent.js?v=6"></script>
+    <script src="/static/consent.js?v=7"></script>
 </body>
 </html>
