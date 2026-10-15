@@ -1918,10 +1918,10 @@
     </div>
 
     <div id="onboarding-root"></div>
-    <script src="/static/locked.js?v=9"></script>
+    <script src="/static/locked.js?v=10"></script>
     <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=3"></script>
-    <script src="/static/modules.js?v=9"></script>
+    <script src="/static/modules.js?v=10"></script>
     <script src="/static/onboarding.js?v=5"></script>
     <script>
         // slow: платените разчитания се пишат до минута — казваме го, за да не
@@ -3481,7 +3481,8 @@
             document.getElementById('bundleStripText').innerHTML =
                 (all ? 'Отключи всичките ' : 'Отключи останалите ') + b.keys.length
                 + ' разчитания за <b>' + bundleMoney(b.price_cents, b.currency) + '</b>'
-                + ' (вместо ' + bundleMoney(b.full_price_cents, b.currency) + ')';
+                + ' (вместо ' + bundleMoney(b.full_price_cents, b.currency) + ')'
+                + (b.credit_cents > 0 ? ' — вече платеното е приспаднато' : '');
             strip.hidden = false;
         }
 

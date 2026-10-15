@@ -258,3 +258,52 @@ def test_failed_checkout_alerts_the_owner(app, db, monkeypatch):
     _onboard(app, f"f-{secrets.token_hex(3)}@example.com", ["profile"])
     assert reported and reported[0][0] == "stripe_checkout"
     assert "No such price" in reported[0][1]
+
+
+# --- пакетът след покупка поотделно -------------------------------------------
+
+def test_bundle_deducts_what_was_already_paid(app, user):
+    """Купил нумерология → останалите струват пакета минус платеното, не пак 25 €."""
+    app.fulfill_checkout_session(_session(user["id"], ["numerology"], 400))
+    bundle = app.bundle_offer(app.get_user_by_id(user["id"]))
+    assert bundle["credit_cents"] == 400
+    assert bundle["price_cents"] == app.BUNDLE_PRICE_CENTS - 400
+    assert "numerology" not in bundle["keys"]
+
+
+def test_bundle_deducts_the_paid_amount_not_the_list_price(app, user):
+    """С промо код е платено по-малко — приспада се реално платеното."""
+    app.fulfill_checkout_session(_session(user["id"], ["akashic"], 450))
+    bundle = app.bundle_offer(app.get_user_by_id(user["id"]))
+    assert bundle["price_cents"] == app.BUNDLE_PRICE_CENTS - 450
+
+
+def test_gifted_module_is_not_deducted(app, user):
+    """Подарен от админа — без плащане, няма какво да се приспада."""
+    app.grant_feature_purchase(user["id"], "moon", 0, "EUR", None)
+    bundle = app.bundle_offer(app.get_user_by_id(user["id"]))
+    assert bundle is None or bundle["price_cents"] == app.BUNDLE_PRICE_CENTS
+
+
+def test_voided_payment_is_not_deducted(app, user):
+    """Анулирано плащане не е платено."""
+    app.fulfill_checkout_session(_session(user["id"], ["numerology"], 400))
+    with sqlite3.connect(app.DB_PATH) as c:
+        c.execute("UPDATE payments SET voided_at = CURRENT_TIMESTAMP WHERE user_id = ?", (user["id"],))
+    assert app.bundle_offer(app.get_user_by_id(user["id"]))["price_cents"] == app.BUNDLE_PRICE_CENTS
+
+
+def test_bundle_checkout_charges_the_deducted_price(app, user, monkeypatch):
+    from starlette.requests import Request
+    app.fulfill_checkout_session(_session(user["id"], ["numerology"], 400))
+    sent = {}
+    monkeypatch.setattr(app.billing, "stripe_enabled", lambda: True)
+    monkeypatch.setattr(app.billing, "create_features_checkout",
+                        lambda **kw: sent.update(kw) or "https://checkout.stripe.com/x")
+    req = Request({"type": "http", "method": "POST", "path": "/api/features/bundle/request",
+                   "headers": [(b"host", b"astrokarta.bg")], "query_string": b"",
+                   "scheme": "https", "server": ("astrokarta.bg", 443), "client": ("1.2.3.4", 1)})
+    out = app.api_request_bundle(req, user=(user["id"], user["email"]))
+    assert out["bundle"]["price_cents"] == app.BUNDLE_PRICE_CENTS - 400
+    assert sum(i["amount_cents"] for i in sent["items"]) == app.BUNDLE_PRICE_CENTS - 400
+    assert "numerology" not in [i["key"] for i in sent["items"]]

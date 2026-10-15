@@ -1032,7 +1032,7 @@
                         <div>
                             <strong>${all ? 'Всички' : 'Останалите'} ${b.keys.length} разчитания — ${money(b.price_cents, b.currency)}
                                 вместо ${money(b.full_price_cents, b.currency)}</strong>
-                            <span>Плащаш веднъж, остават ти завинаги.</span>
+                            <span>${b.credit_cents > 0 ? 'Вече платеното (' + money(b.credit_cents, b.currency) + ') е приспаднато. ' : ''}Плащаш веднъж, остават ти завинаги.</span>
                         </div>
                         <a class="btn btn-primary" href="${base}?unlock=bundle" onclick="rememberPerson(${target.id})"
                            data-cta="dashboard:bundle">Вземи всички</a>

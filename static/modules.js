@@ -305,7 +305,8 @@
                     <div class="mod-bundle-text">
                         <h4>${esc(b.name)}</h4>
                         <p>Всички останали ${b.keys.length} разчитания наведнъж.
-                           Поотделно излизат ${money(b.full_price_cents, b.currency)}.</p>
+                           Поотделно излизат ${money(b.full_price_cents, b.currency)}.${b.credit_cents > 0
+                           ? ` Вече платеното (${money(b.credit_cents, b.currency)}) е приспаднато.` : ''}</p>
                     </div>
                     <div class="mod-bundle-buy">
                         <div class="mod-bundle-price">${money(b.price_cents, b.currency)}

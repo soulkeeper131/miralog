@@ -2148,12 +2148,31 @@ BUNDLE_KEY = "bundle"
 BUNDLE_NAME = "Всички разчитания"
 BUNDLE_PRICE_CENTS = 2500
 
+def paid_toward_bundle(user: dict, owned: set) -> int:
+    """Колко е платил човекът за модули от пакета, които вече има.
+
+    Реално платеното (с промо кодовете), записано при отключването; подареното
+    от админа (без плащане) и анулираните плащания не се броят."""
+    sellable = [f["key"] for f in FEATURE_CATALOGUE if not f.get("included")]
+    keys = [k for k in sellable if k in owned]
+    if not keys:
+        return 0
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            f"SELECT COALESCE(SUM(fp.price_cents), 0) FROM feature_purchases fp"
+            f" JOIN payments p ON p.id = fp.payment_id"
+            f" WHERE fp.user_id = ? AND p.voided_at IS NULL"
+            f" AND fp.feature_key IN ({','.join('?' * len(keys))})",
+            (user["id"], *keys)).fetchone()
+    return max(0, int(row[0] or 0))
+
+
 def bundle_offer(user: dict) -> Optional[dict]:
     """The bundle as it applies to this account, or None when it cannot help.
 
-    Somebody who already owns everything has nothing to buy; somebody holding
-    one module still sees the full price, because the bundle is a fixed offer
-    rather than a running total.
+    Пакетът е „всичко за 25 €“ общо: купеното поотделно се приспада от цената
+    на останалите (взел нумерология за 6,99 € → останалите за 18,01 €). Досега
+    беше пак 25 € и всичко излизаше по-скъпо от пакета от самото начало.
     """
     unlocked = set(unlocked_features(user))
     missing = [f["key"] for f in FEATURE_CATALOGUE
@@ -2162,15 +2181,18 @@ def bundle_offer(user: dict) -> Optional[dict]:
     if len(missing) < 2:
         return None          # one module left is cheaper on its own
     full_price = sum(feature_offer(k)["price_cents"] for k in missing)
-    if full_price <= BUNDLE_PRICE_CENTS:
+    credit = paid_toward_bundle(user, unlocked)
+    price = BUNDLE_PRICE_CENTS - credit
+    if price <= 0 or full_price <= price:
         return None          # never offer a "discount" that costs more
     return {
         "key": BUNDLE_KEY,
         "name": BUNDLE_NAME,
         "keys": missing,
-        "price_cents": BUNDLE_PRICE_CENTS,
+        "price_cents": price,
         "full_price_cents": full_price,
-        "saving_cents": full_price - BUNDLE_PRICE_CENTS,
+        "saving_cents": full_price - price,
+        "credit_cents": credit,
         "currency": "EUR",
     }
 
@@ -2198,11 +2220,11 @@ def public_bundle() -> Optional[dict]:
         "currency": "EUR",
     }
 
-def bundle_line_items(keys: list) -> list:
+def bundle_line_items(keys: list, total_cents: int = BUNDLE_PRICE_CENTS) -> list:
     """Split the bundle price across the keys so Stripe charges exactly the
     bundle price while the webhook still sees every key it can grant."""
-    share = BUNDLE_PRICE_CENTS // len(keys)
-    remainder = BUNDLE_PRICE_CENTS - share * len(keys)
+    share = total_cents // len(keys)
+    remainder = total_cents - share * len(keys)
     items = []
     for i, key in enumerate(keys):
         offer = feature_offer(key)
@@ -5745,22 +5767,13 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
         raise HTTPException(400, "Остана само едно заключено разчитане — отключи го отделно.")
 
     keys = bundle["keys"]
+    price = bundle["price_cents"]     # вече купеното е приспаднато (bundle_offer)
     if billing.stripe_enabled():
         # Spread the discount over the items, giving the remainder to the
         # first one so the line items add up to the bundle price exactly.
-        share = BUNDLE_PRICE_CENTS // len(keys)
-        remainder = BUNDLE_PRICE_CENTS - share * len(keys)
-        items = []
-        for i, key in enumerate(keys):
-            offer = feature_offer(key)
-            items.append({
-                "key": key,
-                "name": offer["name"],
-                "amount_cents": share + (remainder if i == 0 else 0),
-                "currency": offer["currency"],
-            })
+        items = bundle_line_items(keys, price)
         base = site_base_url(request)
-        success = stripe_success_url(f"{base}{purchase_return_path(request)}?paid=1", amount_cents=BUNDLE_PRICE_CENTS, currency=(items[0]["currency"] if items else "EUR"))
+        success = stripe_success_url(f"{base}{purchase_return_path(request)}?paid=1", amount_cents=price, currency=(items[0]["currency"] if items else "EUR"))
         cancel = os.environ.get("STRIPE_CANCEL_URL") or f"{base}{purchase_return_path(request)}?paid=0"
         tracking = checkout_tracking(request)
         try:
@@ -5791,7 +5804,7 @@ def api_request_bundle(request: Request, user: Tuple[int, str] = Depends(get_cur
         try_send_template(
             to, "bundle_request",
             email=email, user_id=user_id, keys=", ".join(keys),
-            bundle_name=BUNDLE_NAME, price=f"{BUNDLE_PRICE_CENTS / 100:.2f}",
+            bundle_name=BUNDLE_NAME, price=f"{price / 100:.2f}",
         )
     return {"ok": True, "bundle": bundle, "manual": True}
 

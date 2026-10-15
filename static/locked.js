@@ -198,7 +198,7 @@ function renderLocked(el, detail, retry) {
         && offer && b.keys.indexOf(offer.key) !== -1;
     const bundleBlock = bundleWorthIt
         ? `<div class="locked-alt">
-               <span>или всичките ${b.keys.length} за ${money(b.price_cents, b.currency)}</span>
+               <span>или ${b.credit_cents > 0 ? 'останалите' : 'всичките'} ${b.keys.length} за ${money(b.price_cents, b.currency)}${b.credit_cents > 0 ? ' (вече платеното е приспаднато)' : ''}</span>
                <button class="locked-alt-btn" data-bundle="1">Вземи всички</button>
            </div>`
         : '';
