@@ -3026,7 +3026,12 @@ def landing_pricing() -> dict:
             "full_price": price_label(total),
             "saving": price_label(total - BUNDLE_PRICE_CENTS),
         }
-    return {"rows": rows, "bundle": bundle}
+    # `by_key` — цената до всяка карта в „Всички разчитания“ (вместо етикета
+    # „Платено“, което звучи като „вече си платил“); `cheapest` — за реда под
+    # главния бутон в героя. И двете са от същите редове, не втори източник.
+    return {"rows": rows, "bundle": bundle,
+            "by_key": {r["key"]: r["price"] for r in rows},
+            "cheapest": rows[0]["price"] if rows else None}
 
 @app.get("/api/public/catalogue")
 def api_public_catalogue():
