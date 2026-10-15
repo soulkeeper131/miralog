@@ -20,7 +20,7 @@
     function money(cents, currency) {
         const v = (Number(cents) || 0) / 100;
         const sym = (currency || 'EUR') === 'EUR' ? '€' : currency;
-        return v.toFixed(2).replace('.00', '') + ' ' + sym;
+        return v.toFixed(2).replace('.00', '').replace('.', ',') + ' ' + sym;
     }
 
     // Измерване: feature е „1“, „2“, „3“, „skip“ или „done“. Не бива да чупи нищо.
@@ -197,7 +197,8 @@
             html += forSale.map(function (i) {
                 return '<div class="onb-mod' + (wantKeys.indexOf(i.key) >= 0 ? ' onb-wanted' : '') + '">' +
                     '<div class="onb-mod-text"><div class="onb-mod-name">' + esc(i.name) + '</div>' +
-                    (i.note ? '<div class="onb-mod-note">' + esc(i.note) + '</div>' : '') + '</div>' +
+                    // Какво получава, накратко („Какво ще узнаеш?“ стоеше под всеки модул и не казваше нищо).
+                    ((i.bullets || []).length ? '<div class="onb-mod-note">' + esc(i.bullets.slice(0, 3).join(' · ')) + '</div>' : '') + '</div>' +
                     '<span class="onb-mod-price">' + money(i.offer.price_cents, i.offer.currency) + '</span>' +
                     '<button type="button" class="onb-mod-btn" data-key="' + esc(i.key) + '" aria-label="Отключи „' +
                     esc(i.name) + '“ за ' + esc(money(i.offer.price_cents, i.offer.currency)) + '">Отключи</button></div>';
