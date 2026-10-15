@@ -87,7 +87,7 @@
                     (data.content_html
                         ? '<div class="content content-html">' + data.content_html + '</div>'
                         : '<div class="content">' + escapeHtml(data.content || '') + '</div>') +
-                    '<div class="cta"><a href="/start">Създай своята карта</a></div>';
+                    '<div class="cta">{% set _c = primary_cta(None, 'Създай своята карта') %}<a href="{{ _c.href }}" data-cta="share:start">{{ _c.label }}</a></div>';
             } catch (e) {
                 root.innerHTML = '<p class="err">' + escapeHtml(e.message) + '</p>';
             }
@@ -98,6 +98,6 @@
             return d.innerHTML;
         }
     </script>
-<script src="/static/consent.js?v=5"></script>
+<script src="/static/consent.js?v=6"></script>
 </body>
 </html>

@@ -73,7 +73,7 @@
             <h1>Съвместимост по зодии</h1>
             <p class="lede">Избери два знака и виж общата съвместимост между тях — любов, комуникация и предизвикателства.</p>
             <div class="cta-row">
-                <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility_index:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
             </div>
         </div>
@@ -127,7 +127,7 @@
                 <h2>Вижте истинската си съвместимост</h2>
                 <p>Създайте двете натални карти — оттам нататък имате точното сравнение за всяка планета, дом и аспект.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility_index:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -160,6 +160,6 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

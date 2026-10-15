@@ -1001,6 +1001,9 @@
                 html += '<h3 style="margin:18px 0 8px;">Заключени модули, които се гледат</h3>' +
                     '<div class="hint">Кой модул хората отварят, без да е отключен — и колко от тях после са го купили.</div>' +
                     repTable(['Модул', 'Прегледи', 'Хора', 'Купили'], d.locked || [], function(x) { return [x.name || x.key, num(x.views), num(x.people), num(x.bought)]; }), 1;
+                html += '<h3 style="margin:18px 0 8px;">Кои бутони носят хора</h3>' +
+                    '<div class="hint">Натискания по място на бутона (страница:бутон) и колко от натисналите после са си направили карта.</div>' +
+                    repTable(['Място', 'Натискания', 'Хора', 'Направили карта'], d.ctas || [], function(x) { return [x.place || '', num(x.clicks), num(x.people), num(x.charts)]; }), 1;
                 html += '<h3 style="margin:18px 0 8px;">Използване след покупка</h3>' +
                     repTable(['Действие', 'Модул', 'Пъти', 'Хора'], d.usage || [], function(x) { return [REP_EVENTS[x.event] || x.event, x.name || x.key || '', num(x.times), num(x.people)]; }), 2;
 

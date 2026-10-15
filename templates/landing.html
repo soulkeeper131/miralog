@@ -126,7 +126,7 @@
             <p class="sub">Точни изчисления по Swiss Ephemeris, разчетени дума по дума — без мъгла, без общи приказки, без термини, които трябва да гуглиш.</p>
 
             <div class="cta-row">
-                <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/horoskop">Дневен хороскоп</a>
             </div>
             <p class="cta-note">Нужни са само дата, час и място на раждане. · <a href="/login">Вече имам акаунт</a></p>
@@ -261,7 +261,7 @@
                 </div>
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="/start">Направи своята натална карта</a>
+                {% set _c = primary_cta(None, 'Направи своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
                 <span class="mid-cta-note">Отнема под минута да въведеш данните</span>
             </div>
         </div>
@@ -314,7 +314,7 @@
                 </div>
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="/start">Виж своето разчитане</a>
+                {% set _c = primary_cta(None, 'Виж своето разчитане') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
                 <span class="mid-cta-note">Наталната карта е безплатна</span>
             </div>
         </div>
@@ -414,7 +414,7 @@
                 <div class="entry-side">
                     <div class="entry-price">0 €</div>
                     <div class="entry-once">без плащане</div>
-                    <a class="btn btn-primary entry-btn" href="/start">Виж своята натална карта</a>
+                    {% set _c = primary_cta(None, 'Виж своята натална карта') %}<a class="btn btn-primary entry-btn" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
                     <p class="entry-note">Нужни са дата, час и място на раждане</p>
                 </div>
             </div>
@@ -525,7 +525,7 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="landing:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -563,6 +563,6 @@
             window.location.replace('/dashboard');
         }
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

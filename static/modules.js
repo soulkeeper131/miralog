@@ -179,6 +179,16 @@
     }
 
     /* opts.firstTime changes the wording for someone who has just arrived. */
+    /* /chart/<id>?unlock=<ключ|bundle>: дошъл е от „Отключи …“ на лендинг или
+       цените. Отваряме направо съгласието и плащането — със същия бутон, който
+       би натиснал в избора (за текста „Момент…“ и връщането при отказ). */
+    window.unlockModule = async function (key) {
+        try { await loadFeatures(); } catch (e) { /* unlock() пак ще покаже грешка */ }
+        const btn = document.createElement('button');
+        btn.textContent = 'Отключи';
+        return unlock(btn, key);
+    };
+
     window.openModulePicker = async function (opts) {
         opts = opts || {};
         try {   // за отчета: колко хора разглеждат офертата

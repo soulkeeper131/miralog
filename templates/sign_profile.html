@@ -93,7 +93,7 @@
             <h1>Характеристика на {{ sign.name }}</h1>
             <p class="lede">Характер, силни и слаби страни, любов, работа и пари — общата картина на зодия {{ sign.name }}.</p>
             <div class="cta-row">
-                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="sign_profile:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
                 <button type="button" class="btn btn-ghost share-btn" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="zodia">Сподели</button>
             </div>
@@ -117,7 +117,7 @@
                 <h3>Това е общият случай — не точното ти разчитане</h3>
                 <p>Горното описва зодия {{ sign.name }} общо за всички, родени с това Слънце. В <strong>твоята</strong> карта характерът зависи и от Луната, Асцендента, домовете и аспектите — затова реалният ти портрет може да се различава значително.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="sign_profile:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
                 </div>
             </div>
@@ -191,7 +191,7 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="sign_profile:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -224,7 +224,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
     {% if not body_html %}
     <script>
         (async function() {

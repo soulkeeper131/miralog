@@ -93,7 +93,7 @@
             <p class="sub">{{ page.sub }}</p>
 
             <div class="cta-row">
-                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/">Всички разчитания</a>
             </div>
             <p class="cta-note">{{ page.cta_note }}</p>
@@ -137,7 +137,7 @@
                 {% endfor %}
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
                 <span class="mid-cta-note">{{ page.cta_note }}</span>
             </div>
         </div>
@@ -170,7 +170,7 @@
                 </div>
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
                 <span class="mid-cta-note">{{ page.cta_note }}</span>
             </div>
         </div>
@@ -194,7 +194,7 @@
                 {% endfor %}
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
                 <span class="mid-cta-note">{{ page.cta_note }}</span>
             </div>
         </div>
@@ -216,7 +216,7 @@
                 {% endfor %}
             </div>
             <div class="mid-cta">
-                <a class="btn btn-primary" href="{{ page.cta_href }}">{{ page.cta }}</a>
+                {% set _c = primary_cta(page.key, page.cta) if page.cta_href == "/start" else {"href": page.cta_href, "label": page.cta} %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_{{ page.key }}:main">{{ _c.label }}</a>
                 <span class="mid-cta-note">{{ page.cta_note }}</span>
             </div>
         </div>
@@ -249,7 +249,7 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="feature_landing:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -282,6 +282,6 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

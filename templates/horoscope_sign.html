@@ -93,7 +93,7 @@
             {% if stale_date %}<p class="stale-note">⚠️ Днешният хороскоп още се подготвя — показваме последния наличен (от {{ stale_date }}).</p>{% endif %}
             <p class="sub">{{ sign.name }} е {{ sign.element|lower }} и {{ sign.modality|lower }} знак, управляван от {{ sign.ruler }}. Период: {{ sign.dates }}.</p>
             <div class="cta-row">
-                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/dneven-horoskop">Персонален хороскоп</a>
                 <button type="button" class="btn btn-ghost share-btn" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="horoskop">Сподели</button>
             </div>
@@ -194,7 +194,7 @@
                        важат за милиони души наведнъж. Твоята натална карта показва
                        кои от днешните транзити засягат точно теб.</p>
                     <div class="cta-row">
-                        <a class="btn btn-primary" href="/start">Направи безплатната си натална карта</a>
+                        {% set _c = primary_cta(None, 'Направи безплатната си натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
                     </div>
                 </div>
             </div>
@@ -207,7 +207,7 @@
             {% endif %}
 
             <div class="mid-cta" style="margin-top: 40px;">
-                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
                 <span class="mid-cta-note">Персоналният хороскоп е по-точен от зодийния.</span>
             </div>
         </div>
@@ -282,7 +282,7 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с ново разчитане за всеки ден.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_sign:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -316,7 +316,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
     {% if not body_html or stale_date %}
     <script>
         (async function() {

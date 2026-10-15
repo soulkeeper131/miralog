@@ -86,7 +86,7 @@
             <h1>{{ planet.name }} в {{ house.short }}</h1>
             <p class="lede">Какво означава тази позиция — общото значение за характера, любовта и работата.</p>
             <div class="cta-row">
-                <a class="btn btn-primary" href="/start">Създай своята натална карта</a>
+                {% set _c = primary_cta(None, 'Създай своята натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
             </div>
             <p class="cta-note">Безплатната карта изчислява позицията ти до градус и дом.</p>
@@ -102,7 +102,7 @@
                 <h3>Това е общият случай — не точното ти разчитане</h3>
                 <p>Горното описва {{ planet.name|lower }} в {{ house.short }} общо за всички, родени с тази позиция. В <strong>твоята</strong> карта значението зависи от знака на върха на дома и от аспектите с другите планети — една и съща позиция може да значи нещо съвсем различно при двама души.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
                 </div>
             </div>
@@ -176,7 +176,7 @@
                 <h2>Виж какво пише в твоята карта</h2>
                 <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай своя натална карта</a>
+                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_house:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -209,7 +209,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
     {% if not body_html %}
     <script>
         (async function() {

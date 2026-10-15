@@ -184,7 +184,7 @@
                    различна дори за двама души, родени в един и същи ден. Направи я
                    безплатно и виж своите планети, домове и аспекти.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Направи безплатната си натална карта</a>
+                    {% set _c = primary_cta(None, 'Направи безплатната си натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="horoscope_index:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
                 <p class="final-note">Картата и дневният хороскоп остават безплатни.
@@ -265,6 +265,6 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

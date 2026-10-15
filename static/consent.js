@@ -214,3 +214,26 @@
         show(false);
     }
 })();
+
+/* Кой бутон води хора: всеки елемент с data-cta="място:бутон" праща
+   cta_click към /api/events (нашите отчети, без бисквитки — не иска
+   съгласие) и select_promotion към GA4 (минава през съгласието в track). */
+(function () {
+    document.addEventListener('click', function (e) {
+        var el = e.target.closest && e.target.closest('[data-cta]');
+        if (!el) return;
+        var where = (el.getAttribute('data-cta') || '').slice(0, 40);
+        try {
+            var body = JSON.stringify({ event: 'cta_click', feature: where });
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('/api/events', new Blob([body], { type: 'application/json' }));
+            } else {
+                fetch('/api/events', { method: 'POST', keepalive: true,
+                    headers: { 'Content-Type': 'application/json' }, body: body }).catch(function () {});
+            }
+        } catch (err) { /* без значение */ }
+        if (typeof window.track === 'function') {
+            window.track('select_promotion', { creative_slot: where, promotion_name: el.textContent.trim().slice(0, 60) });
+        }
+    }, true);
+})();

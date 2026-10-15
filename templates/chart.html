@@ -1659,7 +1659,7 @@
     <script src="/static/locked.js?v=6"></script>
     <script src="/static/share.js?v=1"></script>
     <script src="/static/ui.js?v=2"></script>
-    <script src="/static/modules.js?v=5"></script>
+    <script src="/static/modules.js?v=6"></script>
     <script>
         function crystalLoader(text) {
             return '<div class="crystal-loader"><div class="orb-wrap"><div class="orb"></div><div class="spark"></div></div>' + text + '</div>';
@@ -2995,9 +2995,28 @@
         // Debounced so we stay within Nominatim's one-request-per-second policy.
         // Someone arriving with a fresh chart has not seen the add-ons yet.
         document.addEventListener('DOMContentLoaded', () => {
-            if (typeof maybeShowModulePicker === 'function') {
+            // Дошъл от „Отключи …“ (?unlock=) или „Отвори …“ (#таб) на лендинг
+            // или в цените: отиваме направо там, вместо да го пращаме да търси.
+            const deep = new URLSearchParams(location.search);
+            const unlockKey = deep.get('unlock');
+            const tabKey = (location.hash || '').slice(1);
+            if (unlockKey) {
+                deep.delete('unlock');
+                const q = deep.toString();
+                history.replaceState({}, '', location.pathname + (q ? '?' + q : '') + location.hash);
+                const tab = unlockKey === 'bundle' ? null : document.getElementById('tab-' + unlockKey);
+                if (tab) showTab(unlockKey);
+                if (typeof unlockModule === 'function') setTimeout(() => unlockModule(unlockKey), 300);
+            } else if (tabKey && /^[a-z]+$/.test(tabKey) && document.getElementById('tab-' + tabKey)) {
+                showTab(tabKey);
+            } else if (typeof maybeShowModulePicker === 'function') {
                 setTimeout(maybeShowModulePicker, 900);
             }
+            // Линк към таб от същата страница (#akashic) не я презарежда.
+            window.addEventListener('hashchange', () => {
+                const k = (location.hash || '').slice(1);
+                if (/^[a-z]+$/.test(k) && document.getElementById('tab-' + k)) showTab(k);
+            });
             markLockedTabs();
 
             // Returning from Stripe after an onboarding purchase. The webhook
@@ -3391,7 +3410,7 @@
             }
         }
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
 
     <div id="floating-player" class="floating-player" style="display:none" role="region" aria-label="Аудио плейър">
         <div class="fp-head">

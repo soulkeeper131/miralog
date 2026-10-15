@@ -1133,6 +1133,110 @@ def _analytics_ctx(ctx) -> dict:
 
 
 templates.env.globals["analytics_ctx"] = _analytics_ctx
+
+
+# --- Кой гледа страницата и накъде води основният бутон ---------------------
+# Вписаният човек на хороскопите и лендингите получаваше същите бутони като
+# госта („Създай своята натална карта“ → /start) и минаваше наново през
+# формата. Сега бутонът води направо до неговата карта или модул.
+
+# Модулите, които са табове в /chart/<id>; луната е отделна страница.
+CHART_TABS = {"chart", "profile", "planets", "aspects", "horoscope", "period",
+              "numerology", "love", "akashic"}
+SELLABLE_KEYS = {"profile", "period", "love", "akashic", "numerology", "moon"}
+_GUEST_VIEWER = {"logged_in": False, "person_count": 0, "chart_url": None,
+                 "unlocked": [], "home": "/start"}
+
+
+def viewer_info(request: Optional[Request]) -> dict:
+    """Вписан ли е разглеждащият, колко карти има и какво е отключил.
+
+    Пази се в request.state — шаблонът я пита за всеки бутон. Никога не
+    хвърля: стар, отменен или чужд токен значи просто „гост“."""
+    if request is None:
+        return _GUEST_VIEWER
+    cached = getattr(request.state, "viewer", None)
+    if cached is not None:
+        return cached
+    info = dict(_GUEST_VIEWER)
+    try:
+        token = _token_from_request(request)
+        user = user_for_token(token) if token else None
+    except HTTPException:
+        user = None
+    except Exception:
+        user = None
+    if user:
+        persons = get_all_persons(user["id"])
+        chart_url = f"/chart/{persons[0]['id']}" if len(persons) == 1 else "/dashboard"
+        info = {"logged_in": True, "person_count": len(persons),
+                "chart_url": chart_url if persons else "/dashboard",
+                "unlocked": unlocked_features(user),
+                "home": chart_url if persons else "/dashboard"}
+    try:
+        request.state.viewer = info
+    except Exception:
+        pass
+    return info
+
+
+def _feature_label(key: str) -> str:
+    if key == "bundle":
+        return "всички разчитания"
+    meta = next((f for f in FEATURE_CATALOGUE if f["key"] == key), None)
+    return meta["name"] if meta else key
+
+
+def cta_for(viewer: dict, feature: Optional[str] = None,
+            guest_label: Optional[str] = None) -> dict:
+    """Основният бутон за даден модул (или без модул) според разглеждащия.
+
+    - гост: към /start, с ?want=<модул>, за да е отметнат след картата;
+    - вписан с една карта: отворен модул → табът му; заключен → ?unlock=
+      (страницата отваря плащането); луната → /moon;
+    - вписан с няколко карти или без карта: към таблото."""
+    feature = feature if (feature in SELLABLE_KEYS or feature in CHART_TABS
+                          or feature == "bundle") else None
+    sellable = feature == "bundle" or feature in SELLABLE_KEYS
+    if not viewer.get("logged_in"):
+        return {"href": "/start" + (f"?want={feature}" if sellable else ""),
+                "label": guest_label or "Създай своята натална карта",
+                "logged_in": False}
+    if viewer.get("person_count") != 1:
+        label = ("Моите карти" if viewer.get("person_count")
+                 else "Добави своята натална карта")
+        return {"href": "/dashboard", "label": label, "logged_in": True}
+    base, unlocked = viewer["chart_url"], set(viewer.get("unlocked") or [])
+    if not feature or feature == "chart":
+        return {"href": base, "label": "Отвори картата си", "logged_in": True}
+    if feature == "bundle":
+        missing = [k for k in SELLABLE_KEYS if k not in unlocked]
+        if not missing:
+            return {"href": base, "label": "Отвори картата си", "logged_in": True}
+        return {"href": f"{base}?unlock=bundle", "label": "Отключи всички разчитания",
+                "logged_in": True}
+    name = _feature_label(feature)
+    if feature in unlocked:
+        href = "/moon" if feature == "moon" else f"{base}#{feature}"
+        return {"href": href, "label": f"Отвори {name}", "logged_in": True}
+    if sellable:
+        return {"href": f"{base}?unlock={feature}", "label": f"Отключи {name}",
+                "logged_in": True}
+    return {"href": f"{base}#{feature}", "label": f"Отвори {name}", "logged_in": True}
+
+
+@jinja2.pass_context
+def _primary_cta(ctx, feature: Optional[str] = None, guest_label: Optional[str] = None) -> dict:
+    return cta_for(viewer_info(ctx.get("request")), feature, guest_label)
+
+
+@jinja2.pass_context
+def _viewer_ctx(ctx) -> dict:
+    return viewer_info(ctx.get("request"))
+
+
+templates.env.globals["primary_cta"] = _primary_cta
+templates.env.globals["viewer"] = _viewer_ctx
 # Основният (потребителски) домейн — за линкове „обратно към сайта/таблото“.
 templates.env.globals["main_domain"] = BRAND_DOMAIN
 
@@ -1385,7 +1489,10 @@ def _referrer_host(request: Request) -> Optional[str]:
 
 
 # Позволените събития от страницата (POST /api/events) — нищо друго не се пише.
-CLIENT_EVENTS = {"locked_view", "share_click", "picker_open"}
+CLIENT_EVENTS = {"locked_view", "share_click", "picker_open",
+                 # Конверсия: кой бутон къде е натиснат (feature = „място:бутон“),
+                 # видян блок с цени, видяна молба за запис, стъпка от въвеждането.
+                 "cta_click", "pricing_view", "signup_prompt_view", "onboarding_step"}
 
 
 def reading_base(cache_key: str) -> str:
@@ -3980,6 +4087,9 @@ def seo_context(request: Request, *, path: str = "/") -> dict:
     if image.startswith("/"):
         image = base + image
     return {
+        # Шаблоните питат заявката кой гледа (primary_cta, analytics_ctx);
+        # без нея вписаният получаваше бутоните на госта.
+        "request": request,
         "seo_title": seo["seo_title"],
         "seo_description": seo["seo_description"],
         "seo_keywords": seo["seo_keywords"],
@@ -4816,6 +4926,17 @@ def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> di
         for r in locked:
             r["name"] = names.get(r["key"], r["key"])
 
+        # Кои бутони носят хора: натискания, различни посетители и колко от
+        # тях после (същия ден — посетителят е дневен отпечатък) са си
+        # направили гост-карта или са се регистрирали с вход от бутона.
+        ctas = rows(
+            "SELECT c.feature AS place, COUNT(*) AS clicks, COUNT(DISTINCT c.visitor) AS people,"
+            " COUNT(DISTINCT CASE WHEN g.visitor IS NOT NULL THEN c.visitor END) AS charts"
+            " FROM events c LEFT JOIN events g ON g.event = 'guest_chart' AND g.visitor = c.visitor"
+            " AND datetime(g.at) >= datetime(c.at)"
+            " WHERE c.event = 'cta_click' AND " + rng.format(col="c.at")
+            + " GROUP BY c.feature ORDER BY people DESC LIMIT 30", start, until)
+
         usage = rows(
             "SELECT event, feature AS key, COUNT(*) AS times, COUNT(DISTINCT user_id) AS people"
             " FROM events WHERE event IN ('module_view','pdf','audio','email_reading','share','picker_open')"
@@ -4897,7 +5018,7 @@ def build_reports(days: int = 30, now: Optional[datetime.datetime] = None) -> di
         },
         "abandoned": {"count": abandoned_count, "rate": rate(abandoned_count, cur["checkouts"]),
                       "recent": abandoned},
-        "locked": locked, "usage": usage,
+        "locked": locked, "usage": usage, "ctas": ctas,
         "sources": sources, "devices": devices, "signup_methods": signup_methods, "top_pages": top_pages,
         "customers": {"buyers_ever": len(buyers_all), "repeat_buyers": repeat_buyers,
                       "new_buyers": len(new_buyers), "median_days_to_first_purchase": median_days},
@@ -10990,7 +11111,18 @@ def llms_txt(request: Request):
 
 @app.get("/start", response_class=HTMLResponse)
 async def start_page(request: Request):
-    """Birth details + email, before any account exists."""
+    """Birth details + email, before any account exists.
+
+    Вписаният не започва наново: отива при картата си (или таблото), а
+    ?want= става ?unlock= — плащането на избрания модул се отваря там.
+    ?claim=1 е връщането от Google/Facebook с гост-карта за запазване —
+    тогава страницата трябва да се покаже."""
+    if request.query_params.get("claim") != "1":
+        viewer = viewer_info(request)
+        if viewer["logged_in"]:
+            want = request.query_params.get("want")
+            target = cta_for(viewer, want)["href"] if want else viewer["home"]
+            return RedirectResponse(target, status_code=302)
     return HTMLResponse(templates.get_template("start.html").render({"request": request}))
 
 @app.get("/welcome", response_class=HTMLResponse)
@@ -11286,7 +11418,7 @@ _SIGN_FAQ = [
      "a": "Тук прогнозата е по слънчевия знак — обща за милиони. Персоналният хороскоп се изчислява от транзитите спрямо точно твоята натална карта и е уникален за теб."},
     {"q": "Къде да получа пълното разчитане на картата си?",
      "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -11590,7 +11722,7 @@ _HOUSE_FAQ = [
      "a": "Създай безплатната си натална карта — тя изчислява позицията на всяка планета по дом до градус и я обяснява конкретно за теб."},
     {"q": "Къде да получа пълното разчитане на картата си?",
      "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -11681,7 +11813,7 @@ _PLANET_FAQ = [
      "a": "Създай безплатната си натална карта — тя изчислява позицията на всяка планета до градус и я обяснява конкретно за теб."},
     {"q": "Къде да получа пълното разчитане на всичките си позиции?",
      "a": "Пълният астрологически профил събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти от картата ти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -11770,7 +11902,7 @@ _SIGN_PROFILE_FAQ = [
      "a": "Слънчевият знак е само едно парче от пъзела. Наталната карта показва всички планети заедно и какво значи това лично за теб — много по-точно от една обща характеристика."},
     {"q": "Къде да получа пълното си разчитане?",
      "a": "Пълният астрологически профил събира всички позиции в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички позиции в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички позиции в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -11858,7 +11990,7 @@ _COMPAT_FAQ = [
      "a": "Създай наталната си карта и тази на партньора — сравнението на двете карти показва реалната ви съвместимост до градус."},
     {"q": "Къде да получа пълния анализ на връзката?",
      "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички модули“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички модули“</a> с отстъпка. Еднократно плащане, остава завинаги."},
 ]
 
 

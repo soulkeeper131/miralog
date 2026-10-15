@@ -1246,6 +1246,16 @@
                     renderBasket();
                 });
             });
+
+            // Дошъл от „Отключи …“ на лендинг или от цените (?want=akashic,
+            // ?want=bundle): отметнат е още тук, за да не го търси наново.
+            // Еднократно — презареждането не бива да го отмята пак.
+            const want = new URLSearchParams(location.search).get('want');
+            if (want && !window._wantApplied) {
+                window._wantApplied = true;
+                const cb = grid.querySelector('.offer-check[value="' + CSS.escape(want) + '"]');
+                if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+            }
         }
 
         // The basket doubles as the summary above the email field, so the
@@ -1434,6 +1444,6 @@
         });
 
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

@@ -103,7 +103,7 @@
             <h1>Съвместимост {{ sign_a.name }} и {{ sign_b.name }}</h1>
             <p class="lede">Любов, комуникация и предизвикателства — общата картина на връзката между {{ sign_a.name }} и {{ sign_b.name }}.</p>
             <div class="cta-row">
-                <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility:start">{{ _c.label }}</a>
                 <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
                 <button type="button" class="btn btn-ghost share-btn" data-url="{{ seo_url }}" data-title="{{ seo_title }}" data-image="{{ seo_image }}" data-feature="savmestimost">Сподели</button>
             </div>
@@ -135,7 +135,7 @@
                 <h3>Това е общият случай — не точното ви разчитане</h3>
                 <p>Горното описва какво е типично за повечето двойки с тези слънчеви знаци. В <strong>вашата</strong> връзка всичко зависи от Луната, Асцендента и аспектите между двете натални карти — затова реалната ви съвместимост може да се различава значително.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/astrologicheski-profil">Виж пълния профил</a>
                 </div>
             </div>
@@ -209,7 +209,7 @@
                 <h2>Вижте истинската си съвместимост</h2>
                 <p>Създайте двете натални карти — оттам нататък имате точното сравнение за всяка планета, дом и аспект.</p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="/start">Създай наталната си карта</a>
+                    {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility:start">{{ _c.label }}</a>
                     <a class="btn btn-ghost" href="/login">Вход</a>
                 </div>
             </div>
@@ -242,7 +242,7 @@
         }
         updateThemeToggleIcon();
     </script>
-    <script src="/static/consent.js?v=5"></script>
+    <script src="/static/consent.js?v=6"></script>
     {% if not body_html %}
     <script>
         (async function() {
