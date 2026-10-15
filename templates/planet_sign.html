@@ -57,6 +57,7 @@
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
+    {% include "_seo_shared.html" %}
     <style>
         .horo-reading { max-width: 760px; margin: 0 auto; }
         .horo-reading h3 { font-size: 1.15rem; font-weight: 600; color: var(--text-heading); margin: 1.6em 0 0.5em; }
@@ -90,6 +91,11 @@
                 <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
             </div>
             <p class="cta-note">Безплатната карта изчислява позицията ти до градус.</p>
+            <p class="sign-links">
+                <a href="/zodia/{{ sign.slug }}" data-cta="planet_sign:profile">Характеристика на {{ sign.name }}</a>
+                <span aria-hidden="true">·</span>
+                <a href="/horoskop/{{ sign.slug }}" data-cta="planet_sign:horoscope">Хороскоп за {{ sign.name }} днес</a>
+            </p>
         </div>
     </header>
 
@@ -122,7 +128,7 @@
                 <h2>Другите планети в {{ sign.name }}</h2>
                 <p>Виж какво значат останалите планети в същия знак.</p>
             </div>
-            <div class="related">
+            <div class="related related--chips">
                 {% for p in planets %}{% if p.slug != planet.slug %}
                 <a href="/{{ p.slug }}-v-{{ sign.slug }}">
                     <span class="r-glyph" aria-hidden="true">{{ p.glyph }}</span>
@@ -140,7 +146,7 @@
                 <h2>{{ planet.name }} в другите зодии</h2>
                 <p>Сравни как същата планета се изразява в другите знаци.</p>
             </div>
-            <div class="related">
+            <div class="related related--chips">
                 {% for s in signs %}{% if s.slug != sign.slug %}
                 <a href="/{{ planet.slug }}-v-{{ s.slug }}">
                     <span class="r-glyph" aria-hidden="true">{{ s.glyph }}</span>
@@ -174,22 +180,18 @@
         <div class="wrap">
             <div class="final">
                 <h2>Виж какво пише в твоята карта</h2>
-                <p>Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.</p>
+                {% set _c = primary_cta(None, 'Създай своята натална карта') %}
+                <p>{% if _c.logged_in %}Картата ти е готова — виж своите планети, домове и аспекти.{% else %}Отнема минута да я създадеш. Оттам нататък я имаш винаги — с разчитане за всяка планета, дом и аспект.{% endif %}</p>
                 <div class="cta-row">
-                    {% set _c = primary_cta(None, 'Създай своя натална карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_sign:start">{{ _c.label }}</a>
-                    <a class="btn btn-ghost" href="/login">Вход</a>
+                    <a class="btn btn-primary" href="{{ _c.href }}" data-cta="planet_sign:start">{{ _c.label }}</a>
+                    {% if not _c.logged_in %}<a class="btn btn-ghost" href="/login">Вход</a>{% endif %}
                 </div>
             </div>
         </div>
     </section>
 
     </main>
-    <footer>
-        <div class="wrap">
-            {{ brand().name }} · {{ brand().tagline }}<br>
-            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
-        </div>
-    </footer>
+    {% include "_site_footer.html" %}
 
     <script>
         function updateThemeToggleIcon() {

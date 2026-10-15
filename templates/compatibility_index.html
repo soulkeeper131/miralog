@@ -45,6 +45,7 @@
         <link rel="stylesheet" href="/static/consent.css?v=4">
     </noscript>
     {% include "_analytics.html" %}
+    {% include "_seo_shared.html" %}
     <style>
         .matrix-wrap { max-width: 860px; margin: 24px auto 0; overflow-x: auto; }
         table.matrix { border-collapse: separate; border-spacing: 4px; width: 100%; }
@@ -54,6 +55,19 @@
         table.matrix a.cell { display: block; width: 100%; height: 100%; min-width: 34px; padding: 8px 2px; border-radius: 10px; text-decoration: none; color: var(--text-heading); font-size: 1.05rem; }
         table.matrix a.cell:hover { background: var(--line); color: var(--accent); }
         table.matrix a.cell.self { opacity: 0.45; }
+        table.matrix tr.hl td.rowhead { color: var(--accent); }
+        table.matrix tr.hl a.cell { background: var(--surface-thistle); }
+        /* Телефон: 12 колони с по един глиф не се четат и не се плъзгат — два избора и „Виж“. */
+        .pick { display: none; max-width: 460px; margin: 24px auto 0; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-card); }
+        .pick-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .pick label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; }
+        .pick select { width: 100%; min-height: 48px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); font: inherit; font-size: 1rem; }
+        .pick select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+        .pick .btn { width: 100%; margin-top: 14px; }
+        @media (max-width: 600px) {
+            .js .pick { display: block; }
+            .js .matrix-wrap { display: none; }
+        }
     </style>
 </head>
 <body>
@@ -61,7 +75,7 @@
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
 
     <main>
-    <header class="hero hero--feature">
+    <header class="hero hero--feature hero--list">
         <div class="wrap">
             <div class="page-nav">
                 <a class="logo-home" href="/" title="Към началната страница" aria-label="Към началната страница">
@@ -72,34 +86,44 @@
             <p><span class="kicker">Зодиакална съвместимост</span></p>
             <h1>Съвместимост по зодии</h1>
             <p class="lede">Избери два знака и виж общата съвместимост между тях — любов, комуникация и предизвикателства.</p>
-            <div class="cta-row">
-                {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility_index:start">{{ _c.label }}</a>
-                <a class="btn btn-ghost" href="/astrologicheski-profil">Пълен астрологически профил</a>
-            </div>
         </div>
     </header>
 
-    <section>
+    <section style="padding-top: var(--space-tight);">
         <div class="wrap">
+            <script>document.documentElement.classList.add('js');</script>
+            <form class="pick" id="pickForm" aria-label="Избери два знака">
+                <div class="pick-row">
+                    <div>
+                        <label for="pickA">Първи знак</label>
+                        <select id="pickA">{% for s in signs %}<option value="{{ s.slug }}"{% if s.slug == pick_a %} selected{% endif %}>{{ s.glyph }} {{ s.name }}</option>{% endfor %}</select>
+                    </div>
+                    <div>
+                        <label for="pickB">Втори знак</label>
+                        <select id="pickB">{% for s in signs %}<option value="{{ s.slug }}">{{ s.glyph }} {{ s.name }}</option>{% endfor %}</select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" data-cta="compatibility_index:pick">Виж</button>
+            </form>
             <div class="matrix-wrap">
                 <table class="matrix">
                     <tr>
                         <th></th>
-                        {% for s in signs %}<th>{{ s.glyph }}</th>{% endfor %}
+                        {% for s in signs %}<th scope="col" title="{{ s.name }}"><span aria-hidden="true">{{ s.glyph }}</span><span class="sr-head">{{ s.name }}</span></th>{% endfor %}
                     </tr>
                     {% for row in matrix %}
-                    <tr>
+                    <tr{% if row[0].a.slug == pick_a %} class="hl"{% endif %}>
                         <td class="rowhead">{{ row[0].a.name }}</td>
                         {% for cell in row %}
                         <td>
-                            <a class="cell {% if cell.a.sign == cell.b.sign %}self{% endif %}" href="/savmestimost/{{ cell.slug }}" title="{{ cell.a.name }} и {{ cell.b.name }}">{{ cell.b.glyph }}</a>
+                            <a class="cell {% if cell.a.sign == cell.b.sign %}self{% endif %}" href="/savmestimost/{{ cell.slug }}" title="{{ cell.a.name }} и {{ cell.b.name }}" aria-label="{{ cell.a.name }} и {{ cell.b.name }}">{{ cell.b.glyph }}</a>
                         </td>
                         {% endfor %}
                     </tr>
                     {% endfor %}
                 </table>
             </div>
-            <p style="text-align:center; font-size: 0.82rem; color: var(--text-soft); max-width: 640px; margin: 18px auto 0;">Горната таблица е по слънчев знак — обща за всички. Точната съвместимост изисква сравнение на двете пълни натални карти.</p>
+            <p style="text-align:center; font-size: 0.82rem; color: var(--text-soft); max-width: 640px; margin: 18px auto 0;">Съвместимостта тук е по слънчев знак — обща за всички. Точната съвместимост изисква сравнение на двете пълни натални карти.</p>
         </div>
     </section>
 
@@ -110,7 +134,7 @@
                 <h2>Характеристика на всеки знак</h2>
                 <p>Първо опознай отделните знаци, после сравни съвместимостта им.</p>
             </div>
-            <div class="related">
+            <div class="related related--chips">
                 {% for s in signs %}
                 <a href="/zodia/{{ s.slug }}">
                     <span class="r-glyph" aria-hidden="true">{{ s.glyph }}</span>
@@ -125,22 +149,17 @@
         <div class="wrap">
             <div class="final">
                 <h2>Вижте истинската си съвместимост</h2>
-                <p>Създайте двете натални карти — оттам нататък имате точното сравнение за всяка планета, дом и аспект.</p>
+                <p>Любовният хороскоп и съвместимост сравнява двете ви натални карти — всяка планета, дом и аспект между вас.</p>
                 <div class="cta-row">
-                    {% set _c = primary_cta(None, 'Създай наталната си карта') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility_index:start">{{ _c.label }}</a>
-                    <a class="btn btn-ghost" href="/login">Вход</a>
+                    {% set _c = primary_cta('love', 'Проверете вашата двойка') %}<a class="btn btn-primary" href="{{ _c.href }}" data-cta="compatibility_index:start">{{ _c.label }}</a>
+                    {% if not _c.logged_in %}<a class="btn btn-ghost" href="/login">Вход</a>{% endif %}
                 </div>
             </div>
         </div>
     </section>
 
     </main>
-    <footer>
-        <div class="wrap">
-            {{ brand().name }} · {{ brand().tagline }}<br>
-            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия</a>
-        </div>
-    </footer>
+    {% include "_site_footer.html" %}
 
     <script>
         function updateThemeToggleIcon() {
@@ -161,5 +180,22 @@
         updateThemeToggleIcon();
     </script>
     <script src="/static/consent.js?v=6"></script>
+    <script>
+        /* Двата избора водят към каноничния адрес на двойката: по-ранният знак е първи. */
+        (function () {
+            var form = document.getElementById('pickForm');
+            if (!form) return;
+            var order = {{ signs | map(attribute='slug') | list | tojson }};
+            var a = document.getElementById('pickA'), b = document.getElementById('pickB');
+            // Вторият знак започва от следващия, за да не е „Овен и Овен“ по подразбиране.
+            b.selectedIndex = (a.selectedIndex + 1) % order.length;
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                var i = order.indexOf(a.value), j = order.indexOf(b.value);
+                if (i < 0 || j < 0) return;
+                window.location.href = '/savmestimost/' + order[Math.min(i, j)] + '-' + order[Math.max(i, j)];
+            });
+        })();
+    </script>
 </body>
 </html>

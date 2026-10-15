@@ -1,0 +1,38 @@
+{# Общи стилове на SEO страниците (хороскоп, зодия, съвместимост, планети).
+   Самостоятелни шаблони без общ base — затова едно място за онова, което се
+   повтаряше или липсваше на част от тях. #}
+<style>
+    /* ✦ вместо големи черни точки — както в хороскопа и съвместимостта. */
+    .horo-reading ul { list-style: none; padding: 0; margin: 0 0 1em; }
+    .horo-reading ul li { position: relative; padding-left: 1.2em; color: var(--text-soft); line-height: 1.65; margin-bottom: 0.4em; }
+    .horo-reading ul li::before { content: "✦"; position: absolute; left: 0; color: var(--accent); font-size: 0.8em; top: 0.2em; }
+
+    /* „Небето днес“ на компютър: десетте планети не се събират в една линия
+       и последната излизаше извън екрана. Списъкът се пренася на втори ред. */
+    @media (min-width: 1000px) {
+        .eph-inner .eph-list { flex-wrap: wrap; justify-content: flex-start; overflow: visible; gap: 6px 22px; }
+    }
+
+    /* Дългите списъци със знаци, планети и домове: на телефон — решетка от
+       чипове (глиф + име), а не 12 карти една под друга. */
+    @media (max-width: 600px) {
+        .related--chips { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .related--chips a { padding: 0 8px; gap: 6px; min-height: 44px; border-radius: 12px; }
+        .related--chips .r-glyph { width: auto; height: auto; background: none; font-size: 1.05rem; }
+        .related--chips .r-name { font-size: 0.88rem; font-family: var(--font-body); font-weight: 500; overflow-wrap: anywhere; }
+        .related--chips.related--text a { justify-content: center; padding: 0 4px; }
+        .related--chips.related--text .r-name { font-size: 0.8rem; }
+        .related--chips.related--text .r-glyph { display: none; }
+    }
+
+    /* Съседни знаци и връзки към сродни страници на същия знак. */
+    .sign-hop { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin: 0 0 14px; font-size: 0.95rem; color: var(--text-dim); }
+    .sign-hop a, .sign-links a { color: var(--accent-light); text-decoration: none; padding: 10px 8px; min-height: 44px; display: inline-flex; align-items: center; border-radius: 10px; }
+    .sign-hop a:hover, .sign-links a:hover { text-decoration: underline; }
+    .sl-group { white-space: nowrap; }
+    .sign-links { display: flex; justify-content: center; flex-wrap: wrap; align-items: center; gap: 0 4px; margin-top: 6px; font-size: 0.9rem; color: var(--text-dim); }
+    @media (max-width: 600px) {
+        .sign-links { flex-direction: column; gap: 0; }
+        .sign-links > span[aria-hidden] { display: none; }
+    }
+</style>

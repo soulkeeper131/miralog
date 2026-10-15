@@ -11248,9 +11248,9 @@ def sitemap_xml(request: Request):
     # Вечнозелените страници не се обновяват ежедневно — стабилна дата, за да
     # не „викат вълк" (иначе Google игнорира lastmod). Само хороскопите взимат today.
     evergreen = "2026-09-12"
+    # /register няма място тук: входът за нови хора е /start.
     entries = [
         ("/", "weekly", "1.0", evergreen),
-        ("/register", "monthly", "0.6", evergreen),
     ]
     # Every module gets its own landing page — the long-tail content that the
     # search engines actually find people through.
@@ -11272,10 +11272,17 @@ def sitemap_xml(request: Request):
     # Planet in house — 120 pages, long-tail "луна в 7 дом" searches.
     for pl in BODY_PLANETS:
         entries += [(f"/{pl['slug']}-v-{h['num']}-dom", "monthly", "0.7", evergreen) for h in HOUSES]
+    # Един адрес — един запис (Google игнорира дублите, но проверките за качество ги броят).
+    seen_paths = set()
+    unique = []
+    for entry in entries:
+        if entry[0] not in seen_paths:
+            seen_paths.add(entry[0])
+            unique.append(entry)
     urls = "".join(
         f"<url><loc>{base}{path}</loc><lastmod>{lm}</lastmod>"
         f"<changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
-        for path, freq, prio, lm in entries
+        for path, freq, prio, lm in unique
     )
     xml = ('<?xml version="1.0" encoding="UTF-8"?>'
            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -11676,7 +11683,7 @@ _SIGN_FAQ = [
     {"q": "Точен ли е хороскопът само по слънчевия знак?",
      "a": "Той е общ за всички, родени под този знак. За максимално точна прогноза, която стъпва на твоята лична натална карта, използвай персоналния дневен хороскоп."},
     {"q": "Каква е разликата с персоналния дневен хороскоп?",
-     "a": "Тук прогнозата е по слънчевия знак — обща за милиони. Персоналният хороскоп се изчислява от транзитите спрямо точно твоята натална карта и е уникален за теб."},
+     "a": "Тук прогнозата е по слънчевия знак — обща за милиони. Персоналният хороскоп се изчислява от транзитите спрямо точно твоята натална карта и е уникален за теб. Безплатен е: нужен е запис с имейл, за да го виждаш всеки ден."},
     {"q": "Къде да получа пълното разчитане на картата си?",
      "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
      "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
@@ -11810,6 +11817,37 @@ def sign_page_bundle(viewer: dict) -> Optional[dict]:
     return bundle
 
 
+def viewer_sun_sign_slug(viewer: dict) -> Optional[str]:
+    """Слънчевият знак (slug) на вписания с една карта — за „Това е твоята зодия“.
+
+    Смята се по истинската позиция на Слънцето в момента на раждането, не по
+    дати от календара: в дните на прехода („на ръба“) датите грешат. С няколко
+    карти не знаем чия е зодията и връща None."""
+    try:
+        if not viewer.get("logged_in") or viewer.get("person_count") != 1:
+            return None
+        pid = int(str(viewer.get("chart_url") or "").rsplit("/", 1)[-1])
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT year, month, day, hour, minute, timezone, time_unknown FROM persons WHERE id = ?",
+                (pid,)).fetchone()
+        if not row:
+            return None
+        year, month, day, hour, minute, tzname, unknown = row
+        try:
+            tz = ZoneInfo(tzname or "Europe/Sofia")
+        except Exception:
+            tz = ZoneInfo("Europe/Sofia")
+        hour, minute = (12, 0) if unknown else (hour or 0, minute or 0)
+        local = datetime.datetime(year, month, day, hour, minute, tzinfo=tz)
+        utc = local.astimezone(datetime.timezone.utc)
+        jd = swe.julday(utc.year, utc.month, utc.day, utc.hour + utc.minute / 60.0)
+        lon = swe.calc_ut(jd, swe.SUN)[0][0]
+        return ZODIAC_SIGNS[int(lon // 30) % 12]["slug"]
+    except Exception:
+        return None
+
+
 @app.get("/horoskop", response_class=HTMLResponse)
 async def horoskop_hub(request: Request):
     """Общата страница за всички зодии.
@@ -11826,10 +11864,9 @@ async def horoskop_hub(request: Request):
 
     ctx = seo_context(request, path="/horoskop")
     ctx["seo_title"] = f"Дневен хороскоп за всички зодии — {date_bg} | {brand_name()}"
-    ctx["seo_description"] = (
-        f"Дневен хороскоп за всичките 12 зодии за {date_bg}: Овен, Телец, Близнаци, Рак, "
-        "Лъв, Дева, Везни, Скорпион, Стрелец, Козирог, Водолей и Риби. Пише се наново "
-        "всяка сутрин по реалните позиции на планетите.")
+    # До 160 знака, иначе Google го реже; изброяването на зодиите е в страницата.
+    ctx["seo_description"] = (f"Дневен хороскоп за всички 12 зодии за {date_bg} — любов, работа, "
+                              "здраве. Обновява се всяка сутрин.")
 
     # Откъс от всяка зодия — от вече кешираните разчитания за днес.
     previews = []
@@ -11861,36 +11898,59 @@ async def horoskop_sign(request: Request, sign_slug: str):
     if not sign:
         raise HTTPException(404, "Няма такъв знак.")
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
-    date_iso = now.date().isoformat()
-    date_bg = now.strftime("%d.%m.%Y")
+    tomorrow = now + datetime.timedelta(days=1)
+    tomorrow_iso = tomorrow.date().isoformat()
+    # Утрешният хороскоп се пише още днес (warm_sign_horoscopes). Превключвател
+    # „Днес · Утре“ има само ако е готов: недописан не се показва и не се чака.
+    tomorrow_ready = bool(get_sign_horoscope(sign["sign"], tomorrow_iso))
+    show_tomorrow = tomorrow_ready and request.query_params.get("den") == "utre"
+    day = tomorrow if show_tomorrow else now
+    date_iso = day.date().isoformat()
+    date_bg = day.strftime("%d.%m.%Y")
 
     cached = get_sign_horoscope(sign["sign"], date_iso)
     stale_date = None
-    if not cached:
+    if not cached and not show_tomorrow:
         prev_date, cached = get_previous_sign_horoscope(sign["sign"], date_iso)
         if prev_date:
             stale_date = _bg_date(prev_date)
     ctx = _sign_seo_context(request, sign, date_bg)
-    _own_og_image(ctx, request, f"/og/horoskop/{sign['slug']}.jpg", date_iso)
+    _own_og_image(ctx, request, f"/og/horoskop/{sign['slug']}.jpg", now.date().isoformat())
+    idx = ZODIAC_SIGNS.index(sign)
     ctx.update({
         "sign": sign,
         "signs": ZODIAC_SIGNS,
+        "prev_sign": ZODIAC_SIGNS[idx - 1],
+        "next_sign": ZODIAC_SIGNS[(idx + 1) % 12],
         "date_bg": date_bg,
         "date_iso": date_iso,
         "sky": daily_sky(),
         "faq": _SIGN_FAQ,
         "stale_date": stale_date,
+        "tomorrow_ready": tomorrow_ready,
+        "is_tomorrow": show_tomorrow,
     })
+    if show_tomorrow:
+        # Същото съдържание под друг адрес: Google да държи само „днес“.
+        ctx["seo_title"] = f"Хороскоп за {sign['name']} утре — {date_bg} | {brand_name()}"
+        ctx["seo_description"] = (f"Хороскопът за {sign['name']} за утре ({date_bg}): "
+                                  f"любов, работа, здраве и пари според транзитите.")
+        ctx["seo_robots"] = "noindex, follow"
     # Личният блок под текста: за вписания — откъс от неговия хороскоп (само
     # от кеша), за всички — пакетът като спокоен ред, а не скрит във въпросите.
     viewer = viewer_info(request)
-    ctx["personal_teaser"] = personal_horoscope_teaser(viewer)
+    ctx["personal_teaser"] = "" if show_tomorrow else personal_horoscope_teaser(viewer)
+    ctx["own_sign"] = viewer_sun_sign_slug(viewer) == sign["slug"]
     ctx["bundle"] = sign_page_bundle(viewer)
     if cached:
         summary, body = split_summary(cached)
         ctx["summary"] = summary
         full = _md_to_html(body)
         free_html, hidden_html, hidden_count = _split_reading(full)
+        if viewer.get("logged_in"):
+            # Вписаният има картата си — размазването на „още раздели“ е само
+            # за госта; на него целият общ текст се чете свободно.
+            free_html, hidden_html, hidden_count = full, "", 0
         ctx["body_html"] = free_html
         ctx["body_hidden"] = hidden_html
         ctx["hidden_sections"] = hidden_count
@@ -12042,8 +12102,10 @@ async def planet_house_page(request: Request, planet_slug: str, house_num: int):
 
     cached = get_planet_house(planet["key"], house["key"])
     ctx = seo_context(request, path=f"/{planet_slug}-v-{house_num}-dom")
-    ctx["seo_title"] = f"{planet['name']} в {house['short']} — какво означава | {brand_name()}"
-    ctx["seo_description"] = (f"{planet['name']} в {house['short']}: общото значение за характера, любовта и работата. "
+    # Пред клиента домът е „7-ми дом“; „7 дом“ остава само в ключовите думи,
+    # защото така го пишат в търсачката.
+    ctx["seo_title"] = f"{planet['name']} в {house['name']} — какво означава | {brand_name()}"
+    ctx["seo_description"] = (f"{planet['name']} в {house['name']}: общото значение за характера, любовта и работата. "
                               f"Виж какво значи конкретно в твоята натална карта.")
     ctx["seo_keywords"] = f"{planet['name'].lower()} в {house['short']}, {planet['name'].lower()} в {house['name'].lower()}"
     ctx["planet"] = planet
@@ -12222,7 +12284,7 @@ async def sign_profile_page(request: Request, sign_slug: str):
     cached = get_sign_profile(sign["sign"])
     ctx = seo_context(request, path=f"/zodia/{sign_slug}")
     _own_og_image(ctx, request, f"/og/zodia/{sign_slug}.jpg")
-    ctx["seo_title"] = f"Характеристика на {sign['name']} — зодия {sign['name']} | {brand_name()}"
+    ctx["seo_title"] = f"{sign['name']} — характеристика на зодията | {brand_name()}"
     ctx["seo_description"] = (f"Характеристика на зодия {sign['name']}: характер, силни и слаби страни, любов, работа и пари. "
                               f"Виж какво значи конкретно в твоята натална карта.")
     ctx["seo_keywords"] = f"характеристика на {sign['name'].lower()}, зодия {sign['name'].lower()}"
@@ -12290,14 +12352,14 @@ def api_sign_profile(sign_slug: str, request: Request, refresh: bool = False):
 # --- Вечнозелени SEO страници „съвместимост по зодии" ---
 _COMPAT_FAQ = [
     {"q": "Тази съвместимост важи ли за всички двойки от тези знаци?",
-     "a": "Тя описва общия случай — типичното за повечето двойки с тези слънчеви знаци. Истинската съвместимост зависи от Луната, Асцендента и аспектите между двете натални карти."},
+     "a": "Тя описва общия случай — типичното за повечето двойки с тези слънчеви знаци. Истинската ви съвместимост зависи от Луната, Асцендента и аспектите между двете ви натални карти."},
     {"q": "Каква е разликата със синастрията?",
      "a": "Съвместимостта по слънчев знак е само първата стъпка. Синастрията сравнява двете пълни натални карти — всички планети, домове и аспекти — и показва какво значи конкретно за вашата връзка."},
-    {"q": "Как да разбера истинската ни съвместимост?",
-     "a": "Създай наталната си карта и тази на партньора — сравнението на двете карти показва реалната ви съвместимост до градус."},
+    {"q": "Как да разберем истинската си съвместимост?",
+     "a": "Създайте наталните си карти — сравнението им показва реалната ви съвместимост до градус."},
     {"q": "Къде да получа пълния анализ на връзката?",
-     "a": "Пълният астрологически профил събира всички планети, домове и аспекти в един структуриран разказ — или вземи пакета „Всички разчитания“ с отстъпка. Еднократно плащане, остава завинаги.",
-     "a_html": "Пълният <a href=\"/astrologicheski-profil\">астрологически профил</a> събира всички планети, домове и аспекти в един структуриран разказ — или вземи <a href=\"/start?want=bundle\" data-cta=\"faq:bundle\">пакета „Всички разчитания“</a> с отстъпка. Еднократно плащане, остава завинаги."},
+     "a": "Любовният хороскоп и съвместимост сравнява двете ви натални карти — планети, домове и аспекти — и пише разчитане за вашата връзка. Еднократно плащане, остава завинаги.",
+     "a_html": "<a href=\"/lyubovna-savmestimost\">Любовният хороскоп и съвместимост</a> сравнява двете ви натални карти — планети, домове и аспекти — и пише разчитане за вашата връзка. Еднократно плащане, остава завинаги."},
 ]
 
 
@@ -12319,6 +12381,9 @@ async def compatibility_hub(request: Request):
                               "Скорпион, Стрелец, Козирог, Водолей и Риби. Виж съвместимостта на всяка двойка.")
     ctx["seo_keywords"] = "съвместимост по зодии, зодиакална съвместимост, съвместимост на зодиите"
     ctx["signs"] = ZODIAC_SIGNS
+    # /savmestimost?znak=oven (от страниците на знака) — предизбран първи знак.
+    znak = request.query_params.get("znak", "")
+    ctx["pick_a"] = znak if znak in ZODIAC_BY_SLUG else ""
     # Матрица 12×12: редове = знак A, колони = знак B, клетка = каноничен slug.
     ctx["matrix"] = [
         [{"a": row_sign, "b": col_sign, "slug": _compat_slug(row_sign, col_sign)} for col_sign in ZODIAC_SIGNS]
