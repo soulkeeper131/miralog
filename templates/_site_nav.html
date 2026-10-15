@@ -1,14 +1,14 @@
 {# Общото меню на публичните страници. Стилът (.site-nav) е в _critical.html.
    „Хороскоп по зодия“ води към общите хороскопи; личният „Дневен хороскоп“ е
    отделно разчитане (виж футъра). На телефон менюто е един ред: кратките
-   имена (.nav-short) се събират, дългите (.nav-full) са за компютър. Вписаният
-   има по-дълъг последен елемент („Моите карти“), затова на телефон му отпада
-   „Акаши“ (.nav-opt) — те са и във футъра. #}
+   имена (.nav-short) се събират, дългите (.nav-full) са за компютър, а
+   „Акашови записи“ (.nav-opt) отпада — шест връзки не се побират до бутона
+   за тема, а съкращение „Акаши“ не казва нищо. Всички са и във футъра. #}
 <nav class="site-nav{% if viewer().logged_in %} site-nav--in{% endif %}" aria-label="Основна навигация">
     <a href="/horoskop"><span class="nav-full">Хороскоп по зодия</span><span class="nav-short">Хороскопи</span></a>
     <a href="/natalna-karta"><span class="nav-full">Натална карта</span><span class="nav-short">Карта</span></a>
     <a href="/lyubovna-savmestimost"><span class="nav-full">Любовна съвместимост</span><span class="nav-short">Любов</span></a>
-    <a href="/akashovi-zapisi" class="nav-opt"><span class="nav-full">Акашови записи</span><span class="nav-short">Акаши</span></a>
+    <a href="/akashovi-zapisi" class="nav-opt">Акашови записи</a>
     <a href="/#ceni" data-cta="nav:prices">Цени</a>
     {# Вписаният вижда „Моите карти“ вместо „Вход“ — и без JavaScript. #}
     {% if viewer().logged_in %}<a href="/dashboard" class="site-nav-account" data-track="nav_account">Моите карти</a>
