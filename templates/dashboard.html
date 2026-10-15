@@ -323,14 +323,6 @@
         .mod-status { margin: 22px 0 6px; }
         .mod-status + .mod-status { margin-top: 18px; }
         .mod-status .section-header { flex-wrap: wrap; gap: 8px 12px; }
-        /* За кого се отварят разчитанията, когато в акаунта има повече хора. */
-        .mod-for { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text-muted); }
-        .mod-for select {
-            min-height: 40px; max-width: 200px; padding: 6px 10px; border-radius: 8px;
-            border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
-            font: inherit; font-size: 16px;
-        }
-        .mod-for select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .mod-chips {
             display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
         }
@@ -579,7 +571,8 @@
             .time-unknown-row { display: flex; align-items: center; gap: 8px; margin: -4px 0 14px;
             font-size: .85rem; color: var(--text-muted); cursor: pointer; }
         .time-unknown-row input { min-width: 16px; min-height: 16px; accent-color: var(--accent); }
-</style>
+        .mod-for-note { margin: -4px 0 12px; font-size: .86rem; color: var(--text-muted); }
+    </style>
     <link rel="stylesheet" href="/static/consent.css?v=5">
 {% include "_analytics.html" %}
 </head>
@@ -624,9 +617,8 @@
         <section class="mod-status" id="modOwn" aria-label="Твоите разчитания" hidden>
             <div class="section-header">
                 <h2>Твоите разчитания</h2>
-                <label class="mod-for" id="modFor" hidden>Отваряй за
-                    <select id="modPerson" aria-label="За кого да се отварят разчитанията"></select></label>
             </div>
+            <p class="mod-for-note" id="modForNote" hidden></p>
             <div class="mod-chips" id="ownChips"></div>
         </section>
         <section class="mod-status" id="modMore" aria-label="Още разчитания" hidden>
@@ -839,10 +831,11 @@
         function oldestPerson(persons) {
             return persons.reduce((a, p) => (p.id < a.id ? p : a), persons[0]);
         }
+        // Разчитанията се отварят в картата на самия човек (най-старата). Падащото
+        // „Отваряй за [име ▾]“ объркваше: човекът вече е избран от картите горе —
+        // за друг човек е бутонът „Карта“ до името му.
         function targetPerson(persons) {
-            let saved = 0;
-            try { saved = Number(localStorage.getItem(LAST_KEY)) || 0; } catch (e) {}
-            return persons.find(p => p.id === saved) || oldestPerson(persons);
+            return oldestPerson(persons);
         }
 
         let allPersons = [];
@@ -984,12 +977,11 @@
             const base = '/chart/' + target.id;
             const forName = multi ? ' — за ' + escapeHtml(target.name) : '';
 
-            // „Отваряй за“ има смисъл само при повече от един човек.
-            const forBox = document.getElementById('modFor');
-            forBox.hidden = !multi;
+            const forNote = document.getElementById('modForNote');
+            forNote.hidden = !multi;
             if (multi) {
-                document.getElementById('modPerson').innerHTML = allPersons.map(p =>
-                    `<option value="${p.id}"${p.id === target.id ? ' selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+                forNote.textContent = 'Отварят се в картата на ' + target.name
+                    + '. За друг човек — бутона „Карта“ до името му.';
             }
 
             const catalogue = data.catalogue || [];
@@ -1045,12 +1037,6 @@
             more.hidden = !lockedItems.length;
         }
 
-        document.getElementById('modPerson').addEventListener('change', function () {
-            rememberPerson(this.value);
-            renderModules();
-            // Връзката „Отключи“ при лимит също сочи към избраната карта.
-            renderQuota(lastQuota, allPersons);
-        });
 
         function escapeHtml(text) {
             return String(text == null ? '' : text)

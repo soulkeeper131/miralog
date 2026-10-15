@@ -1601,7 +1601,7 @@
         /* Действията с разчитането — ред икони под текста, не блок преди него. */
         .ra-row {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 6px;
-            margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);
+            margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border-soft);
         }
         .ra-btn {
             display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
@@ -2678,10 +2678,11 @@
                 <button class="ra-btn" onclick="shareReading('${key}')" title="Сподели линк" aria-label="Сподели линк">${raInner('🔗', 'Сподели')}</button>
             </div>`;
         }
-        // Текстът, после действията — навсякъде еднакво.
+        // Действията (слушай, PDF, сподели) са НАД текста — разчитанията са
+        // дълги и долу никой не ги намираше.
         function readingHtml(data) {
-            return '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>'
-                + readingActions(data);
+            return readingActions(data)
+                + '<div class="interpretation">' + formatInterpretation(data.interpretation) + '</div>';
         }
 
         // Глобален аудио плейър — един активен поток, показан в плаващ плейър.
@@ -3289,7 +3290,7 @@
                 <h3 class="dh-h">${inlineMd(sec.title)}</h3>
                 <div class="interpretation">${formatInterpretation(sec.lines.join('\n').trim())}</div></section>`;
 
-            let html = summaryGlance(s);
+            let html = readingActions(data) + summaryGlance(s);
             if (top) html += block(top, 'dh-essence');
             if (todo) html += block(todo, 'dh-todo');
             html += summaryLists(s);
@@ -3301,7 +3302,7 @@
                     <div class="read-all-body"><div class="interpretation">${formatInterpretation(md)}</div></div>
                 </details>`;
             }
-            return html + readingActions(data) + '<p class="disclaimer">' + DAILY_DISCLAIMER + '</p>';
+            return html + '<p class="disclaimer">' + DAILY_DISCLAIMER + '</p>';
         }
 
         // Настроение, енергия и фокус — на един ред.
