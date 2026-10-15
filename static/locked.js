@@ -58,7 +58,8 @@ async function readingFetch(url, options) {
 function money(cents, currency) {
     const value = (Number(cents) || 0) / 100;
     const symbol = (currency || 'EUR') === 'EUR' ? '€' : currency;
-    return value.toFixed(2).replace('.00', '') + ' ' + symbol;
+    // Със запетая, както в цените на сървъра (price_label): „2,99 €“, „25 €“.
+    return value.toFixed(2).replace('.00', '').replace('.', ',') + ' ' + symbol;
 }
 
 // Под размазването стои истинското ядро на картата — Слънце, Луна и
