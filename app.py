@@ -41,7 +41,7 @@ from translations import (
     SIGNS, ZODIAC_ORDER,
 )
 from numerology import compute_numerology
-from bg_text import clean_bg
+from bg_text import clean_bg, validate_horoscope, ReadingRejected
 from pdf_report import build_reading_pdf, build_receipt_pdf, build_invoice_pdf
 import billing
 import saft
@@ -2909,13 +2909,38 @@ def rank_transit_aspects(aspects: list, limit: int = 12) -> list:
                          else "слаб")
     return kept[:limit]
 
+_FEMININE_BODIES = {"Moon", "Venus"}
+_NEUTER_BODIES = {"Sun"}
+
+
+_TRANSIT_ADJ = {"транзитен": ("транзитен", "транзитна", "транзитно"),
+                "натален": ("натален", "натална", "натално")}
+
+
+def _body_with_adjective(body: str, adjective: str) -> str:
+    """„транзитна Луна“, „натален Сатурн“, „натално Слънце“ — по род, на български."""
+    masculine, feminine, neuter = _TRANSIT_ADJ[adjective]
+    word = feminine if body in _FEMININE_BODIES else neuter if body in _NEUTER_BODIES else masculine
+    return f"{word} {tr_object(body)}"
+
+
+def drop_unreliable_natal_aspects(aspects: list) -> list:
+    """Без час на раждане: ъглите не са известни, а натална Луна може да е в
+    съседния знак — аспектите към тях не са на човека."""
+    return [a for a in aspects
+            if a.get("passive") not in ANGLES and a.get("passive") != "Moon"]
+
+
 def format_transit_aspects(ranked: list) -> str:
-    """The aspect block as the prompt sees it, strength included."""
+    """The aspect block as the prompt sees it, strength included.
+
+    Български имена и без числа: моделът преписваше „Mars (транзит) Trine
+    Saturn (натал)“ и „(отклонение 2.6°)“ направо в текста."""
     if not ranked:
         return "Няма значими активни аспекти днес — денят е спокоен астрологически."
     return "\n".join(
-        f"- {a['active']} (транзит) {a['type']} {a['passive']} (натал)"
-        f" — {a['strength']}, отклонение {a['deviation']:.1f}°"
+        f"- {_body_with_adjective(a['active'], 'транзитен')} е в {tr_aspect(a['type']).lower()} "
+        f"с {_body_with_adjective(a['passive'], 'натален')} — {a['strength']} аспект"
         for a in ranked
     )
 
@@ -3762,10 +3787,21 @@ def sky_today() -> list:
 _DAILY_SKY_CACHE = {"t": 0.0, "data": None}
 _DAILY_SKY_BODIES = ["Sun", "Moon", "Mercury", "Venus", "Mars",
                      "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"]
+# Бавните планети (от Юпитер навън) държат един аспект седмици и месеци: това
+# е фон, не събитие на деня.
+_SLOW_BODIES = {"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"}
+_SKY_ASPECT_ORB = 3.0
+_SIGN_INDEX = {s["sign"]: i for i, s in enumerate(ZODIAC_SIGNS)}
 
 
 def _sky_at(moment: datetime.datetime) -> dict:
-    """Позициите и главните аспекти в даден момент (часовото време на София)."""
+    """Позициите и главните аспекти в даден момент (часовото време на София).
+
+    Аспектите са само между десетте планети, без повторения: библиотеката
+    връща всеки аспект по два пъти, смята и ъглите на картата (Имум Коели,
+    Асцендент — за София по обяд), Частта на щастието, Хирон и възлите. Тях
+    моделът ги описваше като „събития на деня“. Бавните двойки (и двете от
+    Юпитер навън) са отделно — като фон."""
     subject = charts.Subject(
         date_time=moment.replace(tzinfo=None),
         latitude=42.6977, longitude=23.3219, timezone="Europe/Sofia",
@@ -3780,30 +3816,68 @@ def _sky_at(moment: datetime.datetime) -> dict:
                 "name": name,
                 "name_bg": tr_object(name),
                 "symbol": sign_symbol(sign),
+                "sign": sign,
+                "sign_idx": _SIGN_INDEX.get(sign),
                 "sign_bg": tr_sign(sign),
                 "degree": int(obj.sign_longitude.degrees),
-                "retrograde": getattr(obj, "movement", None)
-                              and str(obj.movement) == "Retrograde",
+                "retrograde": bool(getattr(obj, "movement", None)
+                                   and str(obj.movement) == "Retrograde"),
             })
-    aspects = []
-    for a in serialize_aspects(chart_now.aspects):
+    aspects, background = [], []
+    for a in serialize_aspects(chart_now.aspects, symmetric=True):
         if a.get("type") not in MAJOR_ASPECTS:
             continue
+        if a["active"] not in _DAILY_SKY_BODIES or a["passive"] not in _DAILY_SKY_BODIES:
+            continue
         dev = aspect_deviation(a)
-        if dev is None or dev > 3.0:
+        if dev is None or dev > _SKY_ASPECT_ORB:
             continue
         a["deviation"] = dev
-        aspects.append(a)
+        slow = a["active"] in _SLOW_BODIES and a["passive"] in _SLOW_BODIES
+        (background if slow else aspects).append(a)
     aspects.sort(key=lambda a: a["deviation"])
+    background.sort(key=lambda a: a["deviation"])
     return {
         "positions": positions,
         "aspects": aspects,
+        "background_aspects": background,
         "moon_phase_bg": tr_moon_phase(chart_now.moon_phase.formatted if hasattr(chart_now, "moon_phase") and chart_now.moon_phase else None),
         "shape_bg": tr_shape(chart_now.shape if hasattr(chart_now, "shape") else None),
     }
 
 
-_EMPTY_SKY = {"positions": [], "aspects": [], "moon_phase_bg": "", "shape_bg": ""}
+_EMPTY_SKY = {"positions": [], "aspects": [], "background_aspects": [],
+              "moon_phase_bg": "", "shape_bg": "", "moon_ingress": None}
+
+
+def _moon_longitude(when_utc: datetime.datetime) -> float:
+    jd = swe.julday(when_utc.year, when_utc.month, when_utc.day,
+                    when_utc.hour + when_utc.minute / 60.0 + when_utc.second / 3600.0)
+    return swe.calc_ut(jd, swe.MOON)[0][0]
+
+
+def moon_sign_change(day: datetime.date) -> Optional[dict]:
+    """Кога Луната сменя знака през даден ден (по София), или None.
+
+    Луната минава най-много ~15° на ден, така че знакът се сменя най-много
+    веднъж; часът се намира с разполовяване до минута."""
+    sofia = ZoneInfo("Europe/Sofia")
+    utc = datetime.timezone.utc
+    start = datetime.datetime(day.year, day.month, day.day, tzinfo=sofia)
+    end = start + datetime.timedelta(days=1)
+    first = int(_moon_longitude(start.astimezone(utc)) // 30) % 12
+    last = int(_moon_longitude(end.astimezone(utc)) // 30) % 12
+    if first == last:
+        return None
+    lo, hi = start, end
+    while (hi - lo) > datetime.timedelta(seconds=30):
+        mid = lo + (hi - lo) / 2
+        if int(_moon_longitude(mid.astimezone(utc)) // 30) % 12 == first:
+            lo = mid
+        else:
+            hi = mid
+    moment = hi.astimezone(sofia)
+    return {"time": moment.strftime("%H:%M"), "from_idx": first, "to_idx": last}
 
 
 def daily_sky() -> dict:
@@ -3836,6 +3910,12 @@ def sky_for_date(date_iso: str) -> dict:
     try:
         day = datetime.date.fromisoformat(date_iso)
         result = _sky_at(datetime.datetime(day.year, day.month, day.day, 12, 0))
+        try:
+            result["moon_ingress"] = moon_sign_change(day)
+        except Exception:
+            # Часът на смяната е допълнение: без него небето пак става.
+            log.warning("moon_sign_change(%s) failed", date_iso, exc_info=True)
+            result["moon_ingress"] = None
     except Exception:
         log.warning("sky_for_date(%s) failed; the sign horoscope will be text-only",
                     date_iso, exc_info=True)
@@ -3885,19 +3965,102 @@ def set_sign_horoscope(sign: str, date_iso: str, content: str) -> None:
         conn.commit()
 
 
-def _sky_context_text(sky: dict) -> str:
-    """The day's sky as a compact block the prompt can reason over."""
+# Темата на дома в няколко думи. Здравето и парите са нарочно само нагласа
+# (самочувствие, ценности): подканата забранява органи, болести и сделки.
+HOUSE_TOPICS = {
+    1: "личност, самочувствие, нови начала",
+    2: "ценности, самооценка, материална сигурност",
+    3: "общуване, учене, близка среда",
+    4: "дом, семейство, корени",
+    5: "любов, творчество, удоволствие",
+    6: "работа, ежедневие, навици",
+    7: "партньорство, връзки, договорки",
+    8: "дълбоки промени, интимност, споделено",
+    9: "пътувания, учене, възгледи",
+    10: "кариера, репутация, цели",
+    11: "приятели, общности, надежди",
+    12: "уединение, подсъзнание, почивка",
+}
+
+
+def house_in_sign(planet_sign_idx: int, sign_idx: int) -> int:
+    """Домът на планета за зодия: домовете са по цял знак — 1-ви дом е самият знак."""
+    return (planet_sign_idx - sign_idx) % 12 + 1
+
+
+def _house_text(house: int, topic: bool = True) -> str:
+    name = HOUSES_BY_NUM[house]["name"]
+    return f"{name} ({HOUSE_TOPICS[house]})" if topic else name
+
+
+def _with(word: str) -> str:
+    """„с“ или „със“ пред думата, както е по правопис."""
+    return "със" if word[:1].lower() in "сз" else "с"
+
+
+def _sky_aspect_text(a: dict, sign_idx: Optional[int], by_name: dict) -> str:
+    """„Слънце от 7-ми дом е в секстил със Сатурн от 1-ви дом“ — без градуси и отклонения."""
+    first, second = tr_object(a["active"]), tr_object(a["passive"])
+    kind = tr_aspect(a["type"]).lower()
+    where = {}
+    if sign_idx is not None:
+        for key, name in (("a", a["active"]), ("p", a["passive"])):
+            pos = by_name.get(name)
+            if pos and pos.get("sign_idx") is not None:
+                where[key] = " от " + _house_text(house_in_sign(pos["sign_idx"], sign_idx), False)
+    return (f"{first}{where.get('a', '')} е в {kind} "
+            f"{_with(second)} {second}{where.get('p', '')}")
+
+
+def _sky_context_text(sky: dict, sign_data: Optional[dict] = None) -> str:
+    """Небето на деня като блок за подканата.
+
+    С `sign_data` всяка планета е в дома си спрямо зодията (домове по цял знак),
+    а управителят на знака и часът, в който Луната сменя знака, са отделно.
+    Така дванайсетте подканти за един и същи ден не са еднакви."""
     if not sky.get("positions"):
         return "(Позициите на планетите не са налични.)"
+    sign_idx = _SIGN_INDEX.get(sign_data["sign"]) if sign_data else None
+    by_name = {p["name"]: p for p in sky["positions"]}
+    ingress = sky.get("moon_ingress")
     lines = []
     for p in sky["positions"]:
-        retro = " (ретрограден)" if p["retrograde"] else ""
-        lines.append(f"- {p['name_bg']} в {p['sign_bg']} на {p['degree']}°{retro}")
+        retro = (", ретроградна" if p["name"] == "Venus" else ", ретрограден") if p["retrograde"] else ""
+        line = f"- {p['name_bg']}: {p['sign_bg']}, {p['degree']}°{retro}"
+        if sign_idx is not None and p.get("sign_idx") is not None:
+            line += f" — {_house_text(house_in_sign(p['sign_idx'], sign_idx))}"
+        if p["name"] == "Moon" and ingress:
+            new = ZODIAC_SIGNS[ingress["to_idx"]]
+            line += f"; в {ingress['time']} (по софийско време) преминава в {new['name']}"
+            if sign_idx is not None:
+                line += f" — {_house_text(house_in_sign(ingress['to_idx'], sign_idx))}"
+        lines.append(line)
+
+    retro = [p["name_bg"] for p in sky["positions"] if p["retrograde"]]
+    lines.append("Ретроградни: " + (", ".join(retro) + ". Всички останали планети са директни."
+                                    if retro else "няма — всички планети са директни."))
+
+    if sign_data:
+        ruler = next((p for p in sky["positions"] if p["name_bg"] == sign_data["ruler"]), None)
+        if ruler:
+            where = f"{ruler['sign_bg']}, {ruler['degree']}°"
+            if ruler["retrograde"]:
+                where += ", ретроградна" if ruler["name"] == "Venus" else ", ретрограден"
+            if sign_idx is not None and ruler.get("sign_idx") is not None:
+                where += f" — {_house_text(house_in_sign(ruler['sign_idx'], sign_idx))}"
+            lines.append(f"Управителят на {sign_data['name']} е {ruler['name_bg']}: {where}.")
+
+    lines.append("")
     if sky.get("aspects"):
-        lines.append("")
-        lines.append("Основни аспекти на деня (подредени по сила):")
-        for a in sky["aspects"]:
-            lines.append(f"- {tr_object(a['active'])} {tr_aspect(a['type'])} {tr_object(a['passive'])} — отклонение {a['deviation']:.1f}°")
+        lines.append("Главни аспекти на деня, от най-точния към най-слабия:")
+        for a in sky["aspects"][:8]:
+            lines.append("- " + _sky_aspect_text(a, sign_idx, by_name))
+    else:
+        lines.append("Точни главни аспекти днес няма — денят е спокоен; стъпи на положението на планетите.")
+    if sky.get("background_aspects"):
+        lines.append("Дълготраен фон (траят седмици и месеци; спомени най-много един и не го представяй като събитие на деня):")
+        for a in sky["background_aspects"][:3]:
+            lines.append("- " + _sky_aspect_text(a, sign_idx, by_name))
     if sky.get("moon_phase_bg"):
         lines.append(f"Лунна фаза: {sky['moon_phase_bg']}")
     return "\n".join(lines)
@@ -3983,46 +4146,143 @@ def _md_to_html(raw: str) -> str:
     return "".join(out)
 
 
-def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Optional[str]:
-    """Write and cache the horoscope for one zodiac sign and day. Returns the raw reply."""
-    sky = sky_for_date(date_iso)
-    sign_name = sign_data["name"]
-    prompt = f"""Ти си професионален астролог. Напиши ДНЕВЕН ХОРОСКОП ЗА ЗОДИЯ {sign_name} за {date_bg}, стриктно базиран на реалните астрономически данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ за хората, родени под знака {sign_name} (слънчев знак).
+# Заглавията на разделите. Зодийният текст е с шест раздела (резюмето вече носи
+# „Благоприятно/Избягвай/Внимавай“), личният — с девет: интерфейсът в картата
+# намира разделите по заглавие, затова те не се менят.
+SIGN_SECTION_TITLES = ["Общо усещане", "Любов", "Работа и пари",
+                       "Здраве и енергия", "Късмет", "Съвет на деня"]
+PERSONAL_SECTION_TITLES = [
+    "Общо усещане за деня", "Разчитане на аспектите", "Благоприятно е за",
+    "Не е благоприятно за", "Какво да направиш днес", "Какво да избягваш",
+    "В какво да внимаваш", "Емоции и настроение", "Есенцията на деня",
+]
 
-За знака {sign_name}: стихия {sign_data['element']}, модалност {sign_data['modality']}, управител {sign_data['ruler']}, период {sign_data['dates']}.
 
-=== НЕБЕТО ЗА {date_bg} ===
-{_sky_context_text(sky)}
+def _summary_format(teaser: bool) -> str:
+    """Образецът на резюмето — само форматът, без примерни фрази: докато в него
+    стоеше „прибързани обещания“, моделът го връщаше в „Избягвай“ при 12 от 12 знака."""
+    extra = (', "teaser": "<едно изречение до 140 знака за най-същественото на този ден за знака; '
+             'не започва с „Денят“>"') if teaser else ""
+    return ('---SUMMARY---\n'
+            '{"mood": "<едно съществително за настроението, 1-2 думи>", '
+            '"energy": "Висока|Средна|Ниска", '
+            '"do": ["<съществителна фраза от 2-4 думи>", "<съществителна фраза от 2-4 думи>", '
+            '"<съществителна фраза от 2-4 думи>"], '
+            '"avoid": ["<съществителна фраза от 2-4 думи>", "<съществителна фраза от 2-4 думи>"], '
+            '"focus": "<кратка фраза за фокуса на деня>", '
+            '"caution": "<едно кратко изречение без думата „Внимавай“>"' + extra + '}\n'
+            '---END---')
 
+
+# Общите правила за стил и безопасност — и за зодийния, и за личния хороскоп.
+READING_SAFETY_RULES = """- ЕЗИК БЕЗ РОД: не знаеш дали четеш на мъж или жена. Не пиши „сам/сама“, „готов/готова“, „уверен/уверена“; изразявай се така, че родът да не се налага („ако нямаш партньор“, „имаш нужда от“, „денят те кара да“).
+- БЕЗ ЧИСЛА И ТЕХНИЧЕСКИ ДАННИ: никакви градуси, отклонения и числа в скоби. Аспектите и планетите се пишат като обикновени думи в изречението („Слънцето в секстил с Юпитер“), аспектът е с малка буква. Не споменавай Имум Коели, Асцендент, Част на щастието и други точки извън десетте планети.
+- НЕ ОПИСВАЙ КАКВО ЛИПСВА: пиши само за онова, което е в данните. Не пиши какво „не е тук“ или „не присъства“; не наричай ретроградна планета, която не е в списъка на ретроградните.
+- ЗДРАВЕ: само самочувствие, сън, движение и почивка. Без органи, болести, симптоми, храносмилане, възпаления, лекарства, лекари.
+- ПАРИ: само нагласа и отношение към ресурсите. Без съвети за конкретни сделки: не казвай „купи“, „подпиши“, „инвестирай“, „вземи заем или кредит“."""
+
+
+def _previous_mood_note(sign_data: dict, date_iso: str) -> str:
+    """Вчерашното настроение и фокус на знака, за да не се повтарят всеки ден."""
+    try:
+        prev_date, prev = get_previous_sign_horoscope(sign_data["sign"], date_iso)
+        if not prev:
+            return ""
+        gap = (datetime.date.fromisoformat(date_iso) - datetime.date.fromisoformat(prev_date)).days
+        if gap > 3:
+            return ""
+        summary, _ = split_summary(prev)
+        mood = (summary or {}).get("mood")
+        focus = (summary or {}).get("focus")
+        if not mood and not focus:
+            return ""
+        parts = []
+        if mood:
+            parts.append(f"настроение „{mood}“")
+        if focus:
+            parts.append(f"фокус „{focus}“")
+        return ("\n=== ПРЕДИШНИЯТ ХОРОСКОП ЗА ТОЗИ ЗНАК ===\n"
+                f"В хороскопа от {_bg_date(prev_date)} бяха: {', '.join(parts)}. "
+                "Този път избери различно настроение и различен фокус, "
+                "изведени от днешното небе, и не повтаряй формулировките.\n")
+    except Exception:
+        return ""
+
+
+def sign_horoscope_prompt(sign_data: dict, date_bg: str, date_iso: str, sky: dict) -> str:
+    """Подканата за хороскоп на една зодия — отделна функция, за да се чете и тества."""
+    name = sign_data["name"]
+    if date_iso == sofia_today().isoformat():
+        when = f"Текстът е за {date_bg}."
+    else:
+        when = (f"Текстът е за {date_bg} и ще се чете и в друг ден: не пиши „днес“, „утре“ или „вчера“. "
+                "Пиши „този ден“, „през деня“, „вечерта“.")
+    return f"""Ти си професионален астролог. Напиши ДНЕВЕН ХОРОСКОП ЗА ЗОДИЯ {name} за {date_bg}, стриктно базиран на реалните астрономически данни по-долу (изчислени със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ за хората, родени под знака {name} (слънчев знак).
+{when}
+
+За знака {name}: стихия {sign_data['element']}, модалност {sign_data['modality']}, управител {sign_data['ruler']}, период {sign_data['dates']}.
+
+=== НЕБЕТО ЗА {date_bg}, ОТ ГЛЕДНА ТОЧКА НА {name.upper()} ===
+Домовете са по цял знак: 1-ви дом е самият {name}, 2-ри е следващият знак и така нататък. Домът казва в коя област от живота на {name} попада планетата — разкажи деня през тези области, а не като общо небе, което важи за всички. Домовете назовавай през темата им (кариерата, дома и семейството), без номера.
+{_sky_context_text(sky, sign_data)}
+{_previous_mood_note(sign_data, date_iso)}
 === ЗАДАЧА ===
 Отговорът ти се състои от ДВЕ части, в този ред.
 
-ЧАСТ 1 — резюме за карти. Започни отговора си с JSON блок между маркерите ---SUMMARY--- и ---END--- точно в този формат:
----SUMMARY---
-{{"mood": "една дума за настроението на деня", "energy": "Висока|Средна|Ниска", "do": ["3 къси съществителни фрази по 2-4 думи — НЕЩА, не заповеди (напр. „спокойни разговори“, „важни решения“); НЕ пиши „провери“, „изчакай“"], "avoid": ["2-3 къси съществителни фрази по 2-4 думи (напр. „спорове с близки“, „прибързани обещания“)"], "focus": "фокусът на деня", "caution": "едно кратко изречение в какво да внимава"}}
----END---
+ЧАСТ 1 — резюме за карти. Започни отговора си с JSON блок между маркерите ---SUMMARY--- и ---END--- точно в този формат (текстовете в ъгловите скоби замени със свои; без друг текст в блока):
+{_summary_format(teaser=True)}
 
-ЧАСТ 2 — разгърнатият текст, веднага след ---END---, със следните заглавия, номерирани:
-1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня за {sign_name}.
-2. **Любов и отношения** — какво носи денят за личния живот, базирано на позицията на Венера и Луната днес.
-3. **Работа и финанси** — базирано на Слънцето, Меркурий и Марс днес.
-4. **Здраве и енергия** — къде е енергията днес и какво да поддържаш.
-5. **Късмет и възможности** — къде денят отваря врата, базирано на Юпитер и активните аспекти.
-6. **Какво да направиш днес** — 3-4 конкретни, изпълними действия.
-7. **Какво да избягваш** — 2-3 конкретни поведения или решения, които днешните аспекти правят рискови.
-8. **В какво да внимаваш** — 2-3 предупреждения според напрегнатите аспекти.
-9. **Есенцията на деня** — 1-2 изречения обобщение.
+ЧАСТ 2 — разгърнатият текст, веднага след ---END---, с точно тези шест заглавия, номерирани:
+1. **{SIGN_SECTION_TITLES[0]}** — 3-4 изречения: най-съществената тема на деня за {name}.
+2. **{SIGN_SECTION_TITLES[1]}** — Венера, Луната и домовете на личния живот; 3-5 изречения.
+3. **{SIGN_SECTION_TITLES[2]}** — Слънцето, Меркурий, Марс и домовете на работата; за парите само нагласа; 3-5 изречения.
+4. **{SIGN_SECTION_TITLES[3]}** — къде е енергията на деня и как да я пазиш (самочувствие, сън, движение, почивка); 3-4 изречения.
+5. **{SIGN_SECTION_TITLES[4]}** — къде денят отваря врата, според Юпитер и най-благоприятния аспект; 3-4 изречения.
+6. **{SIGN_SECTION_TITLES[5]}** — един ясен, изпълним съвет за този ден; 2-3 изречения.
 
 === КАК ДА ПИШЕШ ===
-- Пиши на български, топло и практично, все едно говориш директно на читателя.
-- ФОРМАТ: всяко от деветте заглавия започва на нов ред във вида `1. **Заглавие**`. Под него — текст на отделни редове. Изброяванията с тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
-- ЛОГИКА: съветите в секции 6-8 трябва да следват пряко от позициите и аспектите по-горе.
-- ДЪЛЖИНА: бъди подробен. Всяка секция с по няколко изречения реално съдържание.
-- Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
-- Основавай се единствено на изброените данни, без да добавяш измислени детайли."""
+- Пиши на български, топло и практично, на „ти“.
+- ФОРМАТ: всяко от шестте заглавия е на нов ред във вида `1. **Заглавие**`, а под него — текст на отделни редове. Не слагай други заглавия и не изброявай с тирета.
+- ГЛЕДНА ТОЧКА: пиши само за {name}. Започвай от домовете и от управителя {sign_data['ruler']}, за да е текстът различим от този за другите знаци. Не започвай два раздела с една и съща дума.
+- СТИЛ: конкретно, без клишета от типа „бъди позитивен“. Ако аспект е слаб или неутрален, кажи го честно. Основавай се само на изброените данни.
+- ДЪЛЖИНА: всеки раздел с реално съдържание; общо между 2 200 и 4 500 знака.
+{READING_SAFETY_RULES}"""
 
+
+def generate_checked(call, prompt: str, validate, what: str) -> str:
+    """Пуска `call(prompt)` и проверява отговора; при отказ — един нов опит.
+
+    Нов опит е точно един (всеки струва пари): към подканата се добавя защо е
+    отхвърлен предишният. След втория отказ — AIError, който `ai_job` показва
+    както всяка друга грешка на доставчика; в кеша не влиза нищо."""
+    reason = None
+    for attempt in (1, 2):
+        text = prompt if reason is None else (
+            prompt + f"\n\nПРЕДИШНИЯТ ТИ ОТГОВОР БЕ ОТХВЪРЛЕН: {reason}. "
+                     "Напиши целия отговор отново и поправи точно това.")
+        raw = call(text)
+        try:
+            return validate(raw)
+        except ReadingRejected as e:
+            reason = str(e)
+            log.warning("%s: отговорът не мина проверката (опит %d/2): %s", what, attempt, reason)
+    raise AIError(f"Текстът не мина проверката за качество: {reason}")
+
+
+def _generate_sign_horoscope(sign_data: dict, date_bg: str, date_iso: str) -> Optional[str]:
+    """Write and cache the horoscope for one zodiac sign and day. Returns the raw reply."""
     ai_key, provider = ai_config_or_raise()
-    raw = call_ai(ai_key, provider, prompt, max_tokens=6000)
+    sky = sky_for_date(date_iso)
+    if not sky.get("positions"):
+        # Подкана без небе е покана да се измисли: по-добре грешка и нов опит.
+        raise AIError(f"Небето за {date_bg} не се сметна — хороскопът не се пише без данни.")
+    prompt = sign_horoscope_prompt(sign_data, date_bg, date_iso, sky)
+    relative = date_iso == sofia_today().isoformat()
+    raw = generate_checked(
+        lambda p: call_ai(ai_key, provider, p, max_tokens=4000), prompt,
+        lambda r: validate_horoscope(r, titles=SIGN_SECTION_TITLES, teaser=True,
+                                     relative_days=relative),
+        f"Хороскоп {sign_data['name']} {date_iso}")
     set_sign_horoscope(sign_data["sign"], date_iso, raw)
     return raw
 
@@ -10556,6 +10816,55 @@ def start_paid_reading(person_id: int, cache_key: str, prompt: str, *,
     return {"pending": True, "cache_key": cache_key}
 
 
+def personal_horoscope_prompt(p: dict, date_bg: str, transit_data: dict, ranked: list) -> str:
+    """Подканата за личния дневен хороскоп (отделна функция — чете се и се тества).
+
+    Всички имена са български, без числа и отклонения; при неизвестен час на
+    раждане подканата казва това и не дава аспекти към ъглите и натална Луна."""
+    unknown = time_unknown_of(p)
+    aspects_block = format_transit_aspects(ranked)
+    return f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
+
+Име: {p['name']}
+Малко име (обръщай се само с него): {first_name(p['name'])}
+Дата на анализа: {date_bg} (транзитите са сметнати за обяд по местното време на човека)
+{TIME_UNKNOWN_NOTE if unknown else ''}
+=== ФОН НА ДЕНЯ ===
+Лунна фаза: {transit_data.get('moon_phase_bg') or 'не е налична'}
+
+=== АКТИВНИ ТРАНЗИТНИ АСПЕКТИ КЪМ НАТАЛНАТА КАРТА ===
+„Транзитен“ е планетата на небето в момента, „натален“ — тази от картата на човека. Подредени са по сила — първите тежат най-много. Стъпи основно на силните и умерените; слабите спомени само ако допълват картината.
+{aspects_block}
+
+=== ЗАДАЧА ===
+Отговорът ти се състои от ДВЕ части, в този ред.
+
+ЧАСТ 1 — резюме за карти. Започни отговора си с JSON блок между маркерите ---SUMMARY--- и ---END--- точно в този формат (текстовете в ъгловите скоби замени със свои; без друг текст в блока):
+{_summary_format(teaser=False)}
+
+ЧАСТ 2 — разгърнатият текст, веднага след ---END---, в следната структура. Използвай точно тези девет заглавия, номерирани:
+
+1. **{PERSONAL_SECTION_TITLES[0]}** — 2-3 изречения обобщение на енергията на деня.
+2. **{PERSONAL_SECTION_TITLES[1]}** — разгърни силните и умерените аспекти по един по един: какво конкретно носи всеки. Слабите обедини в едно-две изречения накрая или ги пропусни, ако не добавят нищо. По-добре три обяснени задълбочено, отколкото десет изброени повърхностно. Обяснявай термините накратко (квадрат — напрежение, което подтиква към действие; тригон — лекота и подкрепа).
+3. **{PERSONAL_SECTION_TITLES[2]}** — 3-5 конкретни неща, за които днешните аспекти дават попътен вятър. За всяко посочи кой аспект го подкрепя.
+4. **{PERSONAL_SECTION_TITLES[3]}** — 3-4 неща, които по-добре да се отложат днес, и защо според аспектите.
+5. **{PERSONAL_SECTION_TITLES[4]}** — 3-4 конкретни, изпълними действия (не общи фрази — реални неща, които човек може да свърши днес).
+6. **{PERSONAL_SECTION_TITLES[5]}** — 2-3 конкретни поведения или решения, които днешните транзити правят рискови.
+7. **{PERSONAL_SECTION_TITLES[6]}** — 2-3 предупреждения: къде е рискът от недоразумение, прибързаност, преумора или конфликт, според напрегнатите аспекти (квадрати, опозиции).
+8. **{PERSONAL_SECTION_TITLES[7]}** — базирано на транзитите към Луната и личните планети.
+9. **{PERSONAL_SECTION_TITLES[8]}** — 1-2 изречения обобщение.
+
+=== КАК ДА ПИШЕШ ===
+- Пиши на български, топло и практично, все едно говориш директно на човека.
+- ФОРМАТ: всяко от деветте заглавия започва на нов ред във вида `1. **Заглавие**`. Под него — текст на отделни редове. Където изброяваш неща, ползвай тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
+- СТРУКТУРА: всяка секция да е самостоятелна и завършена. Не повтаряй едно и също през различните секции — ако вече си обяснил аспект в секция 2, в следващите само се позовавай на него накратко.
+- ЛОГИКА: върви от общото към конкретното. Секции 3-7 трябва да следват пряко от аспектите, обяснени в секция 2 — читателят да вижда връзката „този аспект → затова този съвет“.
+- ДЪЛЖИНА: бъди подробен. Всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи. Общо между 2 500 и 6 000 знака.
+- Бъди конкретен — избягвай клишета от типа „бъди позитивен“. Ако някой аспект е слаб или неутрален, кажи го честно.
+- Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли. Домове не са дадени — не ги споменавай.
+{READING_SAFETY_RULES}"""
+
+
 @app.get("/api/persons/{person_id}/daily-horoscope")
 def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, str] = Depends(require_feature("horoscope"))):
     """Generate an AI-written interpretation of today's transits to the person's natal chart.
@@ -10601,63 +10910,22 @@ def api_daily_horoscope(person_id: int, refresh: bool = False, user: Tuple[int, 
             return {"interpretation": AI_UNAVAILABLE, "date": date_bg}
 
     def _generate():
-        transit_data = compute_transits(p, now)
-
-        ranked = rank_transit_aspects(
-            transit_data.get("transit_aspects_to_natal", []), limit=10)
-        aspects_block = format_transit_aspects(ranked)
-
-        prompt = f"""Ти си професионален астролог. Направи ДНЕВЕН ХОРОСКОП за {date_bg} за конкретния човек, СТРИКТНО базиран на точните транзитни данни по-долу (изчислени астрономически със Swiss Ephemeris). Не измисляй позиции или аспекти извън изброените — обясни само какво ОЗНАЧАВАТ.
-
-Име: {p['name']}
-Малко име (обръщай се само с него): {first_name(p['name'])}
-Дата на анализа: {date_bg}
-
-=== ФОН НА ДЕНЯ ===
-Форма на транзитната карта: {transit_data.get('shape', 'N/A')}
-Лунна фаза днес: {transit_data.get('moon_phase', 'N/A')}
-
-=== АКТИВНИ ТРАНЗИТНИ АСПЕКТИ КЪМ НАТАЛНАТА КАРТА ===
-Подредени са по сила — първите тежат най-много днес. Стъпи основно на
-силните и умерените; слабите спомени само ако допълват картината.
-{aspects_block}
-
-=== ЗАДАЧА ===
-Отговорът ти се състои от ДВЕ части, в този ред.
-
-ЧАСТ 1 — резюме за карти. Започни отговора си с JSON блок между маркерите ---SUMMARY--- и ---END--- точно в този формат (без допълнителен текст в блока):
----SUMMARY---
-{{"mood": "една дума за настроението на деня (напр. Съсредоточен, Емоционален, Динамичен)",
-"energy": "Висока|Средна|Ниска",
-"do": ["3 къси съществителни фрази по 2-4 думи — това са НЕЩА, не заповеди. Пример: „спокойни разговори“, „подреждане на дома“, „важни решения“. НЕ пиши глаголи в повелително наклонение като „провери“, „изчакай“, „фокусирай се“"],
-"avoid": ["2-3 къси съществителни фрази по 2-4 думи, също НЕЩА. Пример: „спорове с близки“, „прибързани обещания“, „претоварване с работа“"],
-"focus": "една дума/кратка фраза за фокуса на деня",
-"caution": "едно кратко изречение в какво да внимава"}}
----END---
-
-ЧАСТ 2 — разгърнатият текст, веднага след ---END---, в следната структура. Използвай точно тези заглавия, номерирани:
-
-1. **Общо усещане за деня** — 2-3 изречения обобщение на енергията на деня.
-2. **Разчитане на аспектите** — разгърни силните и умерените аспекти по един по един: какво конкретно носи всеки. Слабите обедини в едно-две изречения накрая или ги пропусни, ако не добавят нищо. По-добре три обяснени задълбочено, отколкото десет изброени повърхностно. Обяснявай термините накратко (напр. "квадрат — напрежение, което подтиква към действие").
-3. **Благоприятно е за** — 3-5 конкретни неща, за които днешните аспекти дават попътен вятър (напр. разговори, преговори, творчество, почивка, финансови решения, физическа активност, срещи). За всяко посочи кой аспект го подкрепя.
-4. **Не е благоприятно за** — 3-4 неща, които по-добре да се отложат днес, и защо според аспектите.
-5. **Какво да направиш днес** — 3-4 конкретни, изпълними действия (не общи фрази — реални неща, които човек може да свърши днес).
-6. **Какво да избягваш** — 2-3 конкретни поведения или решения, които днешните транзити правят рискови.
-7. **В какво да внимаваш** — 2-3 предупреждения: къде е рискът от недоразумение, прибързаност, преумора или конфликт, според напрегнатите аспекти (квадрати, опозиции).
-8. **Емоции и настроение** — базирано на транзитите към Луната и личните планети.
-9. **Есенцията на деня** — 1-2 изречения обобщение.
-
-=== КАК ДА ПИШЕШ ===
-- Пиши на български, топло и практично, все едно говориш директно на човека.
-- ФОРМАТ: всяко от деветте заглавия започва на нов ред във вида `1. **Заглавие**`. Под него — текст на отделни редове. Където изброяваш неща, ползвай тирета (`- нещо`), едно на ред. Не слепвай изброявания в един дълъг абзац.
-- СТРУКТУРА: всяка секция да е самостоятелна и завършена. Не повтаряй едно и също през различните секции — ако вече си обяснил аспект в секция 2, в следващите само се позовавай на него накратко.
-- ЛОГИКА: върви от общото към конкретното. Секции 3-7 трябва да следват пряко от аспектите, обяснени в секция 2 — читателят да вижда връзката "този аспект → затова този съвет".
-- ДЪЛЖИНА: бъди подробен. Всяка секция с по няколко изречения реално съдържание, а изброяванията с кратко обяснение защо, не само голи думи.
-- Бъди конкретен — избягвай клишета от типа "бъди позитивен". Ако някой аспект е слаб или неутрален, кажи го честно.
-- Основавай се единствено на изброените по-горе аспекти, без да добавяш измислени детайли."""
-
         ai_key, provider = ai_config_or_raise()
-        raw = call_ai(ai_key, provider, prompt, max_tokens=6000, model=model)
+        # Транзитите са по обяд на местната дата на човека, а не за секундата на
+        # генерирането: ключът в кеша е за деня, текстът не бива да зависи от часа.
+        noon = datetime.datetime(now.year, now.month, now.day, 12, 0, tzinfo=tz)
+        transit_data = compute_transits(p, noon)
+
+        aspects = transit_data.get("transit_aspects_to_natal", [])
+        if time_unknown_of(p):
+            aspects = drop_unreliable_natal_aspects(aspects)
+        ranked = rank_transit_aspects(aspects, limit=10)
+
+        prompt = personal_horoscope_prompt(p, date_bg, transit_data, ranked)
+        raw = generate_checked(
+            lambda q: call_ai(ai_key, provider, q, max_tokens=6000, model=model), prompt,
+            lambda r: validate_horoscope(r, titles=PERSONAL_SECTION_TITLES),
+            f"Личен хороскоп {person_id} {now.date().isoformat()}")
         set_ai_cache(person_id, cache_key, raw)
 
     job = ai_job(job_key, _generate)
@@ -10926,6 +11194,9 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             # Без тази проверка отрязан текст минаваше за успех и влизаше в кеша.
             if result.get("stop_reason") == "max_tokens":
                 raise AIError(f"{provider} отряза отговора (max_tokens).")
+            if result.get("stop_reason") not in (None, "end_turn", "stop_sequence"):
+                # „refusal“, „pause_turn“, „tool_use“: това не е написан текст.
+                raise AIError(f"{provider} спря отговора (stop_reason={result.get('stop_reason')}).")
             blocks = result.get("content") or []
             text = blocks[0].get("text", "") if blocks and isinstance(blocks[0], dict) else ""
             if not text.strip():
@@ -10978,6 +11249,11 @@ def call_ai(api_key: str, provider: str, prompt: str, max_tokens: int = 4000,
             # Само „мисли“ без отговор не е разчитане: досега те се записваха
             # в кеша като готов текст. Празен отговор е грешка, не успех.
             finish = result["choices"][0].get("finish_reason")
+            # Само „stop“ значи, че моделът е свършил сам. „content_filter“,
+            # „insufficient_system_resource“ и пр. връщат част от текста със
+            # статус 200 — преди това влизаше в кеша като готов.
+            if finish not in (None, "stop", "length"):
+                raise AIError(f"{provider} спря отговора преди края (finish_reason={finish}).")
             if not content.strip() and finish != "length":
                 raise AIError(f"{provider} върна празен отговор (finish={finish}).")
             # Единственият надежден признак за отрязване е finish_reason ==
@@ -12228,6 +12504,24 @@ def _first_sentences(text: str, count: int = 2, limit: int = 190) -> str:
     return out
 
 
+def _summary_teaser(summary: Optional[dict]) -> str:
+    """Откъсът за общата страница и за meta description — само ако е годен."""
+    teaser = (summary or {}).get("teaser") if isinstance(summary, dict) else None
+    if not isinstance(teaser, str):
+        return ""
+    teaser = re.sub(r"\s+", " ", teaser).strip()
+    if not (20 <= len(teaser) <= 160) or re.match(r"денят\b", teaser, re.I):
+        return ""
+    return teaser
+
+
+def _meta_description(text: str, limit: int = 160) -> str:
+    """До 160 знака (Google реже по-дългото), по цяла дума."""
+    if len(text) <= limit:
+        return text
+    return text[:limit - 1].rsplit(" ", 1)[0].rstrip(" ,;:—-") + "…"
+
+
 def personal_horoscope_teaser(viewer: dict) -> str:
     """Първите изречения от днешния личен хороскоп на вписания — само от кеша.
 
@@ -12328,8 +12622,10 @@ async def horoskop_hub(request: Request):
             _, cached = get_previous_sign_horoscope(sign["sign"], date_iso)
         excerpt = ""
         if cached:
-            _, body = split_summary(cached)
-            excerpt = _first_sentences(body)
+            summary, body = split_summary(cached)
+            # Откъсът е изречението от резюмето, написано за този знак; старите
+            # текстове (без него) пак се режат от началото на разчитането.
+            excerpt = _summary_teaser(summary) or _first_sentences(body)
         previews.append({**sign, "excerpt": excerpt})
 
     ctx.update({
@@ -12397,6 +12693,12 @@ async def horoskop_sign(request: Request, sign_slug: str):
     if cached:
         summary, body = split_summary(cached)
         ctx["summary"] = summary
+        teaser = "" if stale_date else _summary_teaser(summary)
+        if teaser:
+            # Описанието в Google е изречението за този знак и ден, а не една и
+            # съща рамка за всичките дванайсет страници.
+            ctx["seo_description"] = _meta_description(
+                f"{sign['name']}, {date_bg}: {teaser}")
         full = _md_to_html(body)
         free_html, hidden_html, hidden_count = _split_reading(full)
         if viewer.get("logged_in"):
@@ -12411,6 +12713,19 @@ async def horoskop_sign(request: Request, sign_slug: str):
 
 def sofia_today() -> datetime.date:
     return datetime.datetime.now(ZoneInfo("Europe/Sofia")).date()
+
+
+SIGN_WARM_PAUSE = 300    # сек.: след неуспех цикълът не опитва същия знак по-рано
+
+
+def sign_warm_paused(job: Optional[dict]) -> bool:
+    """Задачата е приключила с грешка преди по-малко от SIGN_WARM_PAUSE секунди.
+
+    Цикълът върви на 10 минути, но „warm“ се вика и на ръка, а страниците сами
+    повтарят след минута; без пауза един повреден доставчик получаваше 24
+    заявки при всяко викане."""
+    return bool(job and job["done"].is_set() and job.get("error")
+                and time.monotonic() - job.get("finished_at", 0) < SIGN_WARM_PAUSE)
 
 
 def warm_sign_horoscopes() -> int:
@@ -12430,6 +12745,8 @@ def warm_sign_horoscopes() -> int:
             with _AI_JOBS_LOCK:
                 running = _AI_JOBS.get(cache_key)
             if running and not running["done"].is_set():
+                continue
+            if sign_warm_paused(running):
                 continue
             ai_job(cache_key, lambda s=sign, db=date_bg, di=date_iso:
                    _generate_sign_horoscope(s, db, di))
@@ -12593,17 +12910,31 @@ def _stale_sign_horoscope(sign: dict, date_iso: str) -> Optional[dict]:
 
 
 @app.get("/api/horoskop/{sign_slug}")
-def api_horoskop(sign_slug: str, request: Request, refresh: bool = False):
-    """Generate (or return cached) today's horoscope for a sign. Polled by the page."""
+def api_horoskop(sign_slug: str, request: Request, refresh: bool = False,
+                 date: Optional[str] = None):
+    """Generate (or return cached) today's horoscope for a sign. Polled by the page.
+
+    `date` (ГГГГ-ММ-ДД, днес или утре) е за админа: `?refresh=true&date=` пренаписва
+    и утрешния текст, който warm цикълът държи готов ден напред."""
     # Страницата никога не праща refresh. Без тази проверка всеки би могъл да
     # вика адреса в цикъл и да харчи AI кредитите — прегенериране е за админа.
-    refresh = refresh and is_admin_request(request)
+    admin = bool((refresh or date) and is_admin_request(request))
+    refresh = refresh and admin
     sign = ZODIAC_BY_SLUG.get(sign_slug)
     if not sign:
         raise HTTPException(404, "Няма такъв знак.")
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
-    date_iso = now.date().isoformat()
-    date_bg = now.strftime("%d.%m.%Y")
+    day = now.date()
+    if date and admin:
+        try:
+            wanted = datetime.date.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(400, "Невалидна дата. Очакваният формат е ГГГГ-ММ-ДД.")
+        if not (day <= wanted <= day + datetime.timedelta(days=1)):
+            raise HTTPException(400, "Само днешната или утрешната дата.")
+        day = wanted
+    date_iso = day.isoformat()
+    date_bg = day.strftime("%d.%m.%Y")
     cache_key = f"sign:{sign['sign']}:{date_iso}"
 
     if not refresh:

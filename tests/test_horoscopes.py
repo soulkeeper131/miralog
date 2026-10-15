@@ -8,6 +8,8 @@ import time
 
 import pytest
 
+from test_horoscope_quality import make_reply
+
 
 def _done_job():
     ev = threading.Event()
@@ -81,7 +83,8 @@ def _person(app, user_id):
 def _model_used(app, monkeypatch, user_row):
     used = []
     monkeypatch.setattr(app, "get_ai_config", lambda: ("key", "deepseek"))
-    monkeypatch.setattr(app, "call_ai", lambda *a, **k: used.append(k.get("model")) or "Текст.")
+    reply = make_reply(app.PERSONAL_SECTION_TITLES, teaser=False)
+    monkeypatch.setattr(app, "call_ai", lambda *a, **k: used.append(k.get("model")) or reply)
     pid = _person(app, user_row["id"])
     out = app.api_daily_horoscope(pid, user=(user_row["id"], user_row["email"]))
     if out.get("pending"):
@@ -162,7 +165,8 @@ def test_one_persons_failure_does_not_reach_another(app, db, monkeypatch):
     for j in jobs:
         j["done"].wait(30)
 
-    monkeypatch.setattr(app, "call_ai", lambda *a_, **k: "Текстът на Б.")
+    reply = make_reply(app.PERSONAL_SECTION_TITLES, teaser=False)
+    monkeypatch.setattr(app, "call_ai", lambda *a_, **k: reply)
     out = app.api_daily_horoscope(pb, user=(b["id"], b["email"]))
     if out.get("pending"):
         time.sleep(0.5)
@@ -203,10 +207,12 @@ def test_sign_horoscope_uses_the_sky_of_its_own_day(app, monkeypatch):
     """Утрешният хороскоп се пише днес, но по утрешното небе, не по сегашното."""
     tomorrow = (app.sofia_today() + datetime.timedelta(days=1)).isoformat()
     asked = []
-    monkeypatch.setattr(app, "sky_for_date", lambda d: asked.append(d) or dict(app._EMPTY_SKY))
+    real_sky = app.sky_for_date
+    monkeypatch.setattr(app, "sky_for_date", lambda d: asked.append(d) or real_sky(d))
     monkeypatch.setattr(app, "daily_sky", lambda: pytest.fail("ползва небето в момента"))
     monkeypatch.setattr(app, "ai_config_or_raise", lambda: ("key", "deepseek"))
-    monkeypatch.setattr(app, "call_ai", lambda *a, **k: "Текст.")
+    reply = make_reply(app.SIGN_SECTION_TITLES)
+    monkeypatch.setattr(app, "call_ai", lambda *a, **k: reply)
     app._generate_sign_horoscope(app.ZODIAC_SIGNS[0], "утре", tomorrow)
     assert asked == [tomorrow]
 

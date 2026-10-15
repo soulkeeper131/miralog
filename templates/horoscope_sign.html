@@ -68,6 +68,7 @@
         .horo-reading ul li { position: relative; padding-left: 1.2em; color: var(--text-soft); line-height: 1.65; margin-bottom: 0.4em; }
         .horo-reading ul li::before { content: "✦"; position: absolute; left: 0; color: var(--accent); font-size: 0.8em; top: 0.2em; }
         .horo-reading hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
+        .horo-disclaimer { max-width: 760px; margin: 1.2em auto 0; font-size: 0.82rem; color: var(--text-dim); text-align: center; }
         .horo-loading { text-align: center; color: var(--text-soft); padding: 40px 0; }
         .stale-note { display: inline-block; margin: 0.6rem 0 0; padding: 8px 14px; border-radius: 10px; background: var(--surface-raised, rgba(255,255,255,0.05)); border: 1px solid var(--line); color: var(--text-soft); font-size: 0.9rem; }
         /* Героят има ЕДИН основен бутон; „Сподели“ е малка икона до него. */
@@ -247,13 +248,14 @@
                 <p>Разгърнатото разчитане на днешния ден.</p>
             </div>
             <div class="horo-reading">{{ body_html|safe }}</div>
+            <p class="horo-disclaimer">С информативна и развлекателна цел — не е медицински или финансов съвет.</p>
 
             {% if body_hidden %}
             <div class="horo-locked">
                 <div class="horo-reading horo-fade" aria-hidden="true">{{ body_hidden|safe }}</div>
                 <div class="horo-more">
                     <h3>Още {{ hidden_sections }} раздела за {% if is_tomorrow %}утре{% else %}днес{% endif %}</h3>
-                    <p>Любов, работа, здраве и какво да избягваш — но по зодия те
+                    <p>Здраве, късмет и съвет за деня — но по зодия те
                        важат за милиони души наведнъж. Твоята натална карта показва
                        кои от днешните транзити засягат точно теб.</p>
                     <div class="cta-row">
