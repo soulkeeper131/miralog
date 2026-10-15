@@ -126,6 +126,14 @@
         }
         .theme-toggle:hover { border-color: var(--accent); transform: translateY(-1px); }
         .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        @media (max-width: 600px) {
+            /* На телефон не плава над текста: горе вдясно, до менюто, и се
+               скролва със страницата (мястото му е запазено в .site-nav). */
+            .theme-toggle {
+                position: absolute; top: 10px; right: 4px; bottom: auto;
+                width: 36px; height: 36px; font-size: 1rem; box-shadow: none;
+            }
+        }
 
         .wrap {
             max-width: 1080px; margin: 0 auto;
@@ -316,10 +324,11 @@
         }
 
         .sec-head { text-align: center; margin-bottom: clamp(30px, 5vw, 50px); }
-        @media (max-width: 1000px) {
+        @media (min-width: 601px) and (max-width: 1000px) {
             /* Below the widest layout there is no free margin at the top right,
                so the button docks bottom-right where it floats over gutter
-               rather than over headings and buttons. */
+               rather than over headings and buttons. На телефон (≤600px) е
+               горе вдясно и се скролва със страницата — виж _critical.html. */
             .theme-toggle {
                 top: auto;
                 bottom: max(16px, env(safe-area-inset-bottom));
@@ -1090,12 +1099,8 @@
             .mod-grid--compact .mod-tag { display: none; }
         }
         @media (max-width: 600px) {
-            /* Цялото описание стои на страницата на модула и в картата с цената
-               по-горе; тук две реда са достатъчни, за да се познае кой е. */
-            .mod-lede {
-                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-                overflow: hidden;
-            }
+            /* Описанията не се режат: отрязано по средата на изречението
+               смисълът се губи, а те са кратки. */
             .mod-card { padding: 12px 14px; }
             .mod-grid { margin-top: 18px; }
         }
@@ -1121,6 +1126,10 @@
         }
         footer a { color: var(--accent-light); text-decoration: none; }
         footer a:hover { text-decoration: underline; }
+        /* Общият футър (_site_footer.html): списък с разчитанията, цени/вход/контакт. */
+        .site-footer p { margin-top: 12px; }
+        .site-footer-links { line-height: 2; max-width: 760px; margin: 0 auto; }
+        .site-footer-links a, .site-footer p a { display: inline-block; padding: 2px 3px; }
 
         @media (prefers-reduced-motion: reduce) {
             * { animation: none !important; transition: none !important; }
@@ -1211,6 +1220,8 @@
             font-family: var(--font-mono); font-size: .62rem; letter-spacing: .1em;
             text-transform: uppercase; color: var(--text-dim); margin-left: auto; white-space: nowrap;
         }
+        /* Цената на платеното разчитане — златна, както на началната. */
+        .r-tag.price { color: var(--gilt); letter-spacing: 0; font-size: .74rem; font-variant-numeric: tabular-nums; }
 
 /* --- общата страница за хороскопи: откъси по зодия --- */
 /* Мрежа от карти вместо списък с връзки: всяка носи първите изречения от
@@ -1365,4 +1376,48 @@
 
 @media (max-width: 560px) {
     .fact--wide { grid-column: auto; }
+}
+
+/* --- платените лендинги: цената е до първия бутон --- */
+/* Сумата и „еднократно“ стоят преди бутона, за да не звучи като безплатно
+   действие. Сумата идва от feature_prices, не е твърд текст. */
+.price-line {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center;
+    gap: 4px 12px; margin: 0 auto 18px;
+}
+.price-line-amount {
+    font-family: var(--font-mono); font-size: 1.35rem; font-weight: 500;
+    color: var(--gilt); font-variant-numeric: tabular-nums;
+}
+.price-line-terms { font-size: .9rem; color: var(--text-muted); }
+.unlocks-foot {
+    margin-top: 18px; text-align: center; font-size: .92rem; color: var(--text-muted);
+}
+
+/* --- правните страници (условия, поверителност) в общата рамка --- */
+.legal { max-width: 760px; padding-top: clamp(24px, 4vw, 40px); padding-bottom: 48px; }
+.legal-back { font-size: .9rem; margin-bottom: 8px; }
+.legal h1 {
+    font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em;
+    font-size: clamp(1.8rem, 4.4vw, 2.4rem); line-height: 1.15;
+    color: var(--text-heading); margin-bottom: 6px;
+}
+.legal h2 {
+    font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
+    color: var(--text-heading); margin: 2em 0 .5em;
+}
+.legal h3 { font-size: 1.05rem; color: var(--text-heading); margin: 1.5em 0 .4em; }
+.legal p, .legal li { color: var(--text-soft); line-height: 1.75; margin-bottom: .8em; }
+.legal ul, .legal ol { padding-left: 1.4em; margin-bottom: .8em; }
+.legal strong { color: var(--text); }
+.legal .muted { color: var(--text-muted); font-size: .92rem; }
+.legal table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: .93rem; display: block; overflow-x: auto; }
+.legal th, .legal td {
+    text-align: left; vertical-align: top; padding: 8px 10px;
+    border: 1px solid var(--border-soft); color: var(--text-soft);
+}
+.legal th { background: var(--bg-card); color: var(--text-heading); }
+.legal .linklike {
+    background: none; border: 0; padding: 0; color: var(--accent-light);
+    text-decoration: underline; cursor: pointer; font: inherit;
 }

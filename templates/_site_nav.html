@@ -1,20 +1,26 @@
-{# Общото меню на публичните страници. Досега само началната имаше меню, а
-   никоя страница нямаше „Вход“. Стилът (.site-nav) е в _critical.html. #}
-<nav class="site-nav" aria-label="Основна навигация">
-    <a href="/horoskop">Дневен хороскоп</a>
-    <a href="/natalna-karta">Натална карта</a>
+{# Общото меню на публичните страници. Стилът (.site-nav) е в _critical.html.
+   „Хороскоп по зодия“ води към общите хороскопи; личният „Дневен хороскоп“ е
+   отделно разчитане (виж футъра). На телефон менюто е един ред: кратките
+   имена (.nav-short) се събират, дългите (.nav-full) са за компютър. Вписаният
+   има по-дълъг последен елемент („Моите карти“), затова на телефон му отпада
+   „Акаши“ (.nav-opt) — те са и във футъра. #}
+<nav class="site-nav{% if viewer().logged_in %} site-nav--in{% endif %}" aria-label="Основна навигация">
+    <a href="/horoskop"><span class="nav-full">Хороскоп по зодия</span><span class="nav-short">Хороскопи</span></a>
+    <a href="/natalna-karta"><span class="nav-full">Натална карта</span><span class="nav-short">Карта</span></a>
     <a href="/lyubovna-savmestimost"><span class="nav-full">Любовна съвместимост</span><span class="nav-short">Любов</span></a>
-    <a href="/akashovi-zapisi">Акашови записи</a>
+    <a href="/akashovi-zapisi" class="nav-opt"><span class="nav-full">Акашови записи</span><span class="nav-short">Акаши</span></a>
     <a href="/#ceni" data-cta="nav:prices">Цени</a>
-    <a href="/login" class="site-nav-account" data-track="nav_account">Вход</a>
+    {# Вписаният вижда „Моите карти“ вместо „Вход“ — и без JavaScript. #}
+    {% if viewer().logged_in %}<a href="/dashboard" class="site-nav-account" data-track="nav_account">Моите карти</a>
+    {% else %}<a href="/login" class="site-nav-account" data-track="nav_account">Вход</a>{% endif %}
 </nav>
 <script>
-    // Вписаният вижда „Моите карти“ вместо „Вход“.
+    // Токен в браузъра, а сървърът не го е познал (няма бисквитка): пак „Моите карти“.
     (function () {
         try {
             if (localStorage.getItem('miralog_token')) {
                 var a = document.querySelector('.site-nav-account');
-                if (a) { a.textContent = 'Моите карти'; a.href = '/dashboard'; }
+                if (a) { a.textContent = 'Моите карти'; a.href = '/dashboard'; a.parentNode.classList.add('site-nav--in'); }
             }
         } catch (e) { /* private mode */ }
     })();

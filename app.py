@@ -11499,14 +11499,45 @@ async def moon_page(request: Request):
     return HTMLResponse(templates.get_template("moon.html").render({"request": request}))
 
 # --- Landing pages for each module ---
+def _with_price(text: str, price: Optional[str]) -> str:
+    """„Отключи за {price}“ → „Отключи за 4 €“. Ако модулът не е в продажба
+    (няма цена в feature_prices), „за {price}“ просто отпада."""
+    if price:
+        return text.replace("{price}", price)
+    return text.replace(" за {price}", "").replace("{price}", "")
+
+
+def _price_faq(price: str, bundle_price: Optional[str]) -> dict:
+    """„Колко струва?“ за платените лендинги — със сумата от базата, не твърда."""
+    answer = (f"{price} — еднократно плащане. Остава ти завинаги, без абонамент и без "
+              "подновяване. Първо създаваш безплатната си натална карта и виждаш "
+              "резултата, преди да платиш.")
+    if bundle_price:
+        answer += f" Всички разчитания заедно струват {bundle_price}."
+    return {"q": "Колко струва?", "a": answer}
+
+
 def _feature_context(request: Request, page: dict) -> dict:
-    """SEO context + related-page cross-links for a feature landing page."""
+    """SEO context + related-page cross-links for a feature landing page.
+
+    `page` в шаблона е копие с поставена цена (бутон, FAQ); цените на
+    свързаните страници са в `prices` — всичко от същите редове като началната."""
     ctx = seo_context(request, path=f"/{page['slug']}")
     name = brand_name()
     ctx["seo_title"] = page["seo_title"].replace("{brand}", name)
     ctx["seo_description"] = page["seo_description"].replace("{brand}", name)
     ctx["seo_keywords"] = page["seo_keywords"]
-    ctx["page"] = page
+    pricing = landing_pricing()
+    price = None if page.get("included") else pricing["by_key"].get(page["key"])
+    view = dict(page)
+    view["cta"] = _with_price(page["cta"], price)
+    faq = [dict(f) for f in page.get("faq", [])]
+    if price:
+        faq.insert(0, _price_faq(price, (pricing["bundle"] or {}).get("price")))
+    view["faq"] = faq
+    ctx["page"] = view
+    ctx["price"] = price
+    ctx["prices"] = pricing["by_key"]
     ctx["related_pages"] = [
         FEATURE_PAGES_BY_SLUG[s] for s in page.get("related", [])
         if s in FEATURE_PAGES_BY_SLUG

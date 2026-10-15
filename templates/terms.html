@@ -2,22 +2,33 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="robots" content="noindex">
     <title>Условия за ползване — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-    <style>
-        body { font-family: Georgia, serif; max-width: 760px; margin: 40px auto; padding: 0 20px 60px; line-height: 1.7; color: #2d2438; }
-        h1 { font-size: 1.9rem; }
-        h2 { font-size: 1.25rem; margin-top: 2.2em; }
-        a { color: #764a93; }
-        .muted { color: #655a78; font-size: 0.95rem; }
-    </style>
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('miralog_theme');
+                var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            } catch (e) { /* private mode */ }
+        })();
+    </script>
+    {% include "_critical.html" %}
+    <link rel="stylesheet" href="/static/landing.min.css?v=9">
 {% include "_analytics.html" %}
 <link rel="stylesheet" href="/static/consent.css">
 </head>
 <body>
-    <p><a href="/">← {{ brand().name }}</a></p>
+    {# mailto само за истински адрес: докато юридическите данни са [[плейсхолдър]], няма невалидна връзка. #}
+    {% macro mail(addr) -%}
+        {% if addr and '[[' not in addr %}<a href="mailto:{{ addr }}">{{ addr }}</a>{% else %}{{ addr }}{% endif %}
+    {%- endmacro %}
+    {% include "_site_nav.html" %}
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <main class="wrap legal">
+    <p class="legal-back"><a href="/">← {{ brand().name }}</a></p>
     <h1>Условия за ползване</h1>
     <p class="muted">Последна актуализация: август 2026</p>
 
@@ -30,7 +41,7 @@
         ЕИК: {{ legal().company_id }}<br>
         ДДС: {{ legal().vat_number }}<br>
         Адрес: {{ legal().address }}<br>
-        Имейл: <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>
+        Имейл: {{ mail(legal().privacy_email) }}
     </p>
 
     <h2>2. Естество на услугата</h2>
@@ -56,7 +67,7 @@
         <li>Имаш право да се откажеш от договора в <strong>14-дневен срок</strong> от сключването му, <strong>освен</strong> ако изпълнението е започнало с твоето изрично предварително съгласие и ти си потвърдил, че губиш правото на отказ (чл. 57, ал. 1, т. 13 ЗЗП);</li>
         <li>Когато цифровото съдържание е предоставено незабавно, изпълнението започва веднага и правото на отказ се губи при предоставянето, освен в случаите, предвидени в закона.</li>
     </ul>
-    <p>За да упражниш правото на отказ (когато е приложимо), свържи се с нас на <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a> преди изтичането на срока.</p>
+    <p>За да упражниш правото на отказ (когато е приложимо), свържи се с нас на {{ mail(legal().privacy_email) }} преди изтичането на срока.</p>
 
     <h2>6. Интелектуална собственост</h2>
     <p>Софтуерът, текстовете, дизайнът и разчитанията, генерирани от услугата, са защитени обекти на интелектуална собственост. Ти получаваш право да ползваш разчитанията за лични, некомерсиални цели. Не получаваш право да копираш, разпространяваш или преработваш услугата или нейно съдържание без изрично разрешение.</p>
@@ -65,7 +76,7 @@
     <p>Услугата се предоставя „както е“, без гаранции за точност, пълнота или пригодност за конкретна цел. {{ brand().name }} не носи отговорност за решения, взети въз основа на разчитанията, нито за преки или косвени вреди, произтичащи от използването или невъзможността за използване на услугата, доколкото това е допустимо от закона. Ползваш услугата на своя отговорност.</p>
 
     <h2>8. Прекратяване</h2>
-    <p>Можеш да прекратиш ползването на услугата по всяко време, като изтриеш акаунта си (от настройките на профила или с искане на <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>). Ние можем да ограничим или прекратим достъпа при нарушение на тези условия или при съмнение за злоупотреба.</p>
+    <p>Можеш да прекратиш ползването на услугата по всяко време, като изтриеш акаунта си (от настройките на профила или с искане на {{ mail(legal().privacy_email) }}). Ние можем да ограничим или прекратим достъпа при нарушение на тези условия или при съмнение за злоупотреба.</p>
 
     <h2>9. Промени в условията</h2>
     <p>Може да актуализираме тези условия. Актуалната версия винаги е публикувана на тази страница с дата на последна промяна. Съществените промени влизат в сила след публикуването им.</p>
@@ -74,8 +85,25 @@
     <p>Настоящите условия се уреждат от българското законодателство. Споровете се решават от компетентния български съд. Като потребител запазваш правата си, предвидени в задължителните разпоредби на закона на държавата, в която пребиваваш.</p>
 
     <h2>11. Контакт</h2>
-    <p>За въпроси относно тези условия: <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>.</p>
+    <p>За въпроси относно тези условия: {{ mail(legal().privacy_email) }}.</p>
 
+    </main>
+    {% include "_site_footer.html" %}
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            try {
+                if (isLight) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('miralog_theme', 'dark'); }
+                else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('miralog_theme', 'light'); }
+            } catch (e) { /* private mode */ }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
 <script src="/static/consent.js?v=6"></script>
 </body>
 </html>

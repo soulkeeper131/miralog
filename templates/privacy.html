@@ -2,27 +2,33 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="robots" content="noindex">
     <title>Политика за поверителност — {{ brand().name }}</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-    <style>
-        body { font-family: Georgia, serif; max-width: 760px; margin: 40px auto; padding: 0 20px 60px; line-height: 1.7; color: #2d2438; }
-        h1 { font-size: 1.9rem; }
-        h2 { font-size: 1.25rem; margin-top: 2.2em; }
-        h3 { font-size: 1.05rem; margin-top: 1.6em; }
-        a { color: #764a93; }
-        .muted { color: #655a78; font-size: 0.95rem; }
-        table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.95rem; }
-        th, td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid #e3dceb; }
-        th { background: #f6f2fa; }
-        .linklike { background:none; border:0; padding:0; color:inherit; text-decoration:underline; cursor:pointer; font:inherit; }
-</style>
+    <script>
+        (function() {
+            try {
+                var saved = localStorage.getItem('miralog_theme');
+                var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            } catch (e) { /* private mode */ }
+        })();
+    </script>
+    {% include "_critical.html" %}
+    <link rel="stylesheet" href="/static/landing.min.css?v=9">
 {% include "_analytics.html" %}
 <link rel="stylesheet" href="/static/consent.css">
 </head>
 <body>
-    <p><a href="/">← {{ brand().name }}</a></p>
+    {# mailto само за истински адрес: докато юридическите данни са [[плейсхолдър]], няма невалидна връзка. #}
+    {% macro mail(addr) -%}
+        {% if addr and '[[' not in addr %}<a href="mailto:{{ addr }}">{{ addr }}</a>{% else %}{{ addr }}{% endif %}
+    {%- endmacro %}
+    {% include "_site_nav.html" %}
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Смяна на тема"></button>
+    <main class="wrap legal">
+    <p class="legal-back"><a href="/">← {{ brand().name }}</a></p>
     <h1>Политика за поверителност</h1>
     <p class="muted">Последна актуализация: август 2026</p>
 
@@ -35,7 +41,7 @@
         ЕИК: {{ legal().company_id }}<br>
         ДДС: {{ legal().vat_number }}<br>
         Адрес: {{ legal().address }}<br>
-        Имейл за въпроси за защита на данните: <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>
+        Имейл за въпроси за защита на данните: {{ mail(legal().privacy_email) }}
     </p>
     <p>Длъжностно лице по защита на данните (DPO): {% if legal().dpo %}{{ legal().dpo }}{% else %}няма назначено — за малка по обем обработка на данни такова не е задължително по чл. 37 GDPR{% endif %}.</p>
 
@@ -119,14 +125,31 @@
         <li><strong>Оттегляне на съгласие</strong> (чл. 7, ал. 3) — по всяко време, без това да засяга законосъобразността на обработването преди оттеглянето;</li>
         <li><strong>Жалба</strong> до надзорния орган — Комисията за защита на личните данни (КЗЛД), гр. София, бул. „Проф. Цветан Лазаров“ № 2, www.cpdp.bg.</li>
     </ul>
-    <p>За да упражниш някое от тези права, пиши ни на <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>. Отговаряме в сроковете по GDPR (обикновено до 1 месец). Изтриването на акаунта и изтеглянето на данните ти са достъпни и директно от твоя профил.</p>
+    <p>За да упражниш някое от тези права, пиши ни на {{ mail(legal().privacy_email) }}. Отговаряме в сроковете по GDPR (обикновено до 1 месец). Изтриването на акаунта и изтеглянето на данните ти са достъпни и директно от твоя профил.</p>
 
     <h2>11. Промени в тази политика</h2>
     <p>Може да актуализираме тази политика при промени в услугата или в законодателството. Актуалната версия винаги е публикувана на тази страница, с отбелязана дата на последна промяна.</p>
 
     <h2>12. Контакт</h2>
-    <p>За всякакви въпроси относно обработването на лични данни: <a href="mailto:{{ legal().privacy_email }}">{{ legal().privacy_email }}</a>.</p>
+    <p>За всякакви въпроси относно обработването на лични данни: {{ mail(legal().privacy_email) }}.</p>
 
+    </main>
+    {% include "_site_footer.html" %}
+    <script>
+        function updateThemeToggleIcon() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            document.getElementById('themeToggle').textContent = isLight ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            try {
+                if (isLight) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('miralog_theme', 'dark'); }
+                else { document.documentElement.setAttribute('data-theme', 'light'); localStorage.setItem('miralog_theme', 'light'); }
+            } catch (e) { /* private mode */ }
+            updateThemeToggleIcon();
+        }
+        updateThemeToggleIcon();
+    </script>
 <script src="/static/consent.js?v=6"></script>
 </body>
 </html>
