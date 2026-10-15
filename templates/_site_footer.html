@@ -1,0 +1,26 @@
+{# Общият футър на публичните страници: всички разчитания, цени, вход и контакт.
+   Досега всяка страница имаше свой (на повечето — само „Поверителност · Условия“). #}
+<footer class="site-footer">
+    <div class="wrap">
+        <nav class="site-footer-links" aria-label="Всички разчитания">
+            <a href="/natalna-karta">Натална карта</a> ·
+            <a href="/dneven-horoskop">Дневен хороскоп</a> ·
+            <a href="/horoskop">Хороскоп по зодия</a> ·
+            <a href="/astrologicheski-profil">Пълен астрологически профил</a> ·
+            <a href="/horoskop-za-period">Хороскоп за период</a> ·
+            <a href="/lyubovna-savmestimost">Любовен хороскоп</a> ·
+            <a href="/akashovi-zapisi">Акашови записи</a> ·
+            <a href="/numerologia">Нумерология</a> ·
+            <a href="/lunen-kalendar">Лунен календар</a> ·
+            <a href="/savmestimost">Съвместимост по зодии</a>
+        </nav>
+        <p>
+            <a href="/#ceni">Цени</a> ·
+            {% if viewer().logged_in %}<a href="/dashboard">Моите карти</a>{% else %}<a href="/login">Вход</a>{% endif %}
+            {% set _legal_email = legal_contact_email() %}
+            {% if _legal_email %} · <a href="mailto:{{ _legal_email }}">{{ _legal_email }}</a>{% endif %}
+        </p>
+        <p>{{ brand().name }} · {{ brand().tagline }}<br>
+            <a href="/privacy">Поверителност</a> · <a href="/terms">Условия за ползване</a></p>
+    </div>
+</footer>

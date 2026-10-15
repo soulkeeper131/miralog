@@ -1121,6 +1121,16 @@ templates.env.globals["oauth_providers"] = oauth_providers
 # Юридически данни за /privacy и /terms — глобал, за да се попълват от
 # едно място (LEGAL_DEFAULTS) и да се виждат във всички документи.
 templates.env.globals["legal"] = legal
+
+
+def legal_contact_email() -> str:
+    """Имейлът за контакт във футъра — празно, докато е плейсхолдър."""
+    data = legal()
+    value = (data.get("contact") or data.get("privacy_email") or "").strip()
+    return value if "@" in value and "[[" not in value else ""
+
+
+templates.env.globals["legal_contact_email"] = legal_contact_email
 # GA4 measurement id, resolved lazily so an admin can change it without a
 # restart. Empty string means "no analytics" — the consent layer keeps gtag
 # dormant until the visitor opts in anyway.
