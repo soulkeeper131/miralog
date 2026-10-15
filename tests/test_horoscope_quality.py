@@ -236,8 +236,14 @@ def test_english_words_from_the_prompt_are_rejected(app, sign_reply):
         _validate_sign(app, sign_reply(last=" Mars е в Trine със Saturn."))
 
 
+def test_degree_brackets_are_removed_not_rejected(app, sign_reply):
+    """„(отклонение 2.6°)“ се маха направо — не струва нов опит."""
+    out = _validate_sign(app, sign_reply(last=" Венера (отклонение 2.6°) зове. Края."))
+    assert "отклонение" not in out and "Венера зове." in out
+
+
 @pytest.mark.parametrize("leak", [
-    " (отклонение 2.6°)", " Точността е 0,6° днес.", " Имум Коели е в Нептун.",
+    " Точността е 0,6° днес.", " Имум Коели е в Нептун.",
     " Частта на щастието е в Лъв.", " Част на щастието е близо.", " Ретроградният Меркурий не е тук.",
 ])
 def test_data_leaks_are_rejected(app, sign_reply, leak):
@@ -324,7 +330,7 @@ def test_personal_reply_keeps_nine_titles(app, personal_reply):
 
 def test_one_retry_with_the_reason_then_success(app, sign_reply):
     prompts = []
-    replies = [sign_reply(last=" (отклонение 2.6°)."), sign_reply()]
+    replies = [sign_reply(last=" Имум Коели е в Нептун."), sign_reply()]
 
     def call(p):
         prompts.append(p)
@@ -332,16 +338,27 @@ def test_one_retry_with_the_reason_then_success(app, sign_reply):
 
     out = app.generate_checked(call, "ПОДКАНА", lambda r: _validate_sign(app, r), "тест")
     assert out and len(prompts) == 2
-    assert prompts[0] == "ПОДКАНА" and "ОТХВЪРЛЕН" in prompts[1] and "отклонение" in prompts[1]
+    assert prompts[0] == "ПОДКАНА" and "ОТХВЪРЛЕН" in prompts[1] and "Имум Коели" in prompts[1]
 
 
-def test_two_rejections_end_in_an_ai_error(app, sign_reply):
+def test_two_broken_replies_end_in_an_ai_error(app, sign_reply):
+    """Счупен текст (отрязан) — два опита и грешка; в кеша не влиза нищо."""
     calls = []
-    bad = sign_reply(last=" Имум Коели.")
+    bad = sign_reply().rstrip(". ") + " а след това"
     with pytest.raises(app.AIError, match="проверката"):
         app.generate_checked(lambda p: calls.append(1) or bad, "П",
                              lambda r: _validate_sign(app, r), "тест")
     assert len(calls) == 2            # един нов опит, не повече
+
+
+def test_two_rule_breaks_still_give_a_horoscope(app, sign_reply):
+    """Цял текст с нарушено правило и на втория опит — записва се, не оставя
+    човека без хороскоп (нарушението е в лога)."""
+    calls = []
+    bad = sign_reply(last=" Имум Коели.")
+    out = app.generate_checked(lambda p: calls.append(1) or bad, "П",
+                               lambda r: _validate_sign(app, r), "тест")
+    assert len(calls) == 2 and out.startswith("---SUMMARY---")
 
 
 # --- T4: finish_reason ---------------------------------------------------------------
@@ -493,7 +510,7 @@ def test_sign_generation_stores_the_checked_text(app, monkeypatch, sign_reply):
 
 def test_rejected_text_never_reaches_the_cache(app, monkeypatch, sign_reply):
     _clear_signs(app)
-    bad = sign_reply(last=" (отклонение 2.6°).")
+    bad = sign_reply().rstrip(". ") + " а след това"
     seen = []
     _fake_ai(monkeypatch, app, [bad, bad], seen)
     sign, iso = app.ZODIAC_BY_SLUG["oven"], app.sofia_today().isoformat()
@@ -514,14 +531,14 @@ def test_empty_sky_is_an_error_not_a_prompt_without_data(app, monkeypatch, sign_
     assert seen == [] and app.get_sign_horoscope(sign["sign"], iso) is None
 
 
-def test_tomorrows_text_may_not_say_today(app, monkeypatch, sign_reply):
+def test_tomorrows_text_saying_today_gets_one_retry(app, monkeypatch, sign_reply):
     _clear_signs(app)
     tomorrow = (app.sofia_today() + datetime.timedelta(days=1)).isoformat()
     bad = sign_reply(last=" Днес е добре да си починеш.")
-    _fake_ai(monkeypatch, app, [bad, bad])
-    with pytest.raises(app.AIError):
-        app._generate_sign_horoscope(app.ZODIAC_BY_SLUG["oven"], "тест", tomorrow)
-    assert app.get_sign_horoscope("Aries", tomorrow) is None
+    seen = []
+    _fake_ai(monkeypatch, app, [bad, sign_reply()], seen)
+    app._generate_sign_horoscope(app.ZODIAC_BY_SLUG["oven"], "тест", tomorrow)
+    assert len(seen) == 2 and "Днес е добре" not in app.get_sign_horoscope("Aries", tomorrow)
 
 
 # --- H6: пауза след неуспех -------------------------------------------------------------

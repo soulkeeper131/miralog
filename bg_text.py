@@ -85,6 +85,16 @@ class ReadingRejected(ValueError):
     """Текстът не е годен за кеша; съобщението казва защо (влиза и в повторния опит)."""
 
 
+class SoftRejected(ReadingRejected):
+    """Текстът е цял и четим, но нарушава правило (здраве/пари, „днес“ за утре,
+    дълго настроение…). Повтаря се веднъж; ако и вторият е такъв — записва се
+    `text` (вече поправеният), вместо човекът да остане без хороскоп."""
+
+    def __init__(self, reason: str, text: str):
+        super().__init__(reason)
+        self.text = text
+
+
 # Латински букви, които на око са същите като българските — моделът понякога
 # ги слага вътре в дума. Заменят се САМО в дума, която вече има кирилица.
 _LATIN_TO_CYR = {
@@ -144,6 +154,9 @@ _LEAKS = [
 
 # Меки здравни и финансови твърдения: подканата ги забранява, моделът пак ги
 # връща. Само най-ясните думи, за да не се реже здрав текст.
+# Скоби с градуси/отклонения, изтекли от подканата: „ (отклонение 2.6°)“, „(0.1°)“.
+_DEGREE_PARENS = re.compile(r"\s*\((?:[^()]{0,30}?)\d+(?:[.,]\d+)?\s*°[^()]{0,10}\)")
+
 _SAFETY = [
     (re.compile(r"възпал|стомах|храносмил|кръвно|имунитет|имунна|болест|симптом|диагноз|"
                 r"лекарств|таблетк|\bоперац\w+", re.I),
@@ -167,23 +180,26 @@ SECTION_MIN_CHARS = 60
 TEASER_MAX = 160          # подканата иска до 140; тук е малко толеранс за броенето на модела
 
 
-def _clean_str(value, name: str, max_len: int) -> str:
+def _clean_str(value, name: str, max_len: int, soft: list) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ReadingRejected(f"резюмето няма поле „{name}“")
     value = re.sub(r"\s+", " ", value).strip()
     if len(value) > max_len:
-        raise ReadingRejected(f"полето „{name}“ е прекалено дълго ({len(value)} знака)")
+        soft.append(f"полето „{name}“ е прекалено дълго ({len(value)} знака)")
     return value
 
 
-def _clean_list(value, name: str, lo: int, hi: int) -> list:
+def _clean_list(value, name: str, lo: int, hi: int, soft: list) -> list:
     if not isinstance(value, list):
         raise ReadingRejected(f"резюмето няма списък „{name}“")
     items = [re.sub(r"\s+", " ", v).strip() for v in value if isinstance(v, str) and v.strip()]
+    if not items:
+        raise ReadingRejected(f"списъкът „{name}“ е празен")
     if not (lo <= len(items) <= hi):
-        raise ReadingRejected(f"„{name}“ има {len(items)} реда, очакват се {lo}-{hi}")
+        soft.append(f"„{name}“ има {len(items)} реда, очакват се {lo}-{hi}")
+        items = items[:hi]
     if any(len(item) > 70 for item in items):
-        raise ReadingRejected(f"ред от „{name}“ е прекалено дълъг")
+        soft.append(f"ред от „{name}“ е прекалено дълъг")
     return items
 
 
@@ -200,6 +216,9 @@ def validate_horoscope(raw: str, *, titles: list, teaser: bool = False,
     `titles` — заглавията на разделите по ред; `teaser` — искаме ли откъс за
     общата страница; `relative_days` — позволени ли са „днес“/„утре“."""
     text = lower_midsentence_aspects(fix_latin_lookalikes((raw or "").strip()))
+    # „(отклонение 2.6°)“ и подобни скоби с градуси — махат се направо.
+    text = _DEGREE_PARENS.sub("", text)
+    soft: list = []          # нарушения, с които текстът все пак е годен (виж SoftRejected)
     if not text:
         raise ReadingRejected("празен отговор")
 
@@ -218,22 +237,29 @@ def validate_horoscope(raw: str, *, titles: list, teaser: bool = False,
     if not energy:
         raise ReadingRejected("„energy“ не е Висока, Средна или Ниска")
     summary = {
-        "mood": _clean_str(data.get("mood"), "mood", 40),
+        "mood": _clean_str(data.get("mood"), "mood", 40, soft),
         "energy": energy,
-        "do": _clean_list(data.get("do"), "do", 2, 4),
-        "avoid": _clean_list(data.get("avoid"), "avoid", 2, 4),
-        "focus": _clean_str(data.get("focus"), "focus", 100),
-        "caution": _clean_str(data.get("caution"), "caution", 240),
+        "do": _clean_list(data.get("do"), "do", 2, 4, soft),
+        "avoid": _clean_list(data.get("avoid"), "avoid", 2, 4, soft),
+        "focus": _clean_str(data.get("focus"), "focus", 100, soft),
+        "caution": _clean_str(data.get("caution"), "caution", 240, soft),
     }
     if len(summary["mood"].split()) > 4:
-        raise ReadingRejected("„mood“ не е кратко съществително")
+        soft.append("„mood“ не е кратко съществително")
     if teaser:
-        t = _clean_str(data.get("teaser"), "teaser", TEASER_MAX)
-        if re.match(r"денят\b", t, re.I):
-            raise ReadingRejected("„teaser“ започва с „Денят“")
-        if t[-1] not in ".!?…":
-            raise ReadingRejected("„teaser“ не е цяло изречение")
-        summary["teaser"] = t
+        # Без откъс страницата ползва първите изречения — затова е „меко“.
+        t = data.get("teaser") if isinstance(data.get("teaser"), str) else ""
+        t = re.sub(r"\s+", " ", t).strip()
+        if not t:
+            soft.append("резюмето няма поле „teaser“")
+        elif len(t) > TEASER_MAX:
+            soft.append(f"полето „teaser“ е прекалено дълго ({len(t)} знака)")
+        elif re.match(r"денят\b", t, re.I):
+            soft.append("„teaser“ започва с „Денят“")
+        elif t[-1] not in ".!?…":
+            soft.append("„teaser“ не е цяло изречение")
+        else:
+            summary["teaser"] = t
 
     # Разделите: точно толкова, номерирани по ред, всеки със съдържание.
     lines = text[m.end():].strip().splitlines()
@@ -264,18 +290,21 @@ def validate_horoscope(raw: str, *, titles: list, teaser: bool = False,
                         summary.get("teaser", ""), *summary["do"], *summary["avoid"], body])
     mixed = mixed_script_words(visible)
     if mixed:
-        raise ReadingRejected(f"латиница в българска дума: „{mixed[0]}“")
+        soft.append(f"латиница в българска дума: „{mixed[0]}“")
     foreign = latin_words(visible)
     if foreign:
-        raise ReadingRejected(f"чужда дума с латински букви: „{foreign[0]}“")
+        soft.append(f"чужда дума с латински букви: „{foreign[0]}“")
     for pattern, what in _LEAKS + _SAFETY:
         hit = pattern.search(visible)
         if hit:
-            raise ReadingRejected(f"{what}: „{hit.group(0)}“")
+            soft.append(f"{what}: „{hit.group(0)}“")
     if not relative_days:
         hit = _RELATIVE_DAY.search(visible)
         if hit:
-            raise ReadingRejected(f"„{hit.group(0)}“ в текст за друг ден")
+            soft.append(f"„{hit.group(0)}“ в текст за друг ден")
 
     head = json.dumps(summary, ensure_ascii=False)
-    return f"---SUMMARY---\n{head}\n---END---\n\n{body}"
+    out = f"---SUMMARY---\n{head}\n---END---\n\n{body}"
+    if soft:
+        raise SoftRejected("; ".join(soft[:3]), out)
+    return out

@@ -41,7 +41,7 @@ from translations import (
     SIGNS, ZODIAC_ORDER,
 )
 from numerology import compute_numerology
-from bg_text import clean_bg, validate_horoscope, ReadingRejected
+from bg_text import clean_bg, validate_horoscope, ReadingRejected, SoftRejected
 from pdf_report import build_reading_pdf, build_receipt_pdf, build_invoice_pdf
 import billing
 import saft
@@ -4255,7 +4255,7 @@ def generate_checked(call, prompt: str, validate, what: str) -> str:
     Нов опит е точно един (всеки струва пари): към подканата се добавя защо е
     отхвърлен предишният. След втория отказ — AIError, който `ai_job` показва
     както всяка друга грешка на доставчика; в кеша не влиза нищо."""
-    reason = None
+    reason, usable = None, None
     for attempt in (1, 2):
         text = prompt if reason is None else (
             prompt + f"\n\nПРЕДИШНИЯТ ТИ ОТГОВОР БЕ ОТХВЪРЛЕН: {reason}. "
@@ -4263,9 +4263,17 @@ def generate_checked(call, prompt: str, validate, what: str) -> str:
         raw = call(text)
         try:
             return validate(raw)
+        except SoftRejected as e:
+            # Цял и четим текст с нарушено правило — пазим го като резерва.
+            reason, usable = str(e), e.text
+            log.warning("%s: отговорът нарушава правило (опит %d/2): %s", what, attempt, reason)
         except ReadingRejected as e:
             reason = str(e)
             log.warning("%s: отговорът не мина проверката (опит %d/2): %s", what, attempt, reason)
+    if usable:
+        # По-добре текст с бележка в лога, отколкото човек без хороскоп за деня.
+        log.warning("%s: записан въпреки „%s“", what, reason)
+        return usable
     raise AIError(f"Текстът не мина проверката за качество: {reason}")
 
 
