@@ -47,13 +47,13 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
     {% include "_critical.html" %}
-    <link rel="preload" href="/static/landing.min.css?v=10" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" href="/static/landing.min.css?v=11" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link rel="preload" href="/static/consent.css?v=5" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript>
-        <link rel="stylesheet" href="/static/landing.min.css?v=10">
+        <link rel="stylesheet" href="/static/landing.min.css?v=11">
         <link rel="stylesheet" href="/static/consent.css?v=5">
     </noscript>
     {% include "_analytics.html" %}
@@ -167,7 +167,7 @@
             {% if tomorrow_ready %}
             <div class="day-switch" role="group" aria-label="Ден">
                 {% if is_tomorrow %}<a href="/horoskop/{{ sign.slug }}" data-cta="horoscope_sign:today">Днес</a><span class="on" aria-current="true">Утре</span>
-                {% else %}<span class="on" aria-current="true">Днес</span><a href="/horoskop/{{ sign.slug }}?den=utre" data-cta="horoscope_sign:tomorrow">Утре</a>{% endif %}
+                {% else %}<span class="on" aria-current="true">Днес</span><a href="/horoskop/{{ sign.slug }}/utre" data-cta="horoscope_sign:tomorrow">Утре</a>{% endif %}
             </div>
             {% endif %}
             </div>

@@ -12662,6 +12662,7 @@ def sitemap_xml(request: Request):
     # most-searched content on the site.
     entries.append(("/horoskop", "daily", "0.9", today))
     entries += [(f"/horoskop/{s['slug']}", "daily", "0.9", today) for s in ZODIAC_SIGNS]
+    entries += [(f"/horoskop/{s['slug']}/utre", "daily", "0.7", today) for s in ZODIAC_SIGNS]
     # Evergreen "planet in sign" pages — the long-tail backbone.
     for pl in PLANETS:
         entries += [(f"/{pl['slug']}-v-{s['slug']}", "monthly", "0.7", evergreen)
@@ -13762,13 +13763,33 @@ async def horoskop_sign(request: Request, sign_slug: str):
     sign = ZODIAC_BY_SLUG.get(sign_slug)
     if not sign:
         raise HTTPException(404, "Няма такъв знак.")
+    # Старият адрес за утре (?den=utre) → собствената страница, която Google индексира.
+    if request.query_params.get("den") == "utre":
+        return RedirectResponse(f"/horoskop/{sign['slug']}/utre", status_code=301)
+    return _render_sign_horoscope(request, sign, want_tomorrow=False)
+
+
+@app.get("/horoskop/{sign_slug}/utre", response_class=HTMLResponse)
+async def horoskop_sign_tomorrow(request: Request, sign_slug: str):
+    """Хороскопът за утре — отделна страница: „хороскоп <зодия> утре“ се търси."""
+    sign = ZODIAC_BY_SLUG.get(sign_slug)
+    if not sign:
+        raise HTTPException(404, "Няма такъв знак.")
+    tomorrow_iso = (datetime.datetime.now(ZoneInfo("Europe/Sofia")) + datetime.timedelta(days=1)).date().isoformat()
+    if not get_sign_horoscope(sign["sign"], tomorrow_iso):
+        # Още не е написан (рядко — пише се ден напред): временно към днешния.
+        return RedirectResponse(f"/horoskop/{sign['slug']}", status_code=302)
+    return _render_sign_horoscope(request, sign, want_tomorrow=True)
+
+
+def _render_sign_horoscope(request: Request, sign: dict, *, want_tomorrow: bool) -> HTMLResponse:
     now = datetime.datetime.now(ZoneInfo("Europe/Sofia"))
     tomorrow = now + datetime.timedelta(days=1)
     tomorrow_iso = tomorrow.date().isoformat()
     # Утрешният хороскоп се пише още днес (warm_sign_horoscopes). Превключвател
     # „Днес · Утре“ има само ако е готов: недописан не се показва и не се чака.
     tomorrow_ready = bool(get_sign_horoscope(sign["sign"], tomorrow_iso))
-    show_tomorrow = tomorrow_ready and request.query_params.get("den") == "utre"
+    show_tomorrow = tomorrow_ready and want_tomorrow
     day = tomorrow if show_tomorrow else now
     date_iso = day.date().isoformat()
     date_bg = day.strftime("%d.%m.%Y")
@@ -13796,11 +13817,11 @@ async def horoskop_sign(request: Request, sign_slug: str):
         "is_tomorrow": show_tomorrow,
     })
     if show_tomorrow:
-        # Същото съдържание под друг адрес: Google да държи само „днес“.
-        ctx["seo_title"] = f"Хороскоп за {sign['name']} утре — {date_bg} | {brand_name()}"
+        # Своя страница с canonical към себе си: „хороскоп <зодия> утре“ има търсения.
+        ctx["seo_url"] = seo_context(request, path=f"/horoskop/{sign['slug']}/utre")["seo_url"]
+        ctx["seo_title"] = f"Хороскоп за {sign['name']} за утре — {date_bg} | {brand_name()}"
         ctx["seo_description"] = (f"Хороскопът за {sign['name']} за утре ({date_bg}): "
-                                  f"любов, работа, здраве и пари според транзитите.")
-        ctx["seo_robots"] = "noindex, follow"
+                                  f"любов, работа, здраве и пари според утрешните транзити.")
     # Личният блок под текста: за вписания — откъс от неговия хороскоп (само
     # от кеша), за всички — пакетът като спокоен ред, а не скрит във въпросите.
     viewer = viewer_info(request)

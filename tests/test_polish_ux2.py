@@ -197,8 +197,11 @@ def fake_ai(app, monkeypatch):
     return calls
 
 
-NOW = datetime.datetime(2026, 10, 15, 8, 0, tzinfo=SOFIA)
-RECENT = "2026-10-14T20:00:00"
+# Днешната дата: `api_daily_horoscope` пише за истинския ден, не за подадения `now`.
+TODAY = datetime.datetime.now(SOFIA).date()
+NOW = datetime.datetime.combine(TODAY, datetime.time(8, 0), tzinfo=SOFIA)
+RECENT = (NOW - datetime.timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%S")
+DAY_KEY = f"horoscope:{TODAY.isoformat()}"
 
 
 def _clean_state(app):
@@ -214,7 +217,7 @@ def test_prewarm_starts_exactly_for_the_eligible_accounts(app, db, fake_ai):
     _clean_state(app)
     digest = _user(app, db, digest_opt_in=1)                       # писмо по имейл
     seen = _user(app, db, last_seen=RECENT)                        # отварял вчера
-    login = _user(app, db, last_login="2026-10-12 10:00:00")       # влязъл преди 3 дни
+    login = _user(app, db, last_login=(NOW - datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S"))       # влязъл преди 3 дни
     old = _user(app, db, last_seen="2026-09-01T10:00:00")          # отдавна не е идвал
     never = _user(app, db)                                         # никога
     blocked = _user(app, db, last_seen=RECENT, is_blocked=1)
@@ -225,9 +228,9 @@ def test_prewarm_starts_exactly_for_the_eligible_accounts(app, db, fake_ai):
     assert app.run_horoscope_prewarm(NOW) == 3
     assert len(fake_ai) == 3
     for name in ("digest", "seen", "login"):
-        assert app.get_ai_cache(ids[name], "horoscope:2026-10-15"), name
+        assert app.get_ai_cache(ids[name], DAY_KEY), name
     for name in ("old", "never", "blocked"):
-        assert not app.get_ai_cache(ids[name], "horoscope:2026-10-15"), name
+        assert not app.get_ai_cache(ids[name], DAY_KEY), name
 
 
 def test_prewarm_does_not_repeat_what_is_cached(app, db, fake_ai):
@@ -240,7 +243,7 @@ def test_prewarm_does_not_repeat_what_is_cached(app, db, fake_ai):
     # човек, който вече има кеширан текст (отворил е картата сам), не се пише пак
     other = _user(app, db, last_seen=RECENT)
     oid = _person(app, other["id"])
-    app.set_ai_cache(oid, "horoscope:2026-10-15", READING)
+    app.set_ai_cache(oid, DAY_KEY, READING)
     assert app.run_horoscope_prewarm(NOW) == 0
     assert len(fake_ai) == 1 and pid
 
@@ -251,8 +254,8 @@ def test_prewarm_only_for_the_oldest_card_of_an_account(app, db, fake_ai):
     first = _person(app, u["id"], name="Мария")
     second = _person(app, u["id"], name="Ани")
     assert app.run_horoscope_prewarm(NOW) == 1
-    assert app.get_ai_cache(first, "horoscope:2026-10-15")
-    assert not app.get_ai_cache(second, "horoscope:2026-10-15")
+    assert app.get_ai_cache(first, DAY_KEY)
+    assert not app.get_ai_cache(second, DAY_KEY)
 
 
 def test_prewarm_waits_for_five_in_the_persons_own_timezone(app, db, fake_ai):
@@ -260,10 +263,10 @@ def test_prewarm_waits_for_five_in_the_persons_own_timezone(app, db, fake_ai):
     u = _user(app, db, last_seen=RECENT)
     pid = _person(app, u["id"], tz="America/New_York")
     # 8:00 в София = 1:00 в Ню Йорк — там още е нощ
-    assert app.run_horoscope_prewarm(datetime.datetime(2026, 10, 15, 8, 0, tzinfo=SOFIA)) == 0
+    assert app.run_horoscope_prewarm(NOW) == 0
     # 12:00 в София = 5:00 в Ню Йорк
-    assert app.run_horoscope_prewarm(datetime.datetime(2026, 10, 15, 12, 0, tzinfo=SOFIA)) == 1
-    assert app.get_ai_cache(pid, "horoscope:2026-10-15")
+    assert app.run_horoscope_prewarm(NOW + datetime.timedelta(hours=4)) == 1
+    assert app.get_ai_cache(pid, DAY_KEY)
 
 
 def test_prewarm_needs_the_horoscope_module(app, db, fake_ai, monkeypatch):

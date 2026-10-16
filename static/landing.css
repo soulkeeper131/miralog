@@ -6,11 +6,12 @@
            body alone is not enough — the root element grows too. */
         html { overflow-x: hidden; }
         :root {
-            /* Fraunces has an optical size axis and a 'wonk' that reads like an
-               engraved star atlas; Outfit keeps the running text quiet beside it.
+            /* Cormorant Garamond и Inter: и двата имат кирилица (Fraunces и Outfit
+               нямаха — българският текст падаше на резервния шрифт), същите като
+               вътре в акаунта.
                Mono is for anything that is literally data: degrees, dates, prices. */
-            --font-body: 'Outfit', -apple-system, system-ui, sans-serif;
-            --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+            --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+            --font-display: 'Cormorant Garamond', Georgia, serif;
             --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
             /* Spacing scale. Sections breathe more than the blocks inside them,
                and the rhythm tightens on small screens rather than scaling down

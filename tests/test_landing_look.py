@@ -75,3 +75,25 @@ def test_critical_css_holds_the_list_hero_and_toggle_rules():
     crit = open("templates/_critical.html", encoding="utf-8").read()
     assert ".hero--list .hero-glyph{width:68px" in crit
     assert "@media (min-width:601px) and (max-width:1000px){.theme-toggle{top:auto" in crit
+
+
+def test_tomorrow_has_its_own_indexable_page(app, db, monkeypatch):
+    import datetime
+    from zoneinfo import ZoneInfo
+    c = TestClient(app.app, base_url="https://astrokarta.bg")
+    r = c.get("/horoskop/oven?den=utre", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/horoskop/oven/utre"
+    monkeypatch.setattr(app, "get_sign_horoscope", lambda sign, day: None)
+    assert c.get("/horoskop/oven/utre", follow_redirects=False).status_code == 302   # не е готов
+    monkeypatch.setattr(app, "get_sign_horoscope", lambda sign, day: "## 1. Общо\n\nТекст за деня.")
+    html = c.get("/horoskop/oven/utre", headers={"accept-language": "bg"}).text
+    assert '<link rel="canonical" href="https://astrokarta.bg/horoskop/oven/utre">' in html
+    assert "noindex" not in html and "Хороскоп за Овен утре" in html
+    assert "/horoskop/oven/utre" in c.get("/sitemap.xml").text
+
+
+def test_public_fonts_have_cyrillic():
+    import glob
+    for f in glob.glob("templates/*.html"):
+        s = open(f, encoding="utf-8").read()
+        assert "family=Fraunces" not in s and "family=Outfit" not in s, f

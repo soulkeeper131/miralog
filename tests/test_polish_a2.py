@@ -171,18 +171,22 @@ def test_tomorrow_switch_only_when_tomorrow_is_ready(app, db):
     app.set_sign_horoscope("Aries", today.isoformat(), _reading(5))
     html = _client(app).get("/horoskop/oven").text
     assert "day-switch" not in html.split("<main>")[1].split("</header>")[0]
-    # ?den=utre без готов хороскоп просто показва днешния.
-    assert "Хороскоп за Овен утре" not in _client(app).get("/horoskop/oven?den=utre").text
+    # /utre без готов хороскоп води към днешния.
+    r = _client(app).get("/horoskop/oven/utre", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/horoskop/oven"
 
     app.set_sign_horoscope("Aries", (today + datetime.timedelta(days=1)).isoformat(), _reading(5))
     html = _client(app).get("/horoskop/oven").text
-    assert 'class="day-switch"' in html and 'href="/horoskop/oven?den=utre"' in html
-    tomorrow = _client(app).get("/horoskop/oven?den=utre").text
+    assert 'class="day-switch"' in html and 'href="/horoskop/oven/utre"' in html
+    # Старият адрес ?den=utre → 301 към собствената страница.
+    r = _client(app).get("/horoskop/oven?den=utre", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/horoskop/oven/utre"
+    tomorrow = _client(app).get("/horoskop/oven/utre").text
     assert "Хороскоп за Овен утре" in _h1(tomorrow)
     assert (today + datetime.timedelta(days=1)).strftime("%d.%m.%Y") in tomorrow
-    # Същото съдържание под друг адрес: не за индексиране, каноничният е „днес“.
-    assert 'content="noindex, follow"' in tomorrow
-    assert '<link rel="canonical" href="https://astrokarta.bg/horoskop/oven">' in tomorrow
+    # Своя страница за индексиране, със собствен каноничен адрес.
+    assert 'content="noindex' not in tomorrow
+    assert '<link rel="canonical" href="https://astrokarta.bg/horoskop/oven/utre">' in tomorrow
     assert 'content="noindex' not in html
 
 
