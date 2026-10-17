@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""A4 плакат за касата на магазини: „Това не е твоето небе.“ + QR към /start.
+"""A4 плакат за касата на магазини: какво е АстроКарта, услугите и QR към /start.
 
-Колелото е истинско: небето над София на 17.10.2026 в 12:00 (Swiss Ephemeris,
-Moshier — без файлове от ephe/). QR-ът води към безплатната карта с UTM, за да
-се вижда в Админ → Отчети → „Кампании и източници“. Цени няма нарочно.
+Чете се от метър-два и от по-възрастни хора: едро, удебелено, висок контраст.
+Цени няма нарочно. QR-ът води към безплатната карта с UTM, за да се вижда в
+Админ → Отчети → „Кампании и източници“.
 
     python scripts/gen_poster.py                  # docs/print/plakat-a4.pdf + .png
     python scripts/gen_poster.py --store mladost  # utm_content=mladost, отделни файлове
     python scripts/gen_poster.py --bleed          # +3 мм от всяка страна за печатница
 
-Иска pyswisseph, reportlab, qrcode, uharfbuzz, fonttools (последните три не са в
-requirements) и pdftoppm за PNG прегледа. Шрифтовете (OFL) се теглят веднъж от
-Google Fonts в scripts/.fonts/. Целият текст се чертае като контури с кернинга
-на шрифта, затова PDF-ът не зависи от шрифтовете на печатницата.
+Иска reportlab, qrcode, uharfbuzz, fonttools (последните три не са в requirements)
+и pdftoppm за PNG прегледа. Шрифтовете (OFL) се теглят веднъж от Google Fonts в
+scripts/.fonts/. Целият текст се чертае като контури с кернинга на шрифта, затова
+PDF-ът не зависи от шрифтовете на печатницата.
 """
 import argparse
 import math
@@ -24,9 +24,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import qrcode
-import swisseph as swe
 import uharfbuzz as hb
 from fontTools.pens.basePen import BasePen
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from reportlab.lib.colors import HexColor
@@ -36,49 +36,57 @@ from reportlab.pdfgen import canvas as rl_canvas
 ROOT = Path(__file__).resolve().parent.parent
 FONT_DIR = Path(__file__).resolve().parent / ".fonts"
 OUT_DIR = ROOT / "docs" / "print"
+LOGO = ROOT / "static" / "logo-full.png"
 
 PAGE_W, PAGE_H = 210.0, 297.0  # мм, A4
 BLEED = 3.0
+M = 13.0  # поле отляво и отдясно
 
 # Цветовете на сайта (static/landing.css)
 NIGHT = "#08071a"
+PANEL = "#16133d"
 GILT = "#e8c56b"
-IVORY = "#f1ecdf"
-TEXT = "#e6e2f4"
-SOFT = "#b4adcc"
+GOLD_RAMP = ["#fbecb4", "#ecc96f", "#c99636"]  # отгоре надолу, като метала на логото
+WHITE = "#ffffff"
+TEXT = "#ece8f8"
+SOFT = "#c3bcdb"
+ICY = "#bde0fe"
 THISTLE = "#cdb4db"
-ICY = "#a2d2ff"
-PINK = "#ffafcc"
-PAPER = "#f4efe4"
-
-# Моментът на колелото
-MOMENT = (2026, 10, 17, 9.0)  # UT = 12:00 в София (EEST)
-LAT, LON = 42.6977, 23.3219
+PAPER = "#fbf8f1"
 
 URL = "https://astrokarta.bg/start"
 UTM = {"utm_source": "plakat", "utm_medium": "print", "utm_campaign": "kasa"}
 
 FONTS = {
-    "serif": ("Cormorant Garamond", 400, False),
-    "serif-med": ("Cormorant Garamond", 500, False),
-    "serif-semi": ("Cormorant Garamond", 600, False),
-    "serif-it": ("Cormorant Garamond", 400, True),
-    "serif-med-it": ("Cormorant Garamond", 500, True),
-    "sans": ("Manrope", 300, False),
-    "mono": ("JetBrains Mono", 300, False),
+    "brand": ("Cormorant Garamond", 700, False),
+    "black": ("Inter", 800, False),
+    "bold": ("Inter", 700, False),
+    "semi": ("Inter", 600, False),
+    "medium": ("Inter", 500, False),
     "sym": ("Noto Sans Symbols", 400, False),
-    "sym-light": ("Noto Sans Symbols", 300, False),
 }
 # Safari 5 получава цели .ttf (с кирилицата), а не woff2 на парчета.
 FONT_UA = ("Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8) AppleWebKit/533.21.1 "
            "(KHTML, like Gecko) Version/5.0.5 Safari/533.21.1")
+
+# Какво има вътре: (иконка, име, един ред обяснение). Имената са като в FEATURE_CATALOGUE.
+SERVICES = [
+    ("sun", "Натална карта", "Кой си ти според звездите"),
+    ("moon", "Дневен хороскоп", "Всяка сутрин — лично за теб"),
+    ("♀", "Любов и съвместимост", "Подхождате ли си двамата"),
+    ("♃", "Хороскоп за период", "Какво те очаква напред"),
+    ("7", "Нумерология", "Числата от рождената ти дата"),
+    ("phase", "Лунен календар", "Кой ден за какво е подходящ"),
+]
 
 
 def font_file(family, weight, italic):
     path = FONT_DIR / f"{family.replace(' ', '')}-{weight}{'i' if italic else ''}.ttf"
     if not path.exists():
         FONT_DIR.mkdir(exist_ok=True)
-        q = f"{family.replace(' ', '+')}:ital,wght@{int(italic)},{weight}"
+        q = f"{family.replace(' ', '+')}:wght@{weight}"
+        if italic:
+            q = f"{family.replace(' ', '+')}:ital,wght@1,{weight}"
         req = urllib.request.Request(f"https://fonts.googleapis.com/css2?family={q}",
                                      headers={"User-Agent": FONT_UA})
         css = urllib.request.urlopen(req).read().decode()
@@ -130,9 +138,9 @@ class Face:
         return out
 
     def width(self, text, size, track=0.0):
-        """Ширина в pt; track е разредката между знаците в pt."""
+        """Ширина в мм; track е разредката между знаците в pt."""
         g = self.shape(text)
-        return sum(a for _, a, _, _ in g) * size / self.upem + track * (len(g) - 1)
+        return (sum(a for _, a, _, _ in g) * size / self.upem + track * (len(g) - 1)) / mm
 
 
 class Poster:
@@ -148,7 +156,7 @@ class Poster:
             self.c.setBleedBox((0, 0, self.w * mm, self.h * mm))
         self.f = {k: Face(font_file(*v)) for k, v in FONTS.items()}
 
-    # Координатите в мм от горния ляв ъгъл на A4 (без bleed-а) → pt на PDF-а.
+    # Координатите са в мм от горния ляв ъгъл на A4 (без bleed-а) → pt на PDF-а.
     def pt(self, x, y):
         return (x + self.off) * mm, (self.h - self.off - y) * mm
 
@@ -161,329 +169,131 @@ class Poster:
         self.c.setLineWidth(width_pt)
         self.c.setStrokeAlpha(alpha)
 
-    def _glyphs(self, path, face, glyphs, size, place):
-        """place(i, advance_pt) → (xx, xy, yx, yy, dx, dy) за i-тия глиф."""
-        s = size / face.upem
-        for i, (name, adv, xo, yo) in enumerate(glyphs):
-            xx, xy, yx, yy, dx, dy = place(i, adv * s)
-            tr = (xx * s, xy * s, yx * s, yy * s,
-                  dx + (xx * xo + yx * yo) * s, dy + (xy * xo + yy * yo) * s)
-            face.glyphs[name].draw(TransformPen(_PathPen(face.glyphs, path), tr))
+    def fit(self, s, font, max_w, max_size, track=0.0):
+        """Най-големият размер до max_size, при който редът се събира в max_w мм."""
+        return min(max_size, max_size * max_w / self.f[font].width(s, max_size, track))
+
+    def text_path(self, s, font, size, x, y, track=0.0, anchor="left"):
+        """Контурите на реда на базова линия y (мм) и ширината му в мм."""
+        face = self.f[font]
+        w = face.width(s, size, track)
+        px, py = self.pt(x - {"left": 0, "center": w / 2, "right": w}[anchor], y)
+        k = size / face.upem
+        path = self.c.beginPath()
+        cur = px
+        for name, adv, xo, yo in face.shape(s):
+            pen = TransformPen(_PathPen(face.glyphs, path), (k, 0, 0, k, cur + xo * k, py + yo * k))
+            face.glyphs[name].draw(pen)
+            cur += adv * k + track
+        return path, w
 
     def text(self, s, font, size, x, y, color, alpha=1.0, track=0.0, anchor="left"):
-        """Ред текст на базова линия y (мм). Връща ширината в мм."""
-        face = self.f[font]
-        w = face.width(s, size, track)
-        x0 = {"left": 0, "center": -w / 2, "right": -w}[anchor]
-        px, py = self.pt(x, y)
-        cur = [px + x0]
-        path = self.c.beginPath()
-
-        def place(i, adv):
-            t = (1, 0, 0, 1, cur[0], py)
-            cur[0] += adv + track
-            return t
-        self._glyphs(path, face, face.shape(s), size, place)
+        path, w = self.text_path(s, font, size, x, y, track, anchor)
         self.fill(color, alpha)
         self.c.drawPath(path, stroke=0, fill=1, fillMode=1)
-        return w / mm
+        return w
 
-    def text_rot(self, s, font, size, x, y, deg, color, alpha=1.0, track=0.0, anchor="left"):
-        """Ред, завъртян на deg (математически) около (x, y) на базовата линия,
-        центриран по главната височина."""
-        face = self.f[font]
-        w = face.width(s, size, track)
-        a = math.radians(deg)
-        tx, ty, nx, ny = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
-        shift = {"left": 0, "center": -w / 2, "right": -w}[anchor]
-        h = -face.cap * size / 2
-        px, py = self.pt(x, y)
-        cur = [shift]
-        path = self.c.beginPath()
+    def gold(self, path, top, bottom):
+        """Запълва пътя със златен преход отгоре (top, мм) надолу (bottom, мм)."""
+        c = self.c
+        c.saveState()
+        c.clipPath(path, stroke=0, fill=0, fillMode=1)
+        x, y0 = self.pt(0, top)
+        _, y1 = self.pt(0, bottom)
+        c.linearGradient(x, y0, x, y1, [HexColor(g) for g in GOLD_RAMP], [0, 0.5, 1],
+                         extend=True)
+        c.restoreState()
 
-        def place(i, adv):
-            t = (tx, ty, nx, ny, px + tx * cur[0] + nx * h, py + ty * cur[0] + ny * h)
-            cur[0] += adv + track
-            return t
-        self._glyphs(path, face, face.shape(s), size, place)
-        self.fill(color, alpha)
-        self.c.drawPath(path, stroke=0, fill=1, fillMode=1)
+    def gold_text(self, s, font, size, x, y, track=0.0, anchor="left"):
+        path, w = self.text_path(s, font, size, x, y, track, anchor)
+        cap = self.f[font].cap * size / mm
+        self.gold(path, y - cap * 1.05, y + cap * 0.25)
+        return w
 
-    def arc_text(self, s, font, size, cx, cy, r, center_deg, color, alpha=1.0,
-                 track=0.0, upright_bottom=False):
-        """Текст по окръжност, центриран на ъгъл center_deg (математически, 0° = дясно).
-        Отгоре чете по часовника с базова линия на r; отдолу — обратно, изправен,
-        с главните букви навътре до r (лентата е една и съща)."""
-        face = self.f[font]
-        glyphs = face.shape(s)
-        w = face.width(s, size, track)
-        ox, oy = self.pt(cx, cy)
-        rp = r * mm
-        sign = 1 if upright_bottom else -1
-        if upright_bottom:
-            rp += face.cap * size
-        phi = [math.radians(center_deg) - sign * (w / 2) / rp]
-        path = self.c.beginPath()
-
-        def place(i, adv):
-            mid = phi[0] + sign * (adv / 2) / rp
-            tx, ty = -sign * math.sin(mid), sign * math.cos(mid)   # посока на реда
-            nx, ny = (-math.cos(mid), -math.sin(mid)) if upright_bottom else (math.cos(mid), math.sin(mid))
-            bx = ox + rp * math.cos(mid) - tx * adv / 2
-            by = oy + rp * math.sin(mid) - ty * adv / 2
-            phi[0] += sign * (adv + track) / rp
-            return (tx, ty, nx, ny, bx, by)
-        self._glyphs(path, face, glyphs, size, place)
-        self.fill(color, alpha)
-        self.c.drawPath(path, stroke=0, fill=1, fillMode=1)
-
-    def glyph_at(self, ch, font, size, x, y, color, alpha=1.0):
-        """Един символ, центриран оптически по ширината и по главната височина."""
+    def glyph_at(self, ch, font, size, x, y, color, alpha=1.0, bold=0.0):
+        """Един символ, центриран по рамката на контура си в (x, y); bold (pt)
+        удебелява тънките символи с контур в същия цвят."""
         face = self.f[font]
         name = face.shape(ch)[0][0]
-        bounds = face.glyphs[name]
-        from fontTools.pens.boundsPen import BoundsPen
         bp = BoundsPen(face.glyphs)
-        bounds.draw(bp)
+        face.glyphs[name].draw(bp)
         x0, y0, x1, y1 = bp.bounds
-        s = size / face.upem
+        k = size / face.upem
         px, py = self.pt(x, y)
         path = self.c.beginPath()
-        self._glyphs(path, face, [(name, 0, 0, 0)], size,
-                     lambda i, a: (1, 0, 0, 1, px - (x0 + x1) / 2 * s, py - (y0 + y1) / 2 * s))
+        pen = TransformPen(_PathPen(face.glyphs, path),
+                           (k, 0, 0, k, px - (x0 + x1) / 2 * k, py - (y0 + y1) / 2 * k))
+        face.glyphs[name].draw(pen)
         self.fill(color, alpha)
-        self.c.drawPath(path, stroke=0, fill=1, fillMode=1)
+        if bold:
+            self.stroke(color, bold, alpha)
+            self.c.setLineJoin(1)
+        self.c.drawPath(path, stroke=1 if bold else 0, fill=1, fillMode=1)
 
-    def star4(self, x, y, r, color, alpha=1.0, rot=0.0):
-        """Четирилъчна звезда с вдлъбнати страни (като искрата на сайта)."""
+    def glow(self, x, y, r, color, strength=0.05, steps=24):
+        """Меко сияние: кръгове с намаляващ радиус, всеки с малко плътност."""
         px, py = self.pt(x, y)
-        rr, k = r * mm, 0.22
-        p = self.c.beginPath()
-        for i in range(4):
-            a = math.radians(rot + 90 * i)
-            b = math.radians(rot + 90 * i + 90)
-            tip = (px + rr * math.cos(a), py + rr * math.sin(a))
-            nxt = (px + rr * math.cos(b), py + rr * math.sin(b))
-            if i == 0:
-                p.moveTo(*tip)
-            p.curveTo(px + rr * k * math.cos(a), py + rr * k * math.sin(a),
-                      px + rr * k * math.cos(b), py + rr * k * math.sin(b), *nxt)
-        p.close()
-        self.fill(color, alpha)
-        self.c.drawPath(p, stroke=0, fill=1)
+        for i in range(steps):
+            self.fill(color, strength)
+            self.c.circle(px, py, r * mm * (1 - i / steps) ** 1.3, stroke=0, fill=1)
 
 
-# ── небето ────────────────────────────────────────────────────────────────
-
-PLANETS = [  # (swe id, символ; None = чертаем го)
-    (swe.SUN, None), (swe.MOON, "☽"), (swe.MERCURY, "☿"), (swe.VENUS, "♀"),
-    (swe.MARS, "♂"), (swe.JUPITER, "♃"), (swe.SATURN, "♄"), (swe.URANUS, "♅"),
-    (swe.NEPTUNE, "♆"), (swe.PLUTO, "♇"),
-]
-ASPECTS = [(60, 4, ICY), (90, 6, PINK), (120, 6, ICY), (180, 7, PINK)]
-SIGNS = "♈♉♊♋♌♍♎♏♐♑♒♓"
-ROMAN = "I II III IV V VI VII VIII IX X XI XII".split()
-
-
-def sky():
-    jd = swe.julday(*MOMENT)
-    bodies = []
-    for pid, sym in PLANETS:
-        lon, _, _, speed, *_ = swe.calc_ut(jd, pid, swe.FLG_MOSEPH | swe.FLG_SPEED)[0]
-        bodies.append({"lon": lon % 360, "sym": sym, "retro": speed < 0})
-    cusps, ascmc = swe.houses_ex(jd, LAT, LON, b"P", swe.FLG_MOSEPH)
-    return bodies, list(cusps)[:12], ascmc[0], ascmc[1]
-
-
-def spread(lons, min_gap, rounds=400):
-    """Разтваря близките символи по окръжността, без да сменя реда им."""
-    order = sorted(range(len(lons)), key=lambda i: lons[i])
-    pos = {i: lons[i] for i in order}
-    for _ in range(rounds):
-        moved = False
-        for a, b in zip(order, order[1:] + order[:1]):
-            gap = (pos[b] - pos[a]) % 360
-            if gap < min_gap:
-                d = (min_gap - gap) / 2 + 0.01
-                pos[a] -= d
-                pos[b] += d
-                moved = True
-        if not moved:
-            break
-    return [pos[i] % 360 for i in range(len(lons))]
-
-
-def draw_wheel(P, cx, cy):
-    c = P.c
-    bodies, cusps, asc, mc = sky()
-    ang = lambda lon: math.radians(180 + lon - asc)  # асцендентът вляво
-
-    def xy(r, lon):
-        a = ang(lon)
-        return P.pt(cx + r * math.cos(a), cy - r * math.sin(a))
-
-    def ring(r, color, w, alpha=1.0, dash=None):
-        P.stroke(color, w, alpha)
-        c.setDash(*(dash or ([], 0)))
-        x, y = P.pt(cx, cy)
-        c.circle(x, y, r * mm, stroke=1, fill=0)
-        c.setDash([], 0)
-
-    def radial(lon, r1, r2, color, w, alpha=1.0):
-        P.stroke(color, w, alpha)
-        c.line(*xy(r1, lon), *xy(r2, lon))
-
-    R_OUT, R_TICK, R_SIGN, R_HOUSE, R_ASP = 63.0, 59.6, 49.5, 44.5, 26.5
-    BAND_IN, BAND_OUT = 71.5, 77.0
-
-    # Надписите по ръба: модулите на приложението, като по ръба на астролабия.
-    ring(BAND_IN, GILT, 0.35, 0.55)
-    ring(BAND_OUT, GILT, 0.35, 0.55)
-    for k in range(72):
-        lon_deg = k * 5
-        a = math.radians(lon_deg)
-        r2 = BAND_OUT + (1.9 if k % 6 == 0 else 1.0)
-        P.stroke(GILT, 0.3, 0.45)
-        c.line(*P.pt(cx + BAND_OUT * math.cos(a), cy - BAND_OUT * math.sin(a)),
-               *P.pt(cx + r2 * math.cos(a), cy - r2 * math.sin(a)))
-    band_mid = (BAND_IN + BAND_OUT) / 2
-    names_top = [(150, "НАТАЛНА КАРТА"), (90, "ДНЕВЕН ХОРОСКОП"), (30, "СЪВМЕСТИМОСТ")]
-    names_bot = [(210, "НУМЕРОЛОГИЯ"), (270, "ЛУНЕН КАЛЕНДАР"), (330, "АКАШОВИ ЗАПИСИ")]
-    size, track = 5.6, 1.55
-    cap_mm = P.f["mono"].cap * size / mm
-    for deg, s in names_top:
-        P.arc_text(s, "mono", size, cx, cy, band_mid - cap_mm / 2, deg, GILT, 0.85, track)
-    for deg, s in names_bot:
-        P.arc_text(s, "mono", size, cx, cy, band_mid - cap_mm / 2, deg, GILT, 0.85, track,
-                   upright_bottom=True)
-    for deg in range(0, 360, 60):
-        a = math.radians(deg)
-        P.star4(cx + band_mid * math.cos(a), cy - band_mid * math.sin(a), 0.95, GILT, 0.9,
-                rot=deg)
-
-    # Градусите: всеки, всеки пети, всеки десети.
-    ring(R_OUT, GILT, 0.7, 0.95)
-    ring(R_TICK, GILT, 0.35, 0.7)
-    for d in range(360):
-        if d % 30 == 0:
-            continue
-        ln = 2.2 if d % 10 == 0 else 1.5 if d % 5 == 0 else 0.85
-        radial(d, R_OUT, R_OUT - ln, GILT, 0.28 if d % 5 else 0.4, 0.75)
-
-    # Зодиакът
-    ring(R_SIGN, GILT, 0.55, 0.9)
-    for i in range(12):
-        radial(i * 30, R_SIGN, R_OUT, GILT, 0.55, 0.9)
-        gx, gy = xy((R_SIGN + R_TICK) / 2, i * 30 + 15)
-        P.glyph_at(SIGNS[i], "sym-light", 10.5, gx / mm - P.off,
-                   P.h - P.off - gy / mm, GILT, 0.95)
-
-    # Домовете (Плацидус)
-    ring(R_HOUSE, GILT, 0.35, 0.6)
-    ring(R_ASP, GILT, 0.45, 0.75)
-    # Линиите на домовете са само в своя пръстен; поясът на планетите остава
-    # свободен, а към кръга на аспектите има само къса резка.
-    for i, cu in enumerate(cusps):
-        if i % 3:
-            radial(cu, R_HOUSE, R_SIGN, GILT, 0.3, 0.45)
-            radial(cu, R_ASP, R_ASP + 1.4, GILT, 0.3, 0.45)
-    for i, cu in enumerate(cusps):
-        nxt = cusps[(i + 1) % 12]
-        mid = cu + ((nxt - cu) % 360) / 2
-        hx, hy = xy((R_HOUSE + R_SIGN) / 2, mid)
-        P.text(ROMAN[i], "serif-med", 6.2, hx / mm - P.off,
-               P.h - P.off - hy / mm + 0.75, THISTLE, 0.7, anchor="center")
-
-    # Осите AC–DC и MC–IC
-    for lon, lab in ((asc, "AC"), (asc + 180, "DC"), (mc, "MC"), (mc + 180, "IC")):
-        radial(lon, R_HOUSE, R_OUT + 1.6, IVORY, 0.6, 0.9)
-        radial(lon, R_ASP, R_ASP + 2.4, IVORY, 0.6, 0.9)
-        lx, ly = xy(R_OUT + 4.4, lon)
-        P.text(lab, "mono", 5.4, lx / mm - P.off, P.h - P.off - ly / mm + 0.7,
-               IVORY, 0.85, track=0.6, anchor="center")
-
-    # Аспектите
-    lons = [b["lon"] for b in bodies]
-    for i in range(len(bodies)):
-        for j in range(i + 1, len(bodies)):
-            d = abs(lons[i] - lons[j]) % 360
-            d = min(d, 360 - d)
-            for angle, orb, color in ASPECTS:
-                if abs(d - angle) <= orb:
-                    P.stroke(color, 0.5, 0.75)
-                    c.line(*xy(R_ASP, lons[i]), *xy(R_ASP, lons[j]))
-
-    # Планетите
-    R_GLYPH, R_DEG = 39.3, 35.3
-    shown = spread(lons, 7.5)
-    for b, at in zip(bodies, shown):
-        radial(b["lon"], R_HOUSE, R_HOUSE - 1.7, IVORY, 0.45, 0.9)
-        x, y = xy(R_ASP, b["lon"])
-        P.fill(IVORY, 1.0)
-        c.circle(x, y, 0.42 * mm, stroke=0, fill=1)
-        if abs(((at - b["lon"] + 180) % 360) - 180) > 0.6:
-            P.stroke(IVORY, 0.25, 0.4)
-            c.line(*xy(R_HOUSE - 1.9, b["lon"]), *xy(R_GLYPH + 2.6, at))
-        gx, gy = xy(R_GLYPH, at)
-        gx, gy = gx / mm - P.off, P.h - P.off - gy / mm
-        if b["sym"] is None:  # Слънцето: кръг с точка
-            px, py = P.pt(gx, gy)
-            P.stroke(IVORY, 0.6, 1.0)
-            c.circle(px, py, 1.5 * mm, stroke=1, fill=0)
-            P.fill(IVORY)
-            c.circle(px, py, 0.36 * mm, stroke=0, fill=1)
-        else:
-            P.glyph_at(b["sym"], "sym", 10.5, gx, gy, IVORY)
-        # Градусът върви по радиуса към центъра: при близки планети не се застъпва.
-        arcmin = int(round(b["lon"] * 60))
-        label = f"{arcmin // 60 % 30}°{arcmin % 60:02d}′" + (" R" if b["retro"] else "")
-        dx, dy = xy(R_DEG, at)
-        a = math.degrees(ang(at))
-        right = math.cos(ang(at)) >= 0
-        P.text_rot(label, "mono", 4.3, dx / mm - P.off, P.h - P.off - dy / mm,
-                   a if right else a + 180, SOFT, 0.9, track=0.15,
-                   anchor="right" if right else "left")
-
-    # Кръстчето в центъра
-    P.stroke(GILT, 0.3, 0.6)
-    x, y = P.pt(cx, cy)
-    c.line(x - 1.4 * mm, y, x + 1.4 * mm, y)
-    c.line(x, y - 1.4 * mm, x, y + 1.4 * mm)
-    return BAND_OUT + 1.9
-
-
-def draw_stars(P, cx, cy, keep_out_r, soft_zones, seed=1017):
-    """Ситен звезден прах с по-гъста ивица по диагонала (Млечния път)."""
+def draw_stars(P, avoid, seed=1017):
+    """Звезден прах по фона; под картите и панела почти не се вижда."""
     rng = random.Random(seed)
     c = P.c
-    colors = [IVORY] * 6 + [ICY] * 2 + [THISTLE]
-    # ивицата: от долу-ляво нагоре-дясно, през колелото
-    ax, ay, bx, by = -10.0, 250.0, 220.0, 20.0
-    L = math.hypot(bx - ax, by - ay)
-    placed = 0
-    while placed < 1250:
+    colors = [WHITE] * 6 + [ICY] * 2 + [THISTLE]
+    for _ in range(700):
         x = rng.uniform(-P.off, PAGE_W + P.off)
         y = rng.uniform(-P.off, PAGE_H + P.off)
-        d = abs((bx - ax) * (ay - y) - (ax - x) * (by - ay)) / L
-        if rng.random() > 0.22 + 0.78 * math.exp(-(d / 38.0) ** 2):
-            continue
-        if math.hypot(x - cx, y - cy) < keep_out_r:
-            continue
-        placed += 1
         m = rng.random() ** 3.2
-        alpha = 0.18 + 0.62 * m
-        for (x0, y0, x1, y1, k) in soft_zones:
-            if x0 <= x <= x1 and y0 <= y <= y1:
-                alpha *= k
-        r = 0.2 + 0.45 * m  # под ~0.15 мм точката не се отпечатва
+        alpha = 0.2 + 0.6 * m
+        if any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in avoid):
+            alpha *= 0.15
+        r = 0.22 + 0.5 * m  # под ~0.15 мм точката не се отпечатва
         px, py = P.pt(x, y)
-        col = rng.choice(colors)
-        if m > 0.55 and alpha > 0.5:  # най-ярките имат ореол
-            for k_r, k_a in ((4.5, 0.035), (2.6, 0.07), (1.6, 0.12)):
-                P.fill(col, k_a)
-                c.circle(px, py, r * k_r, stroke=0, fill=1)
-        P.fill(col, alpha)
+        P.fill(rng.choice(colors), alpha)
         c.circle(px, py, r, stroke=0, fill=1)
+
+
+def draw_icon(P, kind, x, y, d):
+    """Златна значка с ∅ d мм и център (x, y)."""
+    c = P.c
+    px, py = P.pt(x, y)
+    P.fill(GILT, 0.13)
+    c.circle(px, py, d / 2 * mm, stroke=0, fill=1)
+    P.stroke(GILT, 1.0, 0.95)
+    c.circle(px, py, d / 2 * mm, stroke=1, fill=0)
+    s = d / 15.0  # чертано за значка 15 мм
+    if kind == "sun":  # кръг с точка
+        P.stroke(GILT, 1.5, 1)
+        c.circle(px, py, 3.3 * s * mm, stroke=1, fill=0)
+        P.fill(GILT)
+        c.circle(px, py, 0.9 * s * mm, stroke=0, fill=1)
+    elif kind == "moon":  # сърп ☽: външна дъга отляво, вътрешна — от изместен кръг
+        R, d = 4.2 * s * mm, 2.5 * s * mm
+        b = math.degrees(math.acos(d / 2 / R))  # ъгълът на пресечните точки
+        p = c.beginPath()
+        p.moveTo(px + d / 2, py + math.sqrt(R * R - d * d / 4))
+        p.arcTo(px - R, py - R, px + R, py + R, startAng=b, extent=360 - 2 * b)
+        p.arcTo(px + d - R, py - R, px + d + R, py + R, startAng=180 + b, extent=-2 * b)
+        p.close()
+        P.fill(GILT)
+        c.drawPath(p, stroke=0, fill=1)
+    elif kind == "phase":  # половин Луна
+        r = 3.9 * s * mm
+        P.stroke(GILT, 1.3, 1)
+        c.circle(px, py, r, stroke=1, fill=0)
+        p = c.beginPath()
+        p.moveTo(px, py + r)
+        p.arcTo(px - r, py - r, px + r, py + r, startAng=90, extent=180)
+        p.close()
+        P.fill(GILT)
+        c.drawPath(p, stroke=0, fill=1)
+    elif kind == "7":
+        P.glyph_at("7", "brand", 21 * s, x, y, GILT)
+    else:
+        P.glyph_at(kind, "sym", 25 * s, x, y, GILT, bold=0.9)
 
 
 def draw_qr(P, url, x, y, size):
@@ -495,7 +305,7 @@ def draw_qr(P, url, x, y, size):
     cell = size / n
     px, py = P.pt(x, y)
     P.fill(PAPER)
-    P.c.roundRect(px, py - size * mm, size * mm, size * mm, 1.6 * mm, stroke=0, fill=1)
+    P.c.roundRect(px, py - size * mm, size * mm, size * mm, 2.4 * mm, stroke=0, fill=1)
     path = P.c.beginPath()
     for row in range(n):
         col = 0
@@ -510,96 +320,105 @@ def draw_qr(P, url, x, y, size):
                 col += 1
     P.fill(NIGHT)
     P.c.drawPath(path, stroke=0, fill=1, fillMode=1)
-    # маркерите за отчитане в ъглите, като на чертеж
-    g, L = 2.2, 3.2
-    P.stroke(GILT, 0.45, 0.85)
-    for (cx_, cy_, sx, sy) in ((x, y, -1, -1), (x + size, y, 1, -1),
-                               (x, y + size, -1, 1), (x + size, y + size, 1, 1)):
-        ax, ay = cx_ + sx * g, cy_ + sy * g
-        P.c.line(*P.pt(ax, ay), *P.pt(ax - sx * L, ay))
-        P.c.line(*P.pt(ax, ay), *P.pt(ax, ay - sy * L))
     return qr.version
+
+
+def arrow(P, x0, x1, y, color, w=1.8, head=3.2):
+    c = P.c
+    P.stroke(color, w, 1)
+    c.setLineCap(1)
+    c.setLineJoin(1)
+    c.line(*P.pt(x0, y), *P.pt(x1, y))
+    p = c.beginPath()
+    p.moveTo(*P.pt(x1 - head, y - head * 0.75))
+    p.lineTo(*P.pt(x1, y))
+    p.lineTo(*P.pt(x1 - head, y + head * 0.75))
+    c.drawPath(p, stroke=1, fill=0)
 
 
 def build(out_pdf, url, bleed, store):
     P = Poster(out_pdf, bleed)
     c = P.c
-    CX, CY = 105.0, 90.5
-    M = 24.0  # полето отляво и отдясно
+    W = PAGE_W - 2 * M
 
-    # Фонът: нощ с виолетово сияние, което идва от колелото
-    gx, gy = P.pt(CX, CY)
-    c.radialGradient(gx, gy, 175 * mm,
-                     [HexColor("#1e1752"), HexColor("#141039"), HexColor("#0c0a25"),
-                      HexColor(NIGHT)], [0.0, 0.3, 0.62, 1.0], extend=True)
+    # Фонът: нощ с виолетово сияние откъм логото
+    gx, gy = P.pt(PAGE_W / 2, 40)
+    c.radialGradient(gx, gy, 240 * mm,
+                     [HexColor("#2a1f6b"), HexColor("#17134a"), HexColor("#0d0b2a"),
+                      HexColor(NIGHT)], [0.0, 0.28, 0.6, 1.0], extend=True)
 
-    HEAD_Y1, HEAD_Y2 = 188.5, 208.0
-    SUB_Y = 220.0
-    RULE_Y = 236.0
-    QR_SIZE, QR_TOP = 37.0, 243.5
-    soft = [(18, 170, 192, 232, 0.25),           # заглавието
-            (M - 4, QR_TOP - 4, PAGE_W - M + 4, QR_TOP + QR_SIZE + 4, 0.2)]
-    draw_stars(P, CX, CY, 82.0, soft)
-    draw_wheel(P, CX, CY)
+    GRID_TOP, CARD_H, GAP = 140.0, 24.5, 3.5
+    PANEL_TOP, PANEL_BOT = 226.0, 286.0
+    draw_stars(P, [(M - 2, GRID_TOP - 2, PAGE_W - M + 2, GRID_TOP + 3 * CARD_H + 2 * GAP + 2),
+                   (M, PANEL_TOP, PAGE_W - M, PANEL_BOT)])
 
-    # Етикетите на фигурата
-    lab = dict(font="mono", size=5.6, color=THISTLE, alpha=0.75, track=1.1)
-    P.text("ФИГ. 1", x=M, y=12.6, **lab)
-    P.text("НЕБЕТО НАД СОФИЯ", x=M, y=16.4, **lab)
-    P.text("17.10.2026 · 12:00", x=PAGE_W - M, y=12.6, anchor="right", **lab)
-    P.text("42°41′ С · 23°19′ И", x=PAGE_W - M, y=16.4, anchor="right", **lab)
-
-    # Куката
-    hs = 54
-    P.text("Това не е", "serif", hs, PAGE_W / 2, HEAD_Y1, TEXT, anchor="center")
-    w1 = P.f["serif-med-it"].width("твоето", hs) / mm
-    sp = P.f["serif"].width(" ", hs) / mm
-    w2 = P.f["serif"].width("небе.", hs) / mm
-    x0 = PAGE_W / 2 - (w1 + sp + w2) / 2
-    P.text("твоето", "serif-med-it", hs, x0, HEAD_Y2, GILT)
-    P.text("небе.", "serif", hs, x0 + w1 + sp, HEAD_Y2, TEXT)
-    sub = dict(font="serif-it", size=15.5, color=SOFT, anchor="center")
-    P.text("Твоето се е подредило само веднъж —", x=PAGE_W / 2, y=SUB_Y, **sub)
-    P.text("в минутата, в която се роди.", x=PAGE_W / 2, y=SUB_Y + 6.6, **sub)
-
-    # Разделител с искра
-    P.stroke(GILT, 0.35, 0.5)
-    c.line(*P.pt(M, RULE_Y), *P.pt(PAGE_W / 2 - 4, RULE_Y))
-    c.line(*P.pt(PAGE_W / 2 + 4, RULE_Y), *P.pt(PAGE_W - M, RULE_Y))
-    P.star4(PAGE_W / 2, RULE_Y, 1.5, GILT, 0.9)
-
-    # Призивът и QR кодът
-    qx = PAGE_W - M - QR_SIZE
-    version = draw_qr(P, url, qx, QR_TOP, QR_SIZE)
-    cta_size = 27
-    cta_base = QR_TOP + P.f["serif-med"].cap * cta_size / mm
-    wcta = P.text("Виж своето.", "serif-med", cta_size, M, cta_base, IVORY)
-    # тънка стрелка към кода
-    ay = cta_base - P.f["serif-med"].cap * cta_size / mm / 2
-    ax0, ax1 = M + wcta + 5, qx - 8.0
-    P.stroke(GILT, 0.45, 0.85)
-    c.line(*P.pt(ax0, ay), *P.pt(ax1, ay))
-    c.line(*P.pt(ax1, ay), *P.pt(ax1 - 1.6, ay - 1.1))
-    c.line(*P.pt(ax1, ay), *P.pt(ax1 - 1.6, ay + 1.1))
-    body = dict(font="sans", size=8.6, color=SOFT)
-    P.text("Насочи камерата на телефона към кода.", x=M, y=cta_base + 8.2, **body)
-    P.text("Трябват само дата, час и място на раждане.", x=M, y=cta_base + 12.8, **body)
-
-    # Марката
-    logo = 11.5
-    lx, ly = P.pt(M, QR_TOP + QR_SIZE)
+    # ── Марката: логото голямо, името изписано в злато ─────────────────────
+    E = 44.0
+    word_size, tag_size, tag_track = 64, 10.5, 2.6
+    tagline = "АСТРОЛОГИЯ НА РАЗБИРАЕМ ЕЗИК"
+    word_w = P.f["brand"].width("АстроКарта", word_size)
+    tag_w = P.f["semi"].width(tagline, tag_size, tag_track)
+    gap = 7.0
+    x0 = (PAGE_W - (E + gap + max(word_w, tag_w))) / 2
+    ey = 11.0
+    P.glow(x0 + E / 2, ey + E / 2, E * 0.78, "#7c3aed", 0.035)
+    lx, ly = P.pt(x0, ey + E)
     c.setFillAlpha(1)
-    c.drawImage(str(ROOT / "static" / "logo-full.png"), lx, ly, logo * mm, logo * mm,
-                mask="auto")
-    base = QR_TOP + QR_SIZE - 4.6
-    P.text("АстроКарта", "serif-semi", 19, M + logo + 3.2, base, TEXT)
-    P.text("АСТРОЛОГИЯ НА РАЗБИРАЕМ ЕЗИК", "mono", 5.4, M + logo + 3.4,
-           QR_TOP + QR_SIZE - 0.2, GILT, 0.9, track=1.25)
-    # Адресът под кода — за който не сканира.
-    P.text("astrokarta.bg", "mono", 6.6, qx + QR_SIZE / 2, QR_TOP + QR_SIZE + 5.4,
-           SOFT, 0.95, track=0.9, anchor="center")
+    c.drawImage(str(LOGO), lx, ly, E * mm, E * mm, mask="auto")
+    tx = x0 + E + gap
+    word_base = ey + E / 2 + 1.5
+    P.gold_text("АстроКарта", "brand", word_size, tx, word_base)
+    P.text(tagline, "semi", tag_size, tx + 0.6, word_base + 11.5, GILT, 0.95, track=tag_track)
+
+    # ── Куката ──────────────────────────────────────────────────────────────
+    kicker = "Хороскопът във вестника е еднакъв за милиони хора."
+    P.text(kicker, "semi", P.fit(kicker, "semi", W, 17.5), PAGE_W / 2, 75.0, TEXT,
+           anchor="center")
+    l1, l2 = "Този е изчислен", "само за теб."
+    hs = P.fit(l1, "black", W - 4, 62)
+    P.text(l1, "black", hs, PAGE_W / 2, 98.0, WHITE, anchor="center")
+    P.gold_text(l2, "black", hs, PAGE_W / 2, 120.0, anchor="center")
+    sub = "По твоята дата, час и място на раждане — на разбираем български."
+    P.text(sub, "medium", P.fit(sub, "medium", W, 14.5), PAGE_W / 2, 131.5, SOFT,
+           anchor="center")
+
+    # ── Услугите ────────────────────────────────────────────────────────────
+    cw = (W - 6) / 2
+    D = 15.0
+    for i, (icon, title, desc) in enumerate(SERVICES):
+        cx = M + (i % 2) * (cw + 6)
+        cy = GRID_TOP + (i // 2) * (CARD_H + GAP)
+        rx, ry = P.pt(cx, cy + CARD_H)
+        P.fill(WHITE, 0.055)
+        P.stroke(GILT, 0.7, 0.45)
+        c.roundRect(rx, ry, cw * mm, CARD_H * mm, 3 * mm, stroke=1, fill=1)
+        draw_icon(P, icon, cx + 4.5 + D / 2, cy + CARD_H / 2, D)
+        tx = cx + 4.5 + D + 4.5
+        avail = cx + cw - 3.5 - tx
+        P.text(title, "bold", P.fit(title, "bold", avail, 16.5), tx, cy + 10.6, WHITE)
+        P.text(desc, "medium", P.fit(desc, "medium", avail, 12), tx, cy + 18.2, SOFT)
+
+    # ── Призивът: QR и адресът ──────────────────────────────────────────────
+    rx, ry = P.pt(M, PANEL_BOT)
+    P.fill(PANEL)
+    P.stroke(GILT, 1.0, 0.9)
+    c.roundRect(rx, ry, W * mm, (PANEL_BOT - PANEL_TOP) * mm, 4 * mm, stroke=1, fill=1)
+    QS = PANEL_BOT - PANEL_TOP - 7.0
+    qx, qy = PAGE_W - M - 3.5 - QS, PANEL_TOP + 3.5
+    version = draw_qr(P, url, qx, qy, QS)
+
+    lx = M + 8.0
+    hsz = 30
+    hw = P.text("Сканирай кода", "black", hsz, lx, PANEL_TOP + 17.0, WHITE)
+    P.text("с камерата на телефона", "medium", 16, lx, PANEL_TOP + 25.5, TEXT)
+    cap = P.f["black"].cap * hsz / mm
+    arrow(P, lx + hw + 5, qx - 5, PANEL_TOP + 17.0 - cap / 2, GILT)
+    P.text("или отвори в браузъра", "medium", 12.5, lx, PANEL_TOP + 40.0, SOFT)
+    site = "astrokarta.bg"
+    P.gold_text(site, "black", P.fit(site, "black", qx - 6 - lx, 34), lx, PANEL_TOP + 52.5)
+
     if store:  # кой плакат е това, когато са няколко
-        P.text(store.upper(), "mono", 4.4, M, PAGE_H - 6.0, SOFT, 0.45, track=1.0)
+        P.text(store.upper(), "medium", 5, M, PAGE_H - 4.5, SOFT, 0.5, track=1.0)
     c.showPage()
     c.save()
     return version
