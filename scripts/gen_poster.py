@@ -170,8 +170,11 @@ class Poster:
         self.c.setStrokeAlpha(alpha)
 
     def fit(self, s, font, max_w, max_size, track=0.0):
-        """Най-големият размер до max_size, при който редът се събира в max_w мм."""
-        return min(max_size, max_size * max_w / self.f[font].width(s, max_size, track))
+        """Най-големият размер до max_size, при който редът се събира в max_w мм
+        (разредката track е в pt и не се мени с размера)."""
+        bare = self.f[font].width(s, max_size)
+        spacing = self.f[font].width(s, max_size, track) - bare
+        return min(max_size, max_size * (max_w - spacing) / bare)
 
     def text_path(self, s, font, size, x, y, track=0.0, anchor="left"):
         """Контурите на реда на базова линия y (мм) и ширината му в мм."""
@@ -347,16 +350,17 @@ def build(out_pdf, url, bleed, store):
                      [HexColor("#2a1f6b"), HexColor("#17134a"), HexColor("#0d0b2a"),
                       HexColor(NIGHT)], [0.0, 0.28, 0.6, 1.0], extend=True)
 
-    GRID_TOP, CARD_H, GAP = 140.0, 24.5, 3.5
-    PANEL_TOP, PANEL_BOT = 226.0, 286.0
+    GRID_TOP, CARD_H, GAP = 152.0, 23.5, 3.0
+    PANEL_TOP, PANEL_BOT = 234.5, 287.5
     draw_stars(P, [(M - 2, GRID_TOP - 2, PAGE_W - M + 2, GRID_TOP + 3 * CARD_H + 2 * GAP + 2),
                    (M, PANEL_TOP, PAGE_W - M, PANEL_BOT)])
 
     # ── Марката: логото голямо, името изписано в злато ─────────────────────
     E = 44.0
-    word_size, tag_size, tag_track = 64, 10.5, 2.6
-    tagline = "АСТРОЛОГИЯ НА РАЗБИРАЕМ ЕЗИК"
+    word_size, tag_size, tag_track = 64, 10.5, 1.7
+    tagline = "САЙТ № 1 ЗА АСТРОЛОГИЯ И НУМЕРОЛОГИЯ"
     word_w = P.f["brand"].width("АстроКарта", word_size)
+    tag_size = P.fit(tagline, "semi", word_w, tag_size, tag_track)  # не по-широк от името
     tag_w = P.f["semi"].width(tagline, tag_size, tag_track)
     gap = 7.0
     x0 = (PAGE_W - (E + gap + max(word_w, tag_w))) / 2
@@ -372,14 +376,19 @@ def build(out_pdf, url, bleed, store):
 
     # ── Куката ──────────────────────────────────────────────────────────────
     kicker = "Хороскопът във вестника е еднакъв за милиони хора."
-    P.text(kicker, "semi", P.fit(kicker, "semi", W, 17.5), PAGE_W / 2, 75.0, TEXT,
+    P.text(kicker, "semi", P.fit(kicker, "semi", W, 17.5), PAGE_W / 2, 71.0, TEXT,
            anchor="center")
-    l1, l2 = "Този е изчислен", "само за теб."
-    hs = P.fit(l1, "black", W - 4, 62)
-    P.text(l1, "black", hs, PAGE_W / 2, 98.0, WHITE, anchor="center")
-    P.gold_text(l2, "black", hs, PAGE_W / 2, 120.0, anchor="center")
+    lines = ["Хороскопът тук", "е изчислен", "само за теб."]  # последният е в злато
+    hs = min(P.fit(t, "black", W - 4, 60) for t in lines)
+    lead = hs / mm * 0.98
+    base = 71.0 + 7.0 + P.f["black"].cap * hs / mm
+    for i, t in enumerate(lines):
+        if i < len(lines) - 1:
+            P.text(t, "black", hs, PAGE_W / 2, base + i * lead, WHITE, anchor="center")
+        else:
+            P.gold_text(t, "black", hs, PAGE_W / 2, base + i * lead, anchor="center")
     sub = "По твоята дата, час и място на раждане — на разбираем български."
-    P.text(sub, "medium", P.fit(sub, "medium", W, 14.5), PAGE_W / 2, 131.5, SOFT,
+    P.text(sub, "medium", P.fit(sub, "medium", W, 14.5), PAGE_W / 2, base + 2 * lead + 9.5, SOFT,
            anchor="center")
 
     # ── Услугите ────────────────────────────────────────────────────────────
@@ -409,13 +418,13 @@ def build(out_pdf, url, bleed, store):
 
     lx = M + 8.0
     hsz = 30
-    hw = P.text("Сканирай кода", "black", hsz, lx, PANEL_TOP + 17.0, WHITE)
-    P.text("с камерата на телефона", "medium", 16, lx, PANEL_TOP + 25.5, TEXT)
+    hw = P.text("Сканирай кода", "black", hsz, lx, PANEL_TOP + 15.5, WHITE)
+    P.text("с камерата на телефона", "medium", 16, lx, PANEL_TOP + 23.5, TEXT)
     cap = P.f["black"].cap * hsz / mm
-    arrow(P, lx + hw + 5, qx - 5, PANEL_TOP + 17.0 - cap / 2, GILT)
-    P.text("или отвори в браузъра", "medium", 12.5, lx, PANEL_TOP + 40.0, SOFT)
+    arrow(P, lx + hw + 5, qx - 5, PANEL_TOP + 15.5 - cap / 2, GILT)
+    P.text("или отвори в браузъра", "medium", 12.5, lx, PANEL_TOP + 35.5, SOFT)
     site = "astrokarta.bg"
-    P.gold_text(site, "black", P.fit(site, "black", qx - 6 - lx, 34), lx, PANEL_TOP + 52.5)
+    P.gold_text(site, "black", P.fit(site, "black", qx - 6 - lx, 34), lx, PANEL_TOP + 47.0)
 
     if store:  # кой плакат е това, когато са няколко
         P.text(store.upper(), "medium", 5, M, PAGE_H - 4.5, SOFT, 0.5, track=1.0)
