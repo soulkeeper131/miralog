@@ -29,6 +29,7 @@
 | `scripts_check_paid_access.py` | Само чете: сверява плащания ↔ `feature_purchases` ↔ `unlocked_features()` |
 | `scripts_reconcile_stripe.py` | Сверява Stripe с базата: платени сесии без отключване и връщания без запис; `--apply` поправя |
 | `scripts/gen_og_image.py` | Генерира `static/og-image.jpg` (иска Pillow, не е в requirements) |
+| `scripts/gen_poster.py` | A4 плакат за касата на магазини → `docs/print/` (QR към `/start` с UTM `plakat/print/kasa`, `--store` за отделен код, `--bleed` за печатница; иска qrcode, uharfbuzz, fonttools) |
 | `tests/` | pytest: `test_access`, `test_payments`, `test_security`, `test_edge_cases` |
 | `templates/` | Jinja2 шаблони, всеки е самостоятелен (няма общ `base.html`); общи парчета: `_analytics.html`, `_critical.html` |
 | `static/` | CSS/JS (`ui`, `landing`, `modules`, `locked`, `consent`), лога, favicon, og-image |
